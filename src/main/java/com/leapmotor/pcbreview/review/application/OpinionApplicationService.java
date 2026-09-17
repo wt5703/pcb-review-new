@@ -2,6 +2,8 @@ package com.leapmotor.pcbreview.review.application;
 
 import com.leapmotor.pcbreview.common.BusinessException;
 import com.leapmotor.pcbreview.common.ErrorCode;
+import com.leapmotor.pcbreview.audit.infrastructure.OperationAuditMapper;
+import com.leapmotor.pcbreview.audit.infrastructure.OperationAuditRecord;
 import com.leapmotor.pcbreview.identity.application.CurrentUser;
 import com.leapmotor.pcbreview.identity.application.TaskNodeAuthorizationService;
 import com.leapmotor.pcbreview.identity.domain.Permission;
@@ -35,15 +37,18 @@ public class OpinionApplicationService {
     private final TaskCheckItemMapper taskCheckItemMapper;
     private final TaskAssignmentAccessMapper assignmentAccessMapper;
     private final TaskNodeAuthorizationService taskNodeAuthorizationService;
+    private final OperationAuditMapper auditMapper;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public OpinionApplicationService(ReviewOpinionMapper opinionMapper, ReviewTaskMapper taskMapper, TaskCheckItemMapper taskCheckItemMapper,
-                                     TaskAssignmentAccessMapper assignmentAccessMapper, TaskNodeAuthorizationService taskNodeAuthorizationService) {
+                                     TaskAssignmentAccessMapper assignmentAccessMapper, TaskNodeAuthorizationService taskNodeAuthorizationService,
+                                     OperationAuditMapper auditMapper) {
         this.opinionMapper = opinionMapper;
         this.taskMapper = taskMapper;
         this.taskCheckItemMapper = taskCheckItemMapper;
         this.assignmentAccessMapper = assignmentAccessMapper;
         this.taskNodeAuthorizationService = taskNodeAuthorizationService;
+        this.auditMapper = auditMapper;
     }
 
     @Transactional
@@ -70,6 +75,7 @@ public class OpinionApplicationService {
         record.setStatus(OpinionStatus.PENDING_REPLY.name());
         record.setVersion(0L);
         opinionMapper.insert(record);
+        appendAudit(record, "OPINION_RAISED", currentUser.id());
         return OpinionView.from(record);
     }
 
@@ -91,6 +97,7 @@ public class OpinionApplicationService {
         reply.setReplyNo(nextReplyNo(opinionId));
         opinionMapper.insertReply(reply);
         updateStatus(opinion, OpinionStatus.PENDING_CONFIRMATION);
+        appendAudit(opinion, "OPINION_REPLIED", currentUser.id());
         return OpinionView.from(opinion);
     }
 
@@ -115,6 +122,7 @@ public class OpinionApplicationService {
         confirmation.setConfirmedBy(currentUser.id());
         opinionMapper.insertConfirmation(confirmation);
         updateStatus(opinion, command.passed() ? OpinionStatus.CONFIRMED_PASS : OpinionStatus.PENDING_REPLY);
+        appendAudit(opinion, command.passed() ? "OPINION_CONFIRMED_PASS" : "OPINION_CONFIRMED_REJECTED", currentUser.id());
         return OpinionView.from(opinion);
     }
 
@@ -132,12 +140,19 @@ public class OpinionApplicationService {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "撤回原因不能为空");
         }
         updateStatus(opinion, OpinionStatus.WITHDRAWN);
+        appendAudit(opinion, "OPINION_WITHDRAWN", currentUser.id());
         return OpinionView.from(opinion);
     }
 
     public List<OpinionView> list(long taskId, CurrentUser currentUser) {
         requireOpenOrFinishedTaskVisible(taskId, currentUser);
         return opinionMapper.findByTaskId(taskId).stream().map(OpinionView::from).toList();
+    }
+
+    public OpinionSummary summary(long taskId, CurrentUser currentUser) {
+        List<OpinionView> opinions = list(taskId, currentUser);
+        return new OpinionSummary(opinions.size(), count(opinions, OpinionStatus.PENDING_REPLY), count(opinions, OpinionStatus.PENDING_CONFIRMATION),
+                count(opinions, OpinionStatus.CONFIRMED_PASS), count(opinions, OpinionStatus.WITHDRAWN));
     }
 
     private ReviewTaskRecord requireOpenTask(long taskId) {
@@ -198,6 +213,16 @@ public class OpinionApplicationService {
         return content;
     }
 
+    private int count(List<OpinionView> opinions, OpinionStatus status) {
+        return (int) opinions.stream().filter(opinion -> opinion.status() == status).count();
+    }
+
+    private void appendAudit(ReviewOpinionRecord opinion, String action, long operatorId) {
+        if (auditMapper != null) {
+            auditMapper.insert(new OperationAuditRecord("REVIEW_OPINION", opinion.getId(), action, operatorId, opinion.getStatus()));
+        }
+    }
+
     public record RaiseOpinionCommand(long taskId, OpinionSourceType sourceType, Long sourceItemId, String content, Long fileVersionId) {
     }
     public record ReplyOpinionCommand(ReplyType replyType, String reason, Long fileVersionId) {
@@ -212,5 +237,8 @@ public class OpinionApplicationService {
             return new OpinionView(record.getId(), record.getTaskId(), OpinionSourceType.valueOf(record.getSourceType()), record.getSourceItemId(),
                     record.getContent(), record.getRaisedBy(), record.getFileVersionId(), OpinionStatus.valueOf(record.getStatus()), record.getVersion());
         }
+    }
+
+    public record OpinionSummary(int total, int pendingReply, int pendingConfirmation, int confirmedPass, int withdrawn) {
     }
 }

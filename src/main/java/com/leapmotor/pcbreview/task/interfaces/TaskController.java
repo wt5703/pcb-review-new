@@ -4,6 +4,7 @@ import com.leapmotor.pcbreview.common.ApiResponse;
 import com.leapmotor.pcbreview.common.TraceIdFilter;
 import com.leapmotor.pcbreview.identity.application.CurrentUserHolder;
 import com.leapmotor.pcbreview.task.application.TaskApplicationService;
+import com.leapmotor.pcbreview.task.application.MyTaskApplicationService;
 import com.leapmotor.pcbreview.task.domain.ReviewType;
 import com.leapmotor.pcbreview.task.domain.TaskStatus;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,9 +32,11 @@ import java.util.List;
 @RequestMapping("/tasks")
 public class TaskController {
     private final TaskApplicationService taskService;
+    private final MyTaskApplicationService myTaskApplicationService;
 
-    public TaskController(TaskApplicationService taskService) {
+    public TaskController(TaskApplicationService taskService, MyTaskApplicationService myTaskApplicationService) {
         this.taskService = taskService;
+        this.myTaskApplicationService = myTaskApplicationService;
     }
 
     @PostMapping
@@ -59,6 +62,11 @@ public class TaskController {
                                                       HttpServletRequest servletRequest) {
         return ApiResponse.ok(taskService.list(new TaskApplicationService.TaskQuery(taskName, projectName, designerId,
                 reviewType, status, pageNo, pageSize), CurrentUserHolder.require()), traceId(servletRequest));
+    }
+
+    @GetMapping("/my")
+    ApiResponse<List<MyTaskApplicationService.MyTaskView>> myTasks(HttpServletRequest servletRequest) {
+        return ApiResponse.ok(myTaskApplicationService.list(CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @GetMapping("/{taskId}")

@@ -1,6 +1,7 @@
 package com.leapmotor.pcbreview.review.application;
 
 import com.leapmotor.pcbreview.identity.application.CurrentUser;
+import com.leapmotor.pcbreview.audit.infrastructure.OperationAuditMapper;
 import com.leapmotor.pcbreview.identity.application.TaskNodeAuthorizationService;
 import com.leapmotor.pcbreview.identity.domain.Role;
 import com.leapmotor.pcbreview.identity.infrastructure.TaskAssignmentAccessMapper;
@@ -18,6 +19,7 @@ import com.leapmotor.pcbreview.task.infrastructure.ReviewTaskRecord;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -36,8 +38,9 @@ class OpinionApplicationServiceTest {
     private final TaskCheckItemMapper taskCheckItemMapper = mock(TaskCheckItemMapper.class);
     private final TaskAssignmentAccessMapper assignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
     private final TaskNodeAuthorizationService taskNodeAuthorizationService = mock(TaskNodeAuthorizationService.class);
+    private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
     private final OpinionApplicationService service = new OpinionApplicationService(opinionMapper, taskMapper, taskCheckItemMapper,
-            assignmentAccessMapper, taskNodeAuthorizationService);
+            assignmentAccessMapper, taskNodeAuthorizationService, auditMapper);
 
     @Test
     void shouldRaiseMutualExtraOpinion() {
@@ -79,6 +82,20 @@ class OpinionApplicationServiceTest {
         assertThat(confirmed.status()).isEqualTo(OpinionStatus.CONFIRMED_PASS);
         verify(opinionMapper).insertReply(any(OpinionReplyRecord.class));
         verify(opinionMapper).insertConfirmation(any());
+    }
+
+    @Test
+    void shouldSummarizeOpinionsByLifecycleStatus() {
+        when(taskMapper.findById(1001L)).thenReturn(task(9L));
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(
+                opinion(31L, 1001L, 20L, OpinionStatus.PENDING_REPLY, 0L),
+                opinion(32L, 1001L, 20L, OpinionStatus.CONFIRMED_PASS, 0L)));
+
+        OpinionApplicationService.OpinionSummary summary = service.summary(1001L, new CurrentUser(20L, Set.of(Role.HARDWARE_EXPERT)));
+
+        assertThat(summary.total()).isEqualTo(2);
+        assertThat(summary.pendingReply()).isEqualTo(1);
+        assertThat(summary.confirmedPass()).isEqualTo(1);
     }
 
     private ReviewTaskRecord task(long designerId) {

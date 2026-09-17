@@ -12,6 +12,7 @@ import jakarta.validation.constraints.PositiveOrZero;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -47,11 +48,20 @@ public class CheckItemController {
                 CurrentUserHolder.require()), traceId(servletRequest));
     }
 
+    @PostMapping("/{itemId}/attachments")
+    ApiResponse<Void> attachFile(@PathVariable long taskId, @PathVariable long itemId,
+                                 @Valid @RequestBody AttachFileRequest request, HttpServletRequest servletRequest) {
+        taskCheckItemApplicationService.attachFile(taskId, itemId, request.fileId(), request.sortNo(), CurrentUserHolder.require());
+        return ApiResponse.ok(null, traceId(servletRequest));
+    }
+
     private String traceId(HttpServletRequest request) {
         return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString();
     }
 
     record SubmitCheckItemRequest(@NotNull CheckResult result, String comment, Long linkedOpinionId,
                                   @PositiveOrZero long version) {
+    }
+    record AttachFileRequest(@NotNull Long fileId, @PositiveOrZero int sortNo) {
     }
 }

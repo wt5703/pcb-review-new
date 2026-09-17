@@ -7,6 +7,7 @@ import com.leapmotor.pcbreview.review.domain.ReviewerProcessStatus;
 import com.leapmotor.pcbreview.review.infrastructure.TaskReviewerMapper;
 import com.leapmotor.pcbreview.review.infrastructure.TaskReviewerRecord;
 import com.leapmotor.pcbreview.task.infrastructure.ReviewTaskMapper;
+import com.leapmotor.pcbreview.identity.infrastructure.TaskAssignmentAccessMapper;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -28,7 +29,9 @@ class ReviewerAssignmentServiceTest {
     private final ReviewTaskMapper taskMapper = mock(ReviewTaskMapper.class);
     private final com.leapmotor.pcbreview.identity.application.TaskNodeAuthorizationService taskNodeAuthorizationService =
             mock(com.leapmotor.pcbreview.identity.application.TaskNodeAuthorizationService.class);
-    private final ReviewerAssignmentService service = new ReviewerAssignmentService(reviewerMapper, taskMapper, taskNodeAuthorizationService);
+    private final TaskAssignmentAccessMapper assignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
+    private final ReviewerAssignmentService service = new ReviewerAssignmentService(reviewerMapper, taskMapper, taskNodeAuthorizationService,
+            assignmentAccessMapper);
     private final CurrentUser pcbLeader = new CurrentUser(1L, Set.of(Role.PCB_LEADER));
 
     @Test

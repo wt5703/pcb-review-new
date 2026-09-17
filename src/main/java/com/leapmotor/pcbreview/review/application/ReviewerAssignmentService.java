@@ -5,6 +5,7 @@ import com.leapmotor.pcbreview.common.ErrorCode;
 import com.leapmotor.pcbreview.identity.application.CurrentUser;
 import com.leapmotor.pcbreview.identity.application.TaskNodeAuthorizationService;
 import com.leapmotor.pcbreview.identity.domain.PermissionPolicy;
+import com.leapmotor.pcbreview.identity.infrastructure.TaskAssignmentAccessMapper;
 import com.leapmotor.pcbreview.review.domain.ReviewRole;
 import com.leapmotor.pcbreview.review.domain.ReviewerProcessStatus;
 import com.leapmotor.pcbreview.review.infrastructure.TaskReviewerMapper;
@@ -25,13 +26,15 @@ public class ReviewerAssignmentService {
     private final TaskReviewerMapper reviewerMapper;
     private final ReviewTaskMapper taskMapper;
     private final TaskNodeAuthorizationService taskNodeAuthorizationService;
+    private final TaskAssignmentAccessMapper assignmentAccessMapper;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public ReviewerAssignmentService(TaskReviewerMapper reviewerMapper, ReviewTaskMapper taskMapper,
-                                     TaskNodeAuthorizationService taskNodeAuthorizationService) {
+                                     TaskNodeAuthorizationService taskNodeAuthorizationService, TaskAssignmentAccessMapper assignmentAccessMapper) {
         this.reviewerMapper = reviewerMapper;
         this.taskMapper = taskMapper;
         this.taskNodeAuthorizationService = taskNodeAuthorizationService;
+        this.assignmentAccessMapper = assignmentAccessMapper;
     }
 
     @Transactional
@@ -62,8 +65,12 @@ public class ReviewerAssignmentService {
         }
     }
 
-    public List<ReviewerView> listActive(long taskId, ReviewRole role) {
+    public List<ReviewerView> listActive(long taskId, ReviewRole role, CurrentUser currentUser) {
         requireTaskExists(taskId);
+        if (!permissionPolicy.canViewAllTasks(currentUser.roles())
+                && !assignmentAccessMapper.isAssignedToTask(taskId, currentUser.id())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看该任务的评审人员");
+        }
         return reviewerMapper.findActiveByTaskAndRole(taskId, role.name()).stream().map(ReviewerView::from).toList();
     }
 

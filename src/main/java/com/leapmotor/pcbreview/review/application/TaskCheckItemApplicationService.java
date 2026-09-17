@@ -2,6 +2,8 @@ package com.leapmotor.pcbreview.review.application;
 
 import com.leapmotor.pcbreview.common.BusinessException;
 import com.leapmotor.pcbreview.common.ErrorCode;
+import com.leapmotor.pcbreview.file.infrastructure.ReviewFileMapper;
+import com.leapmotor.pcbreview.file.infrastructure.ReviewFileRecord;
 import com.leapmotor.pcbreview.identity.application.CurrentUser;
 import com.leapmotor.pcbreview.identity.application.TaskNodeAuthorizationService;
 import com.leapmotor.pcbreview.identity.domain.Permission;
@@ -11,6 +13,8 @@ import com.leapmotor.pcbreview.review.domain.CheckItemStatus;
 import com.leapmotor.pcbreview.review.domain.CheckResult;
 import com.leapmotor.pcbreview.review.infrastructure.CheckItemTemplateMapper;
 import com.leapmotor.pcbreview.review.infrastructure.CheckItemTemplateRecord;
+import com.leapmotor.pcbreview.review.infrastructure.CheckItemAttachmentMapper;
+import com.leapmotor.pcbreview.review.infrastructure.CheckItemAttachmentRecord;
 import com.leapmotor.pcbreview.review.infrastructure.ReviewOpinionMapper;
 import com.leapmotor.pcbreview.review.infrastructure.ReviewOpinionRecord;
 import com.leapmotor.pcbreview.review.infrastructure.TaskCheckItemMapper;
@@ -39,17 +43,22 @@ public class TaskCheckItemApplicationService {
     private final TaskAssignmentAccessMapper assignmentAccessMapper;
     private final TaskNodeAuthorizationService taskNodeAuthorizationService;
     private final ReviewOpinionMapper opinionMapper;
+    private final ReviewFileMapper fileMapper;
+    private final CheckItemAttachmentMapper attachmentMapper;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public TaskCheckItemApplicationService(ReviewTaskMapper taskMapper, CheckItemTemplateMapper templateMapper,
                                            TaskCheckItemMapper taskCheckItemMapper, TaskAssignmentAccessMapper assignmentAccessMapper,
-                                           TaskNodeAuthorizationService taskNodeAuthorizationService, ReviewOpinionMapper opinionMapper) {
+                                           TaskNodeAuthorizationService taskNodeAuthorizationService, ReviewOpinionMapper opinionMapper,
+                                           ReviewFileMapper fileMapper, CheckItemAttachmentMapper attachmentMapper) {
         this.taskMapper = taskMapper;
         this.templateMapper = templateMapper;
         this.taskCheckItemMapper = taskCheckItemMapper;
         this.assignmentAccessMapper = assignmentAccessMapper;
         this.taskNodeAuthorizationService = taskNodeAuthorizationService;
         this.opinionMapper = opinionMapper;
+        this.fileMapper = fileMapper;
+        this.attachmentMapper = attachmentMapper;
     }
 
     @Transactional
@@ -95,6 +104,23 @@ public class TaskCheckItemApplicationService {
         if (!isFinished(task)) {
             synchronizeIfActive(task);
         }
+    }
+
+    @Transactional
+    public void attachFile(long taskId, long itemId, long fileId, int sortNo, CurrentUser currentUser) {
+        ReviewTaskRecord task = requireTaskExists(taskId);
+        if (isFinished(task)) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许新增检查项附件");
+        }
+        taskNodeAuthorizationService.requireCurrentTaskProcessor(taskId, currentUser);
+        if (taskCheckItemMapper.findByTaskIdAndId(taskId, itemId) == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务");
+        }
+        ReviewFileRecord file = fileMapper.findById(fileId);
+        if (file == null || !Long.valueOf(taskId).equals(file.getTaskId())) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "附件文件不存在或不属于当前任务");
+        }
+        attachmentMapper.insert(new CheckItemAttachmentRecord(itemId, fileId, sortNo));
     }
 
     private List<CheckItemTemplateRecord> synchronizeIfActive(ReviewTaskRecord task) {

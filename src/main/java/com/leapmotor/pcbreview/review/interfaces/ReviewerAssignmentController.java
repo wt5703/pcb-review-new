@@ -60,7 +60,7 @@ public class ReviewerAssignmentController {
     ApiResponse<List<ReviewerAssignmentService.ReviewerView>> list(@PathVariable long taskId,
                                                                      @RequestParam @NotNull ReviewRole role,
                                                                      HttpServletRequest servletRequest) {
-        return ApiResponse.ok(reviewerAssignmentService.listActive(taskId, role), traceId(servletRequest));
+        return ApiResponse.ok(reviewerAssignmentService.listActive(taskId, role, CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     private String traceId(HttpServletRequest request) {

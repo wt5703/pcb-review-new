@@ -38,6 +38,13 @@ public interface ReviewOpinionMapper {
     @Select("SELECT status FROM review_opinion WHERE task_id=#{taskId} AND raised_by=#{raisedBy} ORDER BY id")
     List<String> findStatusesByTaskAndRaisedBy(long taskId, long raisedBy);
 
+    @Select("SELECT DISTINCT task_id FROM review_opinion WHERE status='PENDING_REPLY' AND task_id IN "
+            + "(SELECT id FROM review_task WHERE designer_id=#{designerId})")
+    List<Long> findPendingReplyTaskIdsForDesigner(long designerId);
+
+    @Select("SELECT DISTINCT task_id FROM review_opinion WHERE status='PENDING_CONFIRMATION' AND raised_by=#{raisedBy}")
+    List<Long> findPendingConfirmationTaskIdsForRaiser(long raisedBy);
+
     @Update("UPDATE review_opinion SET status=#{status}, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=#{id} AND version=#{version}")
     int updateStatus(ReviewOpinionRecord record);
 

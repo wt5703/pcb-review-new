@@ -44,6 +44,11 @@ public class OpinionController {
         return ApiResponse.ok(opinionApplicationService.list(taskId, CurrentUserHolder.require()), traceId(servletRequest));
     }
 
+    @GetMapping("/tasks/{taskId}/opinions/summary")
+    ApiResponse<OpinionApplicationService.OpinionSummary> summary(@PathVariable long taskId, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(opinionApplicationService.summary(taskId, CurrentUserHolder.require()), traceId(servletRequest));
+    }
+
     @PostMapping("/opinions/{opinionId}/replies")
     ApiResponse<OpinionApplicationService.OpinionView> reply(@PathVariable long opinionId, @Valid @RequestBody ReplyOpinionRequest request,
                                                                HttpServletRequest servletRequest) {

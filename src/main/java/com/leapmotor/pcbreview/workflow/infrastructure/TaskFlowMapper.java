@@ -4,6 +4,8 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Select;
 
+import java.util.List;
+
 /**
  * @author 王涛
  * @date 2026-09-18
@@ -17,4 +19,8 @@ public interface TaskFlowMapper {
     @Insert("INSERT INTO task_flow_record (id, task_id, from_status, to_status, action, operator_id, comment) "
             + "VALUES (#{id}, #{taskId}, #{fromStatus}, #{toStatus}, #{action}, #{operatorId}, #{comment})")
     int insert(TaskFlowRecord record);
+
+    @Select("SELECT id, task_id AS taskId, from_status AS fromStatus, to_status AS toStatus, action, operator_id AS operatorId, comment "
+            + "FROM task_flow_record WHERE task_id=#{taskId} ORDER BY id")
+    List<TaskFlowRecord> findByTaskId(long taskId);
 }

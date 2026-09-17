@@ -11,6 +11,8 @@ import com.leapmotor.pcbreview.review.infrastructure.CheckItemTemplateRecord;
 import com.leapmotor.pcbreview.review.infrastructure.TaskCheckItemMapper;
 import com.leapmotor.pcbreview.review.infrastructure.TaskCheckItemRecord;
 import com.leapmotor.pcbreview.review.infrastructure.ReviewOpinionMapper;
+import com.leapmotor.pcbreview.file.infrastructure.ReviewFileMapper;
+import com.leapmotor.pcbreview.review.infrastructure.CheckItemAttachmentMapper;
 import com.leapmotor.pcbreview.task.domain.ReviewType;
 import com.leapmotor.pcbreview.task.domain.TaskStatus;
 import com.leapmotor.pcbreview.task.infrastructure.ReviewTaskMapper;
@@ -40,8 +42,10 @@ class TaskCheckItemApplicationServiceTest {
     private final TaskAssignmentAccessMapper assignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
     private final TaskNodeAuthorizationService taskNodeAuthorizationService = mock(TaskNodeAuthorizationService.class);
     private final ReviewOpinionMapper opinionMapper = mock(ReviewOpinionMapper.class);
+    private final ReviewFileMapper fileMapper = mock(ReviewFileMapper.class);
+    private final CheckItemAttachmentMapper attachmentMapper = mock(CheckItemAttachmentMapper.class);
     private final TaskCheckItemApplicationService service = new TaskCheckItemApplicationService(taskMapper, templateMapper,
-            taskCheckItemMapper, assignmentAccessMapper, taskNodeAuthorizationService, opinionMapper);
+            taskCheckItemMapper, assignmentAccessMapper, taskNodeAuthorizationService, opinionMapper, fileMapper, attachmentMapper);
     private final CurrentUser pcbLeader = new CurrentUser(1L, Set.of(Role.PCB_LEADER));
 
     @Test

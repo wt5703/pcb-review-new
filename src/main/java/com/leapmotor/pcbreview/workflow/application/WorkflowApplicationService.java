@@ -2,6 +2,7 @@ package com.leapmotor.pcbreview.workflow.application;
 
 import com.leapmotor.pcbreview.audit.infrastructure.OperationAuditMapper;
 import com.leapmotor.pcbreview.audit.infrastructure.OperationAuditRecord;
+import com.leapmotor.pcbreview.archive.application.TaskArchiveApplicationService;
 import com.leapmotor.pcbreview.common.BusinessException;
 import com.leapmotor.pcbreview.common.ErrorCode;
 import com.leapmotor.pcbreview.file.infrastructure.ReviewFileMapper;
@@ -45,12 +46,14 @@ public class WorkflowApplicationService {
     private final TaskFlowMapper flowMapper;
     private final OperationAuditMapper auditMapper;
     private final OutboxEventMapper outboxEventMapper;
+    private final TaskArchiveApplicationService taskArchiveApplicationService;
     private final CompletionPolicy completionPolicy = new CompletionPolicy();
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public WorkflowApplicationService(ReviewTaskMapper taskMapper, TaskReviewerMapper reviewerMapper, ReviewOpinionMapper opinionMapper,
                                       ReviewFileMapper fileMapper, TaskCheckItemApplicationService checkItemApplicationService, TaskFlowMapper flowMapper,
-                                      OperationAuditMapper auditMapper, OutboxEventMapper outboxEventMapper) {
+                                      OperationAuditMapper auditMapper, OutboxEventMapper outboxEventMapper,
+                                      TaskArchiveApplicationService taskArchiveApplicationService) {
         this.taskMapper = taskMapper;
         this.reviewerMapper = reviewerMapper;
         this.opinionMapper = opinionMapper;
@@ -59,6 +62,7 @@ public class WorkflowApplicationService {
         this.flowMapper = flowMapper;
         this.auditMapper = auditMapper;
         this.outboxEventMapper = outboxEventMapper;
+        this.taskArchiveApplicationService = taskArchiveApplicationService;
     }
 
     @Transactional
@@ -94,6 +98,9 @@ public class WorkflowApplicationService {
                 fromStatus + " -> " + target.name()));
         outboxEventMapper.insert(new OutboxEventRecord("TASK_STATUS_CHANGED", "REVIEW_TASK", taskId,
                 "{\"taskId\":" + taskId + ",\"action\":\"" + action.name() + "\",\"toStatus\":\"" + target.name() + "\"}", "PENDING"));
+        if (action == WorkflowAction.FINISH) {
+            taskArchiveApplicationService.archive(task);
+        }
         return new WorkflowView(taskId, TaskStatus.valueOf(fromStatus), target, version + 1);
     }
 

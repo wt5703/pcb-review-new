@@ -22,7 +22,7 @@ public interface TaskCheckItemMapper {
     int insert(TaskCheckItemRecord record);
 
     @Update("UPDATE task_check_item SET template_item_key=#{templateItemKey}, parent_item_key=#{parentItemKey}, item_name=#{itemName}, "
-            + "sort_no=#{sortNo}, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE task_id=#{taskId} AND template_item_id=#{templateItemId}")
+            + "sort_no=#{sortNo}, updated_at=CURRENT_TIMESTAMP WHERE task_id=#{taskId} AND template_item_id=#{templateItemId}")
     int refreshTemplateSnapshot(TaskCheckItemRecord record);
 
     @Select("SELECT id, task_id AS taskId, template_item_id AS templateItemId, template_item_key AS templateItemKey, "

@@ -1,6 +1,7 @@
 package com.leapmotor.pcbreview.workflow.application;
 
 import com.leapmotor.pcbreview.audit.infrastructure.OperationAuditMapper;
+import com.leapmotor.pcbreview.archive.application.TaskArchiveApplicationService;
 import com.leapmotor.pcbreview.common.BusinessException;
 import com.leapmotor.pcbreview.file.infrastructure.ReviewFileMapper;
 import com.leapmotor.pcbreview.file.infrastructure.ReviewFileRecord;
@@ -44,8 +45,9 @@ class WorkflowApplicationServiceTest {
     private final TaskFlowMapper flowMapper = mock(TaskFlowMapper.class);
     private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
     private final OutboxEventMapper outboxEventMapper = mock(OutboxEventMapper.class);
+    private final TaskArchiveApplicationService taskArchiveApplicationService = mock(TaskArchiveApplicationService.class);
     private final WorkflowApplicationService service = new WorkflowApplicationService(taskMapper, reviewerMapper, opinionMapper,
-            fileMapper, checkItemApplicationService, flowMapper, auditMapper, outboxEventMapper);
+            fileMapper, checkItemApplicationService, flowMapper, auditMapper, outboxEventMapper, taskArchiveApplicationService);
 
     @Test
     void shouldStartPcbExpertReviewForAuthorizedDesigner() {
@@ -75,6 +77,7 @@ class WorkflowApplicationServiceTest {
 
         assertThat(view.toStatus()).isEqualTo(TaskStatus.FINISHED);
         verify(checkItemApplicationService).materializeActiveTaskItems(1001L);
+        verify(taskArchiveApplicationService).archive(any(ReviewTaskRecord.class));
     }
 
     @Test
@@ -99,6 +102,20 @@ class WorkflowApplicationServiceTest {
                 0L, null, new CurrentUser(1L, Set.of(Role.HARDWARE_DEPARTMENT_MANAGER)));
 
         assertThat(view.toStatus()).isEqualTo(TaskStatus.SCHEMATIC_PENDING_REVIEW);
+    }
+
+    @Test
+    void shouldRejectConcurrentFinishWhenTaskVersionUpdateLosesRace() {
+        when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PENDING_FINISH_CONFIRMATION));
+        when(reviewerMapper.findActiveByTaskId(1001L)).thenReturn(List.of(reviewer(20L)));
+        when(opinionMapper.findStatusesByTaskAndRaisedBy(1001L, 20L)).thenReturn(List.of());
+        when(fileMapper.findLatestByTaskId(1001L)).thenReturn(List.of(new ReviewFileRecord()));
+        when(taskMapper.update(any())).thenReturn(0);
+
+        assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.FINISH, 0L, null,
+                new CurrentUser(1L, Set.of(Role.PCB_LEADER))))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("任务状态已被其他操作更新，请刷新后重试");
     }
 
     private ReviewTaskRecord task(TaskStatus status) {
