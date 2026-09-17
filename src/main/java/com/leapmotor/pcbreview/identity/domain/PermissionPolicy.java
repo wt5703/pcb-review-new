@@ -17,17 +17,30 @@ public final class PermissionPolicy {
 
     public PermissionPolicy() {
         permissions.put(Role.HARDWARE_DEPARTMENT_MANAGER, EnumSet.allOf(Permission.class));
-        permissions.put(Role.DESIGNER, EnumSet.of(Permission.CREATE_TASK, Permission.REPLY_OPINION,
-                Permission.ASSIGN_PCB_EXPERT, Permission.ASSIGN_SCHEMATIC_OTHER_EXPERT, Permission.DOWNLOAD_DESIGN_FILE));
-        permissions.put(Role.PCB_LEADER, EnumSet.of(Permission.DOWNLOAD_DESIGN_FILE,
-                Permission.ASSIGN_PCB_MUTUAL_CHECK, Permission.FINISH_PCB_TASK));
-        permissions.put(Role.SCHEMATIC_LEADER, EnumSet.of(Permission.ASSIGN_SCHEMATIC_MUTUAL_CHECK,
-                Permission.FINISH_SCHEMATIC_TASK));
-        permissions.put(Role.HARDWARE_EXPERT, EnumSet.of(Permission.FILL_OPINION, Permission.CONFIRM_OPINION));
-        permissions.put(Role.EMC_EXPERT, EnumSet.of(Permission.FILL_OPINION, Permission.CONFIRM_OPINION,
-                Permission.DOWNLOAD_DESIGN_FILE));
-        permissions.put(Role.PROCESS_EXPERT, EnumSet.of(Permission.FILL_OPINION, Permission.CONFIRM_OPINION));
-        permissions.put(Role.STRUCTURE_EXPERT, EnumSet.of(Permission.FILL_OPINION, Permission.CONFIRM_OPINION));
+        permissions.put(Role.PCB_LEADER, EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.VIEW_ALL_TASKS,
+                Permission.UPLOAD_PCB_SCHEMATIC_FILE, Permission.DOWNLOAD_PCB_SCHEMATIC_FILE,
+                Permission.UPLOAD_PROCESS_FILE, Permission.DOWNLOAD_PROCESS_FILE, Permission.UPLOAD_STRUCTURE_FILE,
+                Permission.DOWNLOAD_STRUCTURE_FILE, Permission.MANAGE_USER, Permission.VIEW_USER,
+                Permission.ASSIGN_PROCESS_EXPERT, Permission.ASSIGN_STRUCTURE_EXPERT, Permission.ASSIGN_PCB_MUTUAL_CHECK, Permission.MANAGE_MUTUAL_CHECK,
+                Permission.VIEW_MUTUAL_CHECK_OPINION, Permission.FINISH_PCB_TASK));
+        permissions.put(Role.SCHEMATIC_LEADER, EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.VIEW_ALL_TASKS,
+                Permission.DOWNLOAD_PROCESS_FILE, Permission.DOWNLOAD_STRUCTURE_FILE,
+                Permission.ASSIGN_SCHEMATIC_MUTUAL_CHECK, Permission.FINISH_SCHEMATIC_TASK));
+        permissions.put(Role.HARDWARE_EXPERT, EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.VIEW_ALL_TASKS,
+                Permission.FILL_OPINION, Permission.CONFIRM_OPINION, Permission.VIEW_OPINION,
+                Permission.DOWNLOAD_PROCESS_FILE, Permission.DOWNLOAD_STRUCTURE_FILE));
+        permissions.put(Role.EMC_EXPERT, EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.VIEW_ALL_TASKS,
+                Permission.FILL_OPINION, Permission.CONFIRM_OPINION, Permission.VIEW_OPINION,
+                Permission.DOWNLOAD_PCB_SCHEMATIC_FILE, Permission.DOWNLOAD_PROCESS_FILE, Permission.DOWNLOAD_STRUCTURE_FILE));
+        permissions.put(Role.DESIGNER, EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.VIEW_ALL_TASKS,
+                Permission.CREATE_TASK, Permission.REPLY_OPINION, Permission.VIEW_OPINION,
+                Permission.UPLOAD_PCB_SCHEMATIC_FILE, Permission.DOWNLOAD_PCB_SCHEMATIC_FILE,
+                Permission.UPLOAD_PROCESS_FILE, Permission.DOWNLOAD_PROCESS_FILE, Permission.UPLOAD_STRUCTURE_FILE,
+                Permission.DOWNLOAD_STRUCTURE_FILE, Permission.ASSIGN_PCB_EXPERT, Permission.ASSIGN_SCHEMATIC_OTHER_EXPERT));
+        permissions.put(Role.PROCESS_EXPERT, EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.FILL_OPINION,
+                Permission.CONFIRM_OPINION, Permission.VIEW_OPINION, Permission.DOWNLOAD_PROCESS_FILE));
+        permissions.put(Role.STRUCTURE_EXPERT, EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.FILL_OPINION,
+                Permission.CONFIRM_OPINION, Permission.VIEW_OPINION, Permission.DOWNLOAD_STRUCTURE_FILE));
     }
 
     public boolean has(Set<Role> roles, Permission permission) {
@@ -35,7 +48,10 @@ public final class PermissionPolicy {
     }
 
     public boolean canViewAllTasks(Set<Role> roles) {
-        return roles.stream().noneMatch(role -> role == Role.PROCESS_EXPERT || role == Role.STRUCTURE_EXPERT)
-                || roles.stream().anyMatch(role -> role != Role.PROCESS_EXPERT && role != Role.STRUCTURE_EXPERT);
+        return has(roles, Permission.VIEW_ALL_TASKS);
+    }
+
+    public boolean canViewCurrentTask(Set<Role> roles, boolean assignedToTask) {
+        return canViewAllTasks(roles) || (assignedToTask && has(roles, Permission.VIEW_CURRENT_TASK));
     }
 }

@@ -5,6 +5,7 @@ import com.leapmotor.pcbreview.common.TraceIdFilter;
 import com.leapmotor.pcbreview.identity.application.CurrentUserHolder;
 import com.leapmotor.pcbreview.task.application.TaskApplicationService;
 import com.leapmotor.pcbreview.task.domain.ReviewType;
+import com.leapmotor.pcbreview.task.domain.TaskStatus;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -47,8 +49,16 @@ public class TaskController {
     }
 
     @GetMapping
-    ApiResponse<List<TaskApplicationService.TaskView>> list(HttpServletRequest servletRequest) {
-        return ApiResponse.ok(taskService.list(CurrentUserHolder.require()), traceId(servletRequest));
+    ApiResponse<TaskApplicationService.TaskPage> list(@RequestParam(required = false) String taskName,
+                                                      @RequestParam(required = false) String projectName,
+                                                      @RequestParam(required = false) Long designerId,
+                                                      @RequestParam(required = false) ReviewType reviewType,
+                                                      @RequestParam(required = false) TaskStatus status,
+                                                      @RequestParam(required = false) Integer pageNo,
+                                                      @RequestParam(required = false) Integer pageSize,
+                                                      HttpServletRequest servletRequest) {
+        return ApiResponse.ok(taskService.list(new TaskApplicationService.TaskQuery(taskName, projectName, designerId,
+                reviewType, status, pageNo, pageSize), CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @GetMapping("/{taskId}")

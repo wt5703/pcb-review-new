@@ -11,5 +11,6 @@ public enum ReviewerProcessStatus {
     PENDING,
     IN_PROGRESS,
     SUBMITTED,
-    COMPLETED
+    COMPLETED,
+    CANCELLED
 }

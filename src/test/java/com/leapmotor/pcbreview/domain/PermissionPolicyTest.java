@@ -21,9 +21,19 @@ class PermissionPolicyTest {
     private final PermissionPolicy policy = new PermissionPolicy();
 
     @Test
-    void emcExpertMayDownloadDesignFileButHardwareExpertMayNot() {
-        assertThat(policy.has(Set.of(Role.EMC_EXPERT), Permission.DOWNLOAD_DESIGN_FILE)).isTrue();
-        assertThat(policy.has(Set.of(Role.HARDWARE_EXPERT), Permission.DOWNLOAD_DESIGN_FILE)).isFalse();
+    void shouldApplyConfirmedPcbAndSchematicFileDownloadMatrix() {
+        assertThat(policy.has(Set.of(Role.EMC_EXPERT), Permission.DOWNLOAD_PCB_SCHEMATIC_FILE)).isTrue();
+        assertThat(policy.has(Set.of(Role.HARDWARE_EXPERT), Permission.DOWNLOAD_PCB_SCHEMATIC_FILE)).isFalse();
+        assertThat(policy.has(Set.of(Role.PCB_LEADER), Permission.UPLOAD_PCB_SCHEMATIC_FILE)).isTrue();
+        assertThat(policy.has(Set.of(Role.SCHEMATIC_LEADER), Permission.UPLOAD_PCB_SCHEMATIC_FILE)).isFalse();
+    }
+
+    @Test
+    void shouldApplyConfirmedProcessAndStructureFileDownloadMatrix() {
+        assertThat(policy.has(Set.of(Role.PROCESS_EXPERT), Permission.DOWNLOAD_PROCESS_FILE)).isTrue();
+        assertThat(policy.has(Set.of(Role.PROCESS_EXPERT), Permission.DOWNLOAD_STRUCTURE_FILE)).isFalse();
+        assertThat(policy.has(Set.of(Role.STRUCTURE_EXPERT), Permission.DOWNLOAD_PROCESS_FILE)).isFalse();
+        assertThat(policy.has(Set.of(Role.STRUCTURE_EXPERT), Permission.DOWNLOAD_STRUCTURE_FILE)).isTrue();
     }
 
     @Test
@@ -31,5 +41,13 @@ class PermissionPolicyTest {
         assertThat(policy.canViewAllTasks(Set.of(Role.PROCESS_EXPERT))).isFalse();
         assertThat(policy.canViewAllTasks(Set.of(Role.STRUCTURE_EXPERT))).isFalse();
         assertThat(policy.canViewAllTasks(Set.of(Role.DESIGNER))).isTrue();
+    }
+
+    @Test
+    void processAndStructureExpertsMayOnlyViewAssignedCurrentTasks() {
+        assertThat(policy.canViewCurrentTask(Set.of(Role.PROCESS_EXPERT), true)).isTrue();
+        assertThat(policy.canViewCurrentTask(Set.of(Role.PROCESS_EXPERT), false)).isFalse();
+        assertThat(policy.canViewCurrentTask(Set.of(Role.STRUCTURE_EXPERT), true)).isTrue();
+        assertThat(policy.canViewCurrentTask(Set.of(Role.STRUCTURE_EXPERT), false)).isFalse();
     }
 }

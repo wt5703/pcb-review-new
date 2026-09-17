@@ -14,6 +14,9 @@ import java.util.List;
  */
 @Mapper
 public interface ReviewTaskMapper {
+    @Select("SELECT COALESCE(MAX(id), 0) + 1 FROM review_task")
+    long nextId();
+
     @Insert("INSERT INTO review_task (id, review_type, task_name, project_name, designer_id, design_name, pcb_type, status, initial_file_ids, version) " +
             "VALUES (#{id}, #{reviewType}, #{taskName}, #{projectName}, #{designerId}, #{designName}, #{pcbType}, #{status}, #{initialFileIds}, #{version})")
     int insert(ReviewTaskRecord record);
