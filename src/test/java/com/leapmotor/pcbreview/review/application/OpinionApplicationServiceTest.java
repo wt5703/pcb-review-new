@@ -5,6 +5,7 @@ import com.leapmotor.pcbreview.audit.infrastructure.OperationAuditMapper;
 import com.leapmotor.pcbreview.identity.application.TaskNodeAuthorizationService;
 import com.leapmotor.pcbreview.identity.domain.Role;
 import com.leapmotor.pcbreview.identity.infrastructure.TaskAssignmentAccessMapper;
+import com.leapmotor.pcbreview.notification.application.OutboxEventPublisher;
 import com.leapmotor.pcbreview.review.domain.OpinionSourceType;
 import com.leapmotor.pcbreview.review.domain.OpinionStatus;
 import com.leapmotor.pcbreview.review.domain.ReplyType;
@@ -39,8 +40,9 @@ class OpinionApplicationServiceTest {
     private final TaskAssignmentAccessMapper assignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
     private final TaskNodeAuthorizationService taskNodeAuthorizationService = mock(TaskNodeAuthorizationService.class);
     private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
+    private final OutboxEventPublisher outboxEventPublisher = mock(OutboxEventPublisher.class);
     private final OpinionApplicationService service = new OpinionApplicationService(opinionMapper, taskMapper, taskCheckItemMapper,
-            assignmentAccessMapper, taskNodeAuthorizationService, auditMapper);
+            assignmentAccessMapper, taskNodeAuthorizationService, auditMapper, outboxEventPublisher);
 
     @Test
     void shouldRaiseMutualExtraOpinion() {

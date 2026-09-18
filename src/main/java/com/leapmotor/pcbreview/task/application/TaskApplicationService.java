@@ -7,6 +7,7 @@ import com.leapmotor.pcbreview.audit.infrastructure.OperationAuditRecord;
 import com.leapmotor.pcbreview.identity.application.CurrentUser;
 import com.leapmotor.pcbreview.identity.domain.Permission;
 import com.leapmotor.pcbreview.identity.domain.PermissionPolicy;
+import com.leapmotor.pcbreview.identity.domain.Role;
 import com.leapmotor.pcbreview.identity.infrastructure.TaskAssignmentAccessMapper;
 import com.leapmotor.pcbreview.notification.infrastructure.OutboxEventMapper;
 import com.leapmotor.pcbreview.notification.infrastructure.OutboxEventRecord;
@@ -48,6 +49,7 @@ public class TaskApplicationService {
     @Transactional
     public TaskView create(CreateTaskCommand command, CurrentUser currentUser) {
         require(currentUser, Permission.CREATE_TASK);
+        requireTaskDesigner(command.designerId(), currentUser, "创建");
         long id = nextId();
         ReviewTask task = ReviewTask.draft(id, command.reviewType(), command.taskName(), command.projectName(),
                 command.designerId(), command.designName(), command.pcbType());
@@ -60,9 +62,7 @@ public class TaskApplicationService {
     public TaskView submit(long taskId, List<Long> initialFileIds, CurrentUser currentUser) {
         ReviewTaskRecord existing = requireRecord(taskId);
         ReviewTask task = restore(existing);
-        if (!task.designerId().equals(currentUser.id()) && !permissionPolicy.has(currentUser.roles(), Permission.CREATE_TASK)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "无权提交该任务");
-        }
+        requireTaskDesigner(task.designerId(), currentUser, "提交");
         initialFileIds.forEach(task::addInitialFile);
         task.submit();
         if (taskMapper.update(toRecord(task, existing.getVersion())) != 1) {
@@ -127,6 +127,15 @@ public class TaskApplicationService {
     private void require(CurrentUser currentUser, Permission permission) {
         if (!permissionPolicy.has(currentUser.roles(), permission)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "无对应功能权限");
+        }
+    }
+
+    private void requireTaskDesigner(Long designerId, CurrentUser currentUser, String action) {
+        if (designerId == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "任务设计者不能为空");
+        }
+        if (!designerId.equals(currentUser.id()) && !currentUser.roles().contains(Role.HARDWARE_DEPARTMENT_MANAGER)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅任务设计者可以" + action + "该任务");
         }
     }
 

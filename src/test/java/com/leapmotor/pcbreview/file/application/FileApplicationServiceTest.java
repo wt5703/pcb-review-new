@@ -6,8 +6,11 @@ import com.leapmotor.pcbreview.file.infrastructure.ReviewFileRecord;
 import com.leapmotor.pcbreview.identity.application.CurrentUser;
 import com.leapmotor.pcbreview.identity.domain.Role;
 import com.leapmotor.pcbreview.identity.infrastructure.TaskAssignmentAccessMapper;
+import com.leapmotor.pcbreview.notification.application.OutboxEventPublisher;
+import com.leapmotor.pcbreview.audit.infrastructure.OperationAuditMapper;
 import com.leapmotor.pcbreview.task.infrastructure.ReviewTaskMapper;
 import com.leapmotor.pcbreview.task.infrastructure.ReviewTaskRecord;
+import com.leapmotor.pcbreview.task.domain.TaskStatus;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;
@@ -28,8 +31,11 @@ class FileApplicationServiceTest {
     private final ReviewFileMapper fileMapper = mock(ReviewFileMapper.class);
     private final ReviewTaskMapper taskMapper = mock(ReviewTaskMapper.class);
     private final TaskAssignmentAccessMapper accessMapper = mock(TaskAssignmentAccessMapper.class);
+    private final OutboxEventPublisher outboxEventPublisher = mock(OutboxEventPublisher.class);
+    private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
     private final com.leapmotor.pcbreview.file.infrastructure.MockFileStorage storage = new com.leapmotor.pcbreview.file.infrastructure.MockFileStorage();
-    private final FileApplicationService service = new FileApplicationService(fileMapper, taskMapper, accessMapper, storage);
+    private final FileApplicationService service = new FileApplicationService(fileMapper, taskMapper, accessMapper, storage,
+            outboxEventPublisher, auditMapper);
     private final CurrentUser designer = new CurrentUser(10L, Set.of(Role.DESIGNER));
 
     @Test
@@ -50,6 +56,7 @@ class FileApplicationServiceTest {
         assertThat(second.versionNo()).isEqualTo(2);
         verify(fileMapper).markLatestAsHistorical(1L, FileCategory.PCB_SCHEMATIC.name(), "BMS-P1");
         verify(fileMapper, org.mockito.Mockito.times(2)).insert(any(ReviewFileRecord.class));
+        verify(auditMapper, org.mockito.Mockito.times(2)).insert(any());
     }
 
     @Test
@@ -65,6 +72,27 @@ class FileApplicationServiceTest {
         assertThatThrownBy(() -> service.requestDownload(101L, new CurrentUser(21L, Set.of(Role.HARDWARE_EXPERT))))
                 .isInstanceOf(com.leapmotor.pcbreview.common.BusinessException.class)
                 .hasMessage("无对应文件操作权限");
+    }
+
+    @Test
+    void shouldRejectUploadForFinishedTask() {
+        ReviewTaskRecord finished = taskRecord();
+        finished.setStatus(TaskStatus.FINISHED.name());
+        when(taskMapper.findById(1L)).thenReturn(finished);
+
+        assertThatThrownBy(() -> service.createUploadSession(1L, FileCategory.PCB_SCHEMATIC, designer))
+                .isInstanceOf(com.leapmotor.pcbreview.common.BusinessException.class)
+                .hasMessage("已结束任务不允许上传新文件");
+    }
+
+    @Test
+    void shouldRejectAnotherDesignerUploadingPcbFile() {
+        when(taskMapper.findById(1L)).thenReturn(taskRecord());
+
+        assertThatThrownBy(() -> service.createUploadSession(1L, FileCategory.PCB_SCHEMATIC,
+                new CurrentUser(11L, Set.of(Role.DESIGNER))))
+                .isInstanceOf(com.leapmotor.pcbreview.common.BusinessException.class)
+                .hasMessage("仅任务设计者可以上传该任务的 PCB 或原理图文件");
     }
 
     private ReviewFileRecord record(long id, String md5, int versionNo) {
@@ -86,6 +114,7 @@ class FileApplicationServiceTest {
     private ReviewTaskRecord taskRecord() {
         ReviewTaskRecord record = new ReviewTaskRecord();
         record.setId(1L);
+        record.setDesignerId(10L);
         return record;
     }
 }

@@ -2,6 +2,9 @@ package com.leapmotor.pcbreview.notification.infrastructure;
 
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Select;
+
+import java.util.List;
 
 /**
  * @author 王涛
@@ -13,4 +16,9 @@ public interface NotificationSendRecordMapper {
     @Insert("INSERT INTO notification_send_record (outbox_event_id, event_type, recipient, template_code, delivery_status, failure_reason) "
             + "VALUES (#{outboxEventId}, #{eventType}, #{recipient}, #{templateCode}, #{deliveryStatus}, #{failureReason})")
     int insert(NotificationSendRecord record);
+
+    @Select("SELECT outbox_event_id AS outboxEventId, event_type AS eventType, recipient, template_code AS templateCode, "
+            + "delivery_status AS deliveryStatus, failure_reason AS failureReason FROM notification_send_record "
+            + "WHERE outbox_event_id=#{outboxEventId} ORDER BY id")
+    List<NotificationSendRecord> findByOutboxEventId(long outboxEventId);
 }

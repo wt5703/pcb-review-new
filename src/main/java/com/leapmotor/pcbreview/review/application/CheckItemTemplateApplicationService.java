@@ -2,6 +2,8 @@ package com.leapmotor.pcbreview.review.application;
 
 import com.leapmotor.pcbreview.common.BusinessException;
 import com.leapmotor.pcbreview.common.ErrorCode;
+import com.leapmotor.pcbreview.audit.infrastructure.OperationAuditMapper;
+import com.leapmotor.pcbreview.audit.infrastructure.OperationAuditRecord;
 import com.leapmotor.pcbreview.identity.application.CurrentUser;
 import com.leapmotor.pcbreview.identity.domain.Permission;
 import com.leapmotor.pcbreview.identity.domain.PermissionPolicy;
@@ -19,10 +21,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class CheckItemTemplateApplicationService {
     private final CheckItemTemplateMapper templateMapper;
+    private final OperationAuditMapper auditMapper;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
-    public CheckItemTemplateApplicationService(CheckItemTemplateMapper templateMapper) {
+    public CheckItemTemplateApplicationService(CheckItemTemplateMapper templateMapper, OperationAuditMapper auditMapper) {
         this.templateMapper = templateMapper;
+        this.auditMapper = auditMapper;
     }
 
     @Transactional
@@ -38,6 +42,7 @@ public class CheckItemTemplateApplicationService {
         record.setEnabled(true);
         record.setVersion(0L);
         templateMapper.insert(record);
+        appendAudit(record.getId(), "CHECK_ITEM_TEMPLATE_CREATED", currentUser.id(), record.getItemKey());
         return TemplateView.from(record);
     }
 
@@ -58,6 +63,7 @@ public class CheckItemTemplateApplicationService {
             throw new BusinessException(ErrorCode.VERSION_CONFLICT, "检查项模板已被其他操作更新，请刷新后重试");
         }
         record.setVersion(record.getVersion() + 1);
+        appendAudit(record.getId(), "CHECK_ITEM_TEMPLATE_UPDATED", currentUser.id(), record.getItemKey());
         return TemplateView.from(record);
     }
 
@@ -65,6 +71,10 @@ public class CheckItemTemplateApplicationService {
         if (!permissionPolicy.has(currentUser.roles(), Permission.MANAGE_MUTUAL_CHECK)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "无检查项模板管理权限");
         }
+    }
+
+    private void appendAudit(long templateId, String action, long operatorId, String detail) {
+        auditMapper.insert(new OperationAuditRecord("CHECK_ITEM_TEMPLATE", templateId, action, operatorId, detail));
     }
 
     public record CreateTemplateCommand(ReviewType reviewType, String itemKey, String parentItemKey, String itemName, int sortNo) {

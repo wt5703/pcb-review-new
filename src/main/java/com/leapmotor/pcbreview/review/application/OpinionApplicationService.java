@@ -9,6 +9,7 @@ import com.leapmotor.pcbreview.identity.application.TaskNodeAuthorizationService
 import com.leapmotor.pcbreview.identity.domain.Permission;
 import com.leapmotor.pcbreview.identity.domain.PermissionPolicy;
 import com.leapmotor.pcbreview.identity.infrastructure.TaskAssignmentAccessMapper;
+import com.leapmotor.pcbreview.notification.application.OutboxEventPublisher;
 import com.leapmotor.pcbreview.review.domain.OpinionSourceType;
 import com.leapmotor.pcbreview.review.domain.OpinionStatus;
 import com.leapmotor.pcbreview.review.domain.ReplyType;
@@ -38,17 +39,19 @@ public class OpinionApplicationService {
     private final TaskAssignmentAccessMapper assignmentAccessMapper;
     private final TaskNodeAuthorizationService taskNodeAuthorizationService;
     private final OperationAuditMapper auditMapper;
+    private final OutboxEventPublisher outboxEventPublisher;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public OpinionApplicationService(ReviewOpinionMapper opinionMapper, ReviewTaskMapper taskMapper, TaskCheckItemMapper taskCheckItemMapper,
                                      TaskAssignmentAccessMapper assignmentAccessMapper, TaskNodeAuthorizationService taskNodeAuthorizationService,
-                                     OperationAuditMapper auditMapper) {
+                                     OperationAuditMapper auditMapper, OutboxEventPublisher outboxEventPublisher) {
         this.opinionMapper = opinionMapper;
         this.taskMapper = taskMapper;
         this.taskCheckItemMapper = taskCheckItemMapper;
         this.assignmentAccessMapper = assignmentAccessMapper;
         this.taskNodeAuthorizationService = taskNodeAuthorizationService;
         this.auditMapper = auditMapper;
+        this.outboxEventPublisher = outboxEventPublisher;
     }
 
     @Transactional
@@ -76,6 +79,7 @@ public class OpinionApplicationService {
         record.setVersion(0L);
         opinionMapper.insert(record);
         appendAudit(record, "OPINION_RAISED", currentUser.id());
+        outboxEventPublisher.publishTaskEvent("OPINION_RAISED", record.getTaskId(), currentUser.id());
         return OpinionView.from(record);
     }
 
@@ -98,6 +102,7 @@ public class OpinionApplicationService {
         opinionMapper.insertReply(reply);
         updateStatus(opinion, OpinionStatus.PENDING_CONFIRMATION);
         appendAudit(opinion, "OPINION_REPLIED", currentUser.id());
+        outboxEventPublisher.publishTaskEvent("OPINION_REPLIED", opinion.getTaskId(), currentUser.id());
         return OpinionView.from(opinion);
     }
 
@@ -123,6 +128,8 @@ public class OpinionApplicationService {
         opinionMapper.insertConfirmation(confirmation);
         updateStatus(opinion, command.passed() ? OpinionStatus.CONFIRMED_PASS : OpinionStatus.PENDING_REPLY);
         appendAudit(opinion, command.passed() ? "OPINION_CONFIRMED_PASS" : "OPINION_CONFIRMED_REJECTED", currentUser.id());
+        outboxEventPublisher.publishTaskEvent(command.passed() ? "OPINION_CONFIRMED_PASS" : "OPINION_CONFIRMED_REJECTED",
+                opinion.getTaskId(), currentUser.id());
         return OpinionView.from(opinion);
     }
 

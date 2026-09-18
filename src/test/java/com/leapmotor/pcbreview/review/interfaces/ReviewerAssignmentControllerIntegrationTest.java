@@ -69,7 +69,25 @@ class ReviewerAssignmentControllerIntegrationTest {
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
+    @Test
+    void shouldRejectPcbExpertAssignmentByAnotherDesigner() throws Exception {
+        long taskId = 8403L;
+        taskMapper.insert(task(taskId, TaskStatus.PCB_PENDING_REVIEW));
+
+        mockMvc.perform(post("/tasks/{taskId}/reviewers", taskId)
+                        .header("X-Mock-User-Id", "11")
+                        .header("X-Mock-Roles", "DESIGNER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"role\":\"PCB_EXPERT\",\"reviewerIds\":[20]}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
     private ReviewTaskRecord task(long taskId) {
+        return task(taskId, TaskStatus.PENDING_MUTUAL_ASSIGNMENT);
+    }
+
+    private ReviewTaskRecord task(long taskId, TaskStatus status) {
         ReviewTaskRecord task = new ReviewTaskRecord();
         task.setId(taskId);
         task.setReviewType(ReviewType.PCB.name());
@@ -78,7 +96,7 @@ class ReviewerAssignmentControllerIntegrationTest {
         task.setDesignerId(10L);
         task.setDesignName("BMS-P1");
         task.setPcbType("BMU");
-        task.setStatus(TaskStatus.MUTUAL_REVIEWING.name());
+        task.setStatus(status.name());
         task.setInitialFileIds("8403");
         task.setVersion(0L);
         return task;

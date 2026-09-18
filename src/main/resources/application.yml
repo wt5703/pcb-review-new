@@ -16,3 +16,8 @@ server:
 logging:
   level:
     com.leapmotor.pcbreview: INFO
+springdoc:
+  api-docs:
+    path: /openapi.json
+  swagger-ui:
+    path: /swagger-ui.html

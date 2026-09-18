@@ -2,6 +2,8 @@ package com.leapmotor.pcbreview.review.application;
 
 import com.leapmotor.pcbreview.common.BusinessException;
 import com.leapmotor.pcbreview.common.ErrorCode;
+import com.leapmotor.pcbreview.audit.infrastructure.OperationAuditMapper;
+import com.leapmotor.pcbreview.audit.infrastructure.OperationAuditRecord;
 import com.leapmotor.pcbreview.file.infrastructure.ReviewFileMapper;
 import com.leapmotor.pcbreview.file.infrastructure.ReviewFileRecord;
 import com.leapmotor.pcbreview.identity.application.CurrentUser;
@@ -45,12 +47,14 @@ public class TaskCheckItemApplicationService {
     private final ReviewOpinionMapper opinionMapper;
     private final ReviewFileMapper fileMapper;
     private final CheckItemAttachmentMapper attachmentMapper;
+    private final OperationAuditMapper auditMapper;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public TaskCheckItemApplicationService(ReviewTaskMapper taskMapper, CheckItemTemplateMapper templateMapper,
                                            TaskCheckItemMapper taskCheckItemMapper, TaskAssignmentAccessMapper assignmentAccessMapper,
                                            TaskNodeAuthorizationService taskNodeAuthorizationService, ReviewOpinionMapper opinionMapper,
-                                           ReviewFileMapper fileMapper, CheckItemAttachmentMapper attachmentMapper) {
+                                           ReviewFileMapper fileMapper, CheckItemAttachmentMapper attachmentMapper,
+                                           OperationAuditMapper auditMapper) {
         this.taskMapper = taskMapper;
         this.templateMapper = templateMapper;
         this.taskCheckItemMapper = taskCheckItemMapper;
@@ -59,6 +63,7 @@ public class TaskCheckItemApplicationService {
         this.opinionMapper = opinionMapper;
         this.fileMapper = fileMapper;
         this.attachmentMapper = attachmentMapper;
+        this.auditMapper = auditMapper;
     }
 
     @Transactional
@@ -95,6 +100,7 @@ public class TaskCheckItemApplicationService {
             throw new BusinessException(ErrorCode.VERSION_CONFLICT, "检查项已被其他操作更新，请刷新后重试");
         }
         record.setVersion(record.getVersion() + 1);
+        appendAudit(record.getId(), "CHECK_ITEM_SUBMITTED", currentUser.id(), command.result().name());
         return CheckItemView.from(record);
     }
 
@@ -121,6 +127,7 @@ public class TaskCheckItemApplicationService {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "附件文件不存在或不属于当前任务");
         }
         attachmentMapper.insert(new CheckItemAttachmentRecord(itemId, fileId, sortNo));
+        appendAudit(itemId, "CHECK_ITEM_ATTACHMENT_ADDED", currentUser.id(), "fileId=" + fileId);
     }
 
     private List<CheckItemTemplateRecord> synchronizeIfActive(ReviewTaskRecord task) {
@@ -176,6 +183,10 @@ public class TaskCheckItemApplicationService {
 
     private boolean isFinished(ReviewTaskRecord task) {
         return TaskStatus.FINISHED.name().equals(task.getStatus());
+    }
+
+    private void appendAudit(long itemId, String action, long operatorId, String detail) {
+        auditMapper.insert(new OperationAuditRecord("TASK_CHECK_ITEM", itemId, action, operatorId, detail));
     }
 
     private void validateCommand(SubmitCheckItemCommand command, long taskId, long itemId) {

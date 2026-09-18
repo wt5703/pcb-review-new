@@ -6,8 +6,13 @@ import com.leapmotor.pcbreview.review.domain.ReviewRole;
 import com.leapmotor.pcbreview.review.domain.ReviewerProcessStatus;
 import com.leapmotor.pcbreview.review.infrastructure.TaskReviewerMapper;
 import com.leapmotor.pcbreview.review.infrastructure.TaskReviewerRecord;
+import com.leapmotor.pcbreview.task.domain.ReviewType;
+import com.leapmotor.pcbreview.task.domain.TaskStatus;
 import com.leapmotor.pcbreview.task.infrastructure.ReviewTaskMapper;
+import com.leapmotor.pcbreview.task.infrastructure.ReviewTaskRecord;
 import com.leapmotor.pcbreview.identity.infrastructure.TaskAssignmentAccessMapper;
+import com.leapmotor.pcbreview.notification.application.OutboxEventPublisher;
+import com.leapmotor.pcbreview.audit.infrastructure.OperationAuditMapper;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -30,14 +35,16 @@ class ReviewerAssignmentServiceTest {
     private final com.leapmotor.pcbreview.identity.application.TaskNodeAuthorizationService taskNodeAuthorizationService =
             mock(com.leapmotor.pcbreview.identity.application.TaskNodeAuthorizationService.class);
     private final TaskAssignmentAccessMapper assignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
+    private final OutboxEventPublisher outboxEventPublisher = mock(OutboxEventPublisher.class);
+    private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
     private final ReviewerAssignmentService service = new ReviewerAssignmentService(reviewerMapper, taskMapper, taskNodeAuthorizationService,
-            assignmentAccessMapper);
+            assignmentAccessMapper, outboxEventPublisher, auditMapper);
     private final CurrentUser pcbLeader = new CurrentUser(1L, Set.of(Role.PCB_LEADER));
 
     @Test
     void shouldAssignMultipleMutualCheckReviewers() {
         when(reviewerMapper.nextId()).thenReturn(101L, 102L);
-        when(taskMapper.findById(1001L)).thenReturn(new com.leapmotor.pcbreview.task.infrastructure.ReviewTaskRecord());
+        when(taskMapper.findById(1001L)).thenReturn(task());
         when(reviewerMapper.findActiveByTaskAndRole(1001L, ReviewRole.PCB_MUTUAL_CHECK.name())).thenReturn(List.of());
 
         List<ReviewerAssignmentService.ReviewerView> reviewers = service.assign(1001L, ReviewRole.PCB_MUTUAL_CHECK,
@@ -45,6 +52,7 @@ class ReviewerAssignmentServiceTest {
 
         assertThat(reviewers).hasSize(2).allMatch(view -> view.status() == ReviewerProcessStatus.PENDING);
         verify(reviewerMapper, org.mockito.Mockito.times(2)).insert(any(TaskReviewerRecord.class));
+        verify(auditMapper).insert(any());
     }
 
     @Test
@@ -64,5 +72,14 @@ class ReviewerAssignmentServiceTest {
         record.setReviewerId(reviewerId);
         record.setProcessStatus(status.name());
         return record;
+    }
+
+    private ReviewTaskRecord task() {
+        ReviewTaskRecord task = new ReviewTaskRecord();
+        task.setId(1001L);
+        task.setReviewType(ReviewType.PCB.name());
+        task.setDesignerId(10L);
+        task.setStatus(TaskStatus.PENDING_MUTUAL_ASSIGNMENT.name());
+        return task;
     }
 }

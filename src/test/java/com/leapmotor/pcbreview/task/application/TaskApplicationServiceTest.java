@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -56,6 +57,15 @@ class TaskApplicationServiceTest {
         assertThat(result.status()).isEqualTo(TaskStatus.PCB_PENDING_REVIEW.name());
         verify(auditMapper).insert(any());
         verify(outboxEventMapper).insert(any());
+    }
+
+    @Test
+    void shouldRejectAnotherDesignerSubmittingTask() {
+        when(taskMapper.findById(101L)).thenReturn(record(101L, "BMS PCB评审", TaskStatus.DRAFT, 0L));
+
+        assertThatThrownBy(() -> service.submit(101L, List.of(3001L), new CurrentUser(11L, Set.of(Role.DESIGNER))))
+                .isInstanceOf(com.leapmotor.pcbreview.common.BusinessException.class)
+                .hasMessage("仅任务设计者可以提交该任务");
     }
 
     @Test

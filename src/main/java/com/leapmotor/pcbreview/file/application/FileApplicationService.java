@@ -2,6 +2,8 @@ package com.leapmotor.pcbreview.file.application;
 
 import com.leapmotor.pcbreview.common.BusinessException;
 import com.leapmotor.pcbreview.common.ErrorCode;
+import com.leapmotor.pcbreview.audit.infrastructure.OperationAuditMapper;
+import com.leapmotor.pcbreview.audit.infrastructure.OperationAuditRecord;
 import com.leapmotor.pcbreview.file.domain.FileCategory;
 import com.leapmotor.pcbreview.file.domain.FileVersionPolicy;
 import com.leapmotor.pcbreview.file.domain.UploadDecision;
@@ -10,9 +12,12 @@ import com.leapmotor.pcbreview.file.infrastructure.ReviewFileMapper;
 import com.leapmotor.pcbreview.file.infrastructure.ReviewFileRecord;
 import com.leapmotor.pcbreview.identity.application.CurrentUser;
 import com.leapmotor.pcbreview.identity.domain.PermissionPolicy;
+import com.leapmotor.pcbreview.identity.domain.Role;
 import com.leapmotor.pcbreview.identity.infrastructure.TaskAssignmentAccessMapper;
+import com.leapmotor.pcbreview.notification.application.OutboxEventPublisher;
 import com.leapmotor.pcbreview.task.infrastructure.ReviewTaskMapper;
 import com.leapmotor.pcbreview.task.infrastructure.ReviewTaskRecord;
+import com.leapmotor.pcbreview.task.domain.TaskStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,15 +32,20 @@ public class FileApplicationService {
     private final ReviewTaskMapper taskMapper;
     private final TaskAssignmentAccessMapper taskAssignmentAccessMapper;
     private final MockFileStorage storage;
+    private final OutboxEventPublisher outboxEventPublisher;
+    private final OperationAuditMapper auditMapper;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
     private final FileVersionPolicy fileVersionPolicy = new FileVersionPolicy();
 
     public FileApplicationService(ReviewFileMapper fileMapper, ReviewTaskMapper taskMapper,
-                                  TaskAssignmentAccessMapper taskAssignmentAccessMapper, MockFileStorage storage) {
+                                  TaskAssignmentAccessMapper taskAssignmentAccessMapper, MockFileStorage storage,
+                                  OutboxEventPublisher outboxEventPublisher, OperationAuditMapper auditMapper) {
         this.fileMapper = fileMapper;
         this.taskMapper = taskMapper;
         this.taskAssignmentAccessMapper = taskAssignmentAccessMapper;
         this.storage = storage;
+        this.outboxEventPublisher = outboxEventPublisher;
+        this.auditMapper = auditMapper;
     }
 
     public UploadSessionView createUploadSession(long taskId, FileCategory category, CurrentUser currentUser) {
@@ -57,10 +67,14 @@ public class FileApplicationService {
             fileMapper.markLatestAsHistorical(command.taskId(), command.category().name(), command.businessFileKey());
             ReviewFileRecord next = toRecord(nextId(), command, currentUser.id(), session.companyFileId(), decision.versionNo());
             fileMapper.insert(next);
+            appendAudit(next, "FILE_VERSION_REGISTERED", currentUser.id());
+            outboxEventPublisher.publishTaskEvent("FILE_VERSION_REGISTERED", command.taskId(), currentUser.id());
             return FileView.from(next);
         }
         ReviewFileRecord first = toRecord(nextId(), command, currentUser.id(), session.companyFileId(), 1);
         fileMapper.insert(first);
+        appendAudit(first, "FILE_VERSION_REGISTERED", currentUser.id());
+        outboxEventPublisher.publishTaskEvent("FILE_VERSION_REGISTERED", command.taskId(), currentUser.id());
         return FileView.from(first);
     }
 
@@ -82,6 +96,15 @@ public class FileApplicationService {
         if (task == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
         }
+        if (upload && TaskStatus.FINISHED.name().equals(task.getStatus())) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许上传新文件");
+        }
+        if (upload && category == FileCategory.PCB_SCHEMATIC && currentUser.roles().contains(Role.DESIGNER)
+                && !task.getDesignerId().equals(currentUser.id())
+                && !currentUser.roles().contains(Role.PCB_LEADER)
+                && !currentUser.roles().contains(Role.HARDWARE_DEPARTMENT_MANAGER)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅任务设计者可以上传该任务的 PCB 或原理图文件");
+        }
         if (!permissionPolicy.canViewAllTasks(currentUser.roles())
                 && !taskAssignmentAccessMapper.isAssignedToTask(taskId, currentUser.id())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该任务的文件");
@@ -90,6 +113,11 @@ public class FileApplicationService {
 
     private synchronized long nextId() {
         return fileMapper.nextId();
+    }
+
+    private void appendAudit(ReviewFileRecord file, String action, long operatorId) {
+        auditMapper.insert(new OperationAuditRecord("REVIEW_FILE", file.getId(), action, operatorId,
+                file.getFileCategory() + ":v" + file.getVersionNo()));
     }
 
     private ReviewFileRecord toRecord(long id, RegisterFileCommand command, long uploadedBy, String companyFileId, int versionNo) {
