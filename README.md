@@ -1,12 +1,13 @@
-# PCB 评审平台后端
+# PCB 评审平台
 
-PCB 评审平台的后端服务。当前可用本地 H2 Mock 环境完整运行；生产数据库预留 MySQL 8 配置。前端不在本工程范围内。
+PCB 评审平台包含 Spring Boot 后端与 Vue 3 前端。当前可用本地 H2 Mock 环境完整运行；生产数据库预留 MySQL 8 配置。
 
 ## 运行要求
 
 - JDK 17
 - Apache Maven 3.9+
 - MySQL 8（仅启用 MySQL Profile 时需要）
+- Node.js 20+ 与 pnpm（运行前端时需要）
 
 ## 本地启动
 
@@ -21,6 +22,27 @@ mvn spring-boot:run
 
 - Swagger UI：`http://localhost:8080/api/v1/swagger-ui.html`
 - OpenAPI JSON：`http://localhost:8080/api/v1/openapi.json`
+
+## 前端启动
+
+前端工程位于 `frontend/`，使用 Vue 3、TypeScript 与 Vite，视觉结构对应交互原型中的工作台、任务、互检管理和任务详情多标签页。
+
+先在一个终端启动后端，再在第二个终端启动前端：
+
+```powershell
+cd frontend
+pnpm install
+pnpm dev
+```
+
+浏览器访问 `http://localhost:5173`。Vite 已将 `/api/v1` 代理至 `http://localhost:8080`，前端页面右上角可设置本地 Mock 用户与角色。生产构建校验：
+
+```powershell
+cd frontend
+pnpm build
+```
+
+当前后端尚未提供全局邮件记录、用户目录、模板列表查询及任务版本号读取接口；前端相应位置会明确展示接口待提供状态，避免以静态数据冒充真实接口结果。
 
 本地身份 Mock 由下列请求头提供：
 
