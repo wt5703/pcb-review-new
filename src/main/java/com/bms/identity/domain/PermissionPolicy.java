@@ -20,7 +20,7 @@ public final class PermissionPolicy {
         permissions.put(Role.PCB_LEADER, EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.VIEW_ALL_TASKS,
                 Permission.UPLOAD_PCB_SCHEMATIC_FILE, Permission.DOWNLOAD_PCB_SCHEMATIC_FILE,
                 Permission.UPLOAD_PROCESS_FILE, Permission.DOWNLOAD_PROCESS_FILE, Permission.UPLOAD_STRUCTURE_FILE,
-                Permission.DOWNLOAD_STRUCTURE_FILE, Permission.MANAGE_USER, Permission.VIEW_USER,
+                Permission.DOWNLOAD_STRUCTURE_FILE, Permission.UPLOAD_MUTUAL_CHECK_ATTACHMENT, Permission.DOWNLOAD_MUTUAL_CHECK_ATTACHMENT, Permission.UPLOAD_OPINION_ATTACHMENT, Permission.DOWNLOAD_OPINION_ATTACHMENT, Permission.MANAGE_USER, Permission.VIEW_USER,
                 Permission.ASSIGN_PROCESS_EXPERT, Permission.ASSIGN_STRUCTURE_EXPERT, Permission.ASSIGN_PCB_MUTUAL_CHECK, Permission.MANAGE_MUTUAL_CHECK,
                 Permission.VIEW_MUTUAL_CHECK_OPINION, Permission.FINISH_PCB_TASK));
         permissions.put(Role.SCHEMATIC_LEADER, EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.VIEW_ALL_TASKS,
@@ -28,19 +28,19 @@ public final class PermissionPolicy {
                 Permission.ASSIGN_SCHEMATIC_MUTUAL_CHECK, Permission.FINISH_SCHEMATIC_TASK));
         permissions.put(Role.HARDWARE_EXPERT, EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.VIEW_ALL_TASKS,
                 Permission.FILL_OPINION, Permission.CONFIRM_OPINION, Permission.VIEW_OPINION,
-                Permission.DOWNLOAD_PROCESS_FILE, Permission.DOWNLOAD_STRUCTURE_FILE));
+                Permission.DOWNLOAD_PROCESS_FILE, Permission.DOWNLOAD_STRUCTURE_FILE, Permission.UPLOAD_MUTUAL_CHECK_ATTACHMENT, Permission.DOWNLOAD_MUTUAL_CHECK_ATTACHMENT, Permission.UPLOAD_OPINION_ATTACHMENT, Permission.DOWNLOAD_OPINION_ATTACHMENT));
         permissions.put(Role.EMC_EXPERT, EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.VIEW_ALL_TASKS,
                 Permission.FILL_OPINION, Permission.CONFIRM_OPINION, Permission.VIEW_OPINION,
-                Permission.DOWNLOAD_PCB_SCHEMATIC_FILE, Permission.DOWNLOAD_PROCESS_FILE, Permission.DOWNLOAD_STRUCTURE_FILE));
+                Permission.DOWNLOAD_PCB_SCHEMATIC_FILE, Permission.DOWNLOAD_PROCESS_FILE, Permission.DOWNLOAD_STRUCTURE_FILE, Permission.UPLOAD_MUTUAL_CHECK_ATTACHMENT, Permission.DOWNLOAD_MUTUAL_CHECK_ATTACHMENT, Permission.UPLOAD_OPINION_ATTACHMENT, Permission.DOWNLOAD_OPINION_ATTACHMENT));
         permissions.put(Role.DESIGNER, EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.VIEW_ALL_TASKS,
                 Permission.CREATE_TASK, Permission.REPLY_OPINION, Permission.VIEW_OPINION,
                 Permission.UPLOAD_PCB_SCHEMATIC_FILE, Permission.DOWNLOAD_PCB_SCHEMATIC_FILE,
                 Permission.UPLOAD_PROCESS_FILE, Permission.DOWNLOAD_PROCESS_FILE, Permission.UPLOAD_STRUCTURE_FILE,
-                Permission.DOWNLOAD_STRUCTURE_FILE, Permission.ASSIGN_PCB_EXPERT, Permission.ASSIGN_SCHEMATIC_OTHER_EXPERT));
+                Permission.DOWNLOAD_STRUCTURE_FILE, Permission.UPLOAD_MUTUAL_CHECK_ATTACHMENT, Permission.DOWNLOAD_MUTUAL_CHECK_ATTACHMENT, Permission.UPLOAD_OPINION_ATTACHMENT, Permission.DOWNLOAD_OPINION_ATTACHMENT, Permission.ASSIGN_PCB_EXPERT, Permission.ASSIGN_SCHEMATIC_OTHER_EXPERT));
         permissions.put(Role.PROCESS_EXPERT, EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.FILL_OPINION,
-                Permission.CONFIRM_OPINION, Permission.VIEW_OPINION, Permission.DOWNLOAD_PROCESS_FILE));
+                Permission.CONFIRM_OPINION, Permission.VIEW_OPINION, Permission.DOWNLOAD_PROCESS_FILE, Permission.UPLOAD_MUTUAL_CHECK_ATTACHMENT, Permission.DOWNLOAD_MUTUAL_CHECK_ATTACHMENT, Permission.UPLOAD_OPINION_ATTACHMENT, Permission.DOWNLOAD_OPINION_ATTACHMENT));
         permissions.put(Role.STRUCTURE_EXPERT, EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.FILL_OPINION,
-                Permission.CONFIRM_OPINION, Permission.VIEW_OPINION, Permission.DOWNLOAD_STRUCTURE_FILE));
+                Permission.CONFIRM_OPINION, Permission.VIEW_OPINION, Permission.DOWNLOAD_STRUCTURE_FILE, Permission.UPLOAD_MUTUAL_CHECK_ATTACHMENT, Permission.DOWNLOAD_MUTUAL_CHECK_ATTACHMENT, Permission.UPLOAD_OPINION_ATTACHMENT, Permission.DOWNLOAD_OPINION_ATTACHMENT));
     }
 
     public boolean has(Set<Role> roles, Permission permission) {

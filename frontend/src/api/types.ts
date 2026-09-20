@@ -6,9 +6,16 @@ export interface Task {
   taskName: string
   projectName: string
   designerId: number
+  designerName: string
   designName: string
   pcbType?: string
+  expectedCompletedDate: string
+  expertLeaderId: number
+  expertLeaderName: string
+  reviewRoles: string[]
+  reviewDescription?: string
   status: string
+  version: number
 }
 
 export interface TaskPage {
@@ -18,12 +25,13 @@ export interface TaskPage {
   items: Task[]
 }
 
-export interface MyTask extends Pick<Task, 'id' | 'taskName' | 'reviewType' | 'status'> {
+export interface MyTask extends Task {
   actions: string[]
 }
 
 export interface OpinionReply {
   id: number
+  opinionId: number
   replyNo: number
   replyType: 'ACCEPT' | 'REJECT'
   reason?: string
@@ -49,29 +57,35 @@ export interface Opinion {
   content: string
   raisedBy: number
   fileVersionId?: number
-  status: 'PENDING_REPLY' | 'PENDING_CONFIRMATION' | 'CONFIRMED_PASS' | 'WITHDRAWN'
+  imageUrl?: string
+  status: 'PENDING_REPLY' | 'PENDING_CONFIRMATION' | 'CONFIRMED_PASS' | 'CONFIRMED_REJECTED' | 'WITHDRAWN'
   version: number
   designerReplies: OpinionReply[]
   confirmations: OpinionConfirmation[]
+  attachments: Array<{ fileId: number; sortNo: number; fileName: string; fileCategory: string; previewUrl?: string }>
 }
 
 export interface CheckItem {
   id: number
   templateItemKey: string
   parentItemKey?: string
+  categoryName?: string
   itemName: string
   sortNo: number
   result?: 'PASS' | 'FAIL' | 'NOT_APPLICABLE'
   comment?: string
   linkedOpinionId?: number
+  attachments: Array<{ fileId: number; sortNo: number; fileName: string; fileCategory: string; previewUrl?: string }>
   status: string
   version: number
 }
 
 export interface Reviewer {
+  id: number
   reviewerId: number
-  reviewRole: string
-  processStatus: string
+  role: string
+  status: string
+  noOpinion: boolean
 }
 
 export interface ArchiveFile {
@@ -116,4 +130,20 @@ export interface Archive {
   flowOpinions: FlowOpinion[]
   flowEvents: Array<{ occurredAt?: string; stageName: string; action: string; operatorName: string; comment?: string }>
   mailRecords: MailRecord[]
+}
+
+export interface TemplateItem {
+  id: number
+  reviewType: ReviewType
+  itemKey: string
+  parentItemKey?: string
+  itemName: string
+  sortNo: number
+  enabled: boolean
+  version: number
+}
+
+export interface TemplateCategory {
+  category: TemplateItem
+  items: TemplateItem[]
 }

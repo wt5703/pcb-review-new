@@ -16,6 +16,7 @@ public class ReviewOpinionRecord {
     private String content;
     private Long raisedBy;
     private Long fileVersionId;
+    private String imageUrl;
     private String status;
     private Long version;
     private LocalDateTime createdAt;
@@ -36,6 +37,8 @@ public class ReviewOpinionRecord {
     public void setRaisedBy(Long raisedBy) { this.raisedBy = raisedBy; }
     public Long getFileVersionId() { return fileVersionId; }
     public void setFileVersionId(Long fileVersionId) { this.fileVersionId = fileVersionId; }
+    public String getImageUrl() { return imageUrl; }
+    public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public Long getVersion() { return version; }

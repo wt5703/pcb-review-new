@@ -17,6 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -84,6 +85,40 @@ class CheckItemOpinionIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"fileId\":8503,\"sortNo\":1}"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void shouldListTemplateCategoriesAndLogicallyDisableCategoryWithChildren() throws Exception {
+        String created = mockMvc.perform(post("/check-item-templates")
+                        .header("X-Mock-User-Id", "1")
+                        .header("X-Mock-Roles", "PCB_LEADER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reviewType\":\"PCB\",\"categoryKey\":\"template-tree-category\",\"categoryName\":\"模板树类别\",\"sortNo\":99,\"items\":[{\"itemKey\":\"template-tree-item\",\"itemName\":\"模板树检查项\",\"sortNo\":1,\"enabled\":true}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.category.itemName").value("模板树类别"))
+                .andExpect(jsonPath("$.data.items[0].itemName").value("模板树检查项"))
+                .andReturn().getResponse().getContentAsString();
+        long categoryId = ((Number) JsonPath.read(created, "$.data.category.id")).longValue();
+
+        mockMvc.perform(get("/check-item-templates")
+                        .param("reviewType", "PCB")
+                        .header("X-Mock-User-Id", "1")
+                        .header("X-Mock-Roles", "PCB_LEADER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.category.id == " + categoryId + ")].items[0].itemName").value("模板树检查项"));
+
+        mockMvc.perform(delete("/check-item-templates/{templateId}", categoryId)
+                        .param("version", "0")
+                        .header("X-Mock-User-Id", "1")
+                        .header("X-Mock-Roles", "PCB_LEADER"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/check-item-templates")
+                        .param("reviewType", "PCB")
+                        .header("X-Mock-User-Id", "1")
+                        .header("X-Mock-Roles", "PCB_LEADER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.category.id == " + categoryId + ")].category.enabled").value(false));
     }
 
     private ReviewTaskRecord task(long taskId) {

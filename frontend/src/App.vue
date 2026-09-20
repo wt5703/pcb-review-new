@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { reviewApi } from '@/api/review-api'
 import { identity, roleList, saveIdentity } from '@/stores/identity'
 
 const route = useRoute()
 const settingsOpen = ref(false)
+const mockUsers = ref<Array<{ id: number; displayName: string; email: string; departmentName: string; roles: string[] }>>([])
 const roleOptions = [
   'HARDWARE_DEPARTMENT_MANAGER', 'PCB_LEADER', 'SCHEMATIC_LEADER', 'HARDWARE_EXPERT',
   'EMC_EXPERT', 'DESIGNER', 'PROCESS_EXPERT', 'STRUCTURE_EXPERT'
@@ -15,6 +17,22 @@ function persistIdentity(): void {
   saveIdentity()
   settingsOpen.value = false
 }
+
+function selectMockUser(): void {
+  const user = mockUsers.value.find((item) => item.id === identity.userId)
+  if (user) identity.roles = user.roles.join(',')
+}
+
+const currentMockUser = computed(() => mockUsers.value.find((item) => item.id === identity.userId))
+
+onMounted(async () => {
+  try {
+    mockUsers.value = await reviewApi.listMockUsers()
+    selectMockUser()
+  } catch {
+    mockUsers.value = []
+  }
+})
 </script>
 
 <template>
@@ -40,12 +58,18 @@ function persistIdentity(): void {
         <div class="identity-control">
           <button class="identity-button" type="button" @click="settingsOpen = !settingsOpen">
             <span class="avatar">{{ identity.userId }}</span>
-            <span>Mock 用户 #{{ identity.userId }}</span><span class="chevron">⌄</span>
+            <span>{{ currentMockUser?.displayName || `Mock 用户 #${identity.userId}` }}</span><span class="chevron">⌄</span>
           </button>
           <section v-if="settingsOpen" class="identity-panel card" aria-label="本地 Mock 身份设置">
             <h3>本地 Mock 身份</h3>
-            <p>请求将携带后端约定的 <code>X-Mock-User-Id</code> 和 <code>X-Mock-Roles</code>。</p>
-            <label>用户 ID<input v-model.number="identity.userId" type="number" min="1" /></label>
+            <p>选择初始化账号后，请求会自动携带对应的用户 ID 与预设角色。</p>
+            <label>初始化账号
+              <select v-if="mockUsers.length" v-model.number="identity.userId" @change="selectMockUser">
+                <option v-for="user in mockUsers" :key="user.id" :value="user.id">{{ user.displayName }} · {{ user.departmentName }}</option>
+              </select>
+              <input v-else v-model.number="identity.userId" type="number" min="1" />
+            </label>
+            <small v-if="currentMockUser">{{ currentMockUser.email }}</small>
             <label>角色
               <select v-model="identity.roles">
                 <option v-for="role in roleOptions" :key="role" :value="role">{{ role }}</option>

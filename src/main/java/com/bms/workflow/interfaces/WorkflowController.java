@@ -5,6 +5,9 @@ import com.bms.common.TraceIdFilter;
 import com.bms.identity.application.CurrentUserHolder;
 import com.bms.workflow.application.WorkflowApplicationService;
 import com.bms.workflow.domain.WorkflowAction;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -22,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/tasks/{taskId}/workflow")
+@Tag(name = "任务流程", description = "推进 PCB 或原理图评审任务的当前流程节点；已结束任务绝不允许重新打开。")
 public class WorkflowController {
     private final WorkflowApplicationService workflowApplicationService;
 
@@ -30,6 +34,7 @@ public class WorkflowController {
     }
 
     @PostMapping("/transitions")
+    @Operation(summary = "推进任务流程", description = "按 action 推进当前任务状态，必须传递详情接口返回的 version 以避免并发覆盖。")
     ApiResponse<WorkflowApplicationService.WorkflowView> transition(@PathVariable long taskId,
                                                                       @Valid @RequestBody TransitionRequest request,
                                                                       HttpServletRequest servletRequest) {
@@ -41,6 +46,9 @@ public class WorkflowController {
         return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString();
     }
 
-    record TransitionRequest(@NotNull WorkflowAction action, @PositiveOrZero long version, String comment) {
+    @Schema(description = "任务流程推进请求")
+    record TransitionRequest(@Schema(description = "流程动作枚举", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull WorkflowAction action,
+                             @Schema(description = "任务详情返回的乐观锁版本号", requiredMode = Schema.RequiredMode.REQUIRED) @PositiveOrZero long version,
+                             @Schema(description = "流转意见或说明") String comment) {
     }
 }

@@ -6,9 +6,14 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.mock.web.MockMultipartFile;
+import com.bms.file.infrastructure.ReviewFileMapper;
+
+import java.nio.charset.StandardCharsets;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -22,6 +27,27 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class TaskControllerIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
+    @Autowired
+    private ReviewFileMapper reviewFileMapper;
+
+    @Test
+    void shouldCreateAndSubmitTaskWithMultipleFilesInSingleMultipartRequest() throws Exception {
+        MockMultipartFile taskPart = new MockMultipartFile("task", "task.json", MediaType.APPLICATION_JSON_VALUE, """
+                {"reviewType":"PCB","taskName":"多文件一体化创建","projectName":"BMS","designerId":10,"designerName":"设计者A","designName":"BMS-P2","pcbType":"BMU","expectedCompletedDate":"2026-09-30","expertLeaderId":1,"expertLeaderName":"王鹏飞","reviewRoles":["PCB_EXPERT"]}
+                """.getBytes(StandardCharsets.UTF_8));
+        MockMultipartFile fileOne = new MockMultipartFile("files", "BMS-P2.pcb", "application/octet-stream", "pcb-data".getBytes());
+        MockMultipartFile fileTwo = new MockMultipartFile("files", "BMS-P2.sch", "application/octet-stream", "schematic-data".getBytes());
+
+        String response = mockMvc.perform(multipart("/tasks").file(taskPart).file(fileOne).file(fileTwo)
+                        .param("submit", "true")
+                        .header("X-Mock-User-Id", "10")
+                        .header("X-Mock-Roles", "DESIGNER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("PCB_PENDING_REVIEW"))
+                .andReturn().getResponse().getContentAsString();
+        long taskId = ((Number) com.jayway.jsonpath.JsonPath.read(response, "$.data.id")).longValue();
+        org.assertj.core.api.Assertions.assertThat(reviewFileMapper.findLatestByTaskId(taskId)).hasSize(2);
+    }
 
     @Test
     void shouldCreateSubmitAndQueryTaskThroughRestApi() throws Exception {

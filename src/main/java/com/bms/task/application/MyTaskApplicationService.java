@@ -10,6 +10,7 @@ import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
+import com.bms.review.domain.ReviewRole;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -18,6 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.LocalDate;
 
 /**
  * @author 王涛
@@ -85,10 +87,16 @@ public class MyTaskApplicationService {
         }
     }
 
-    public record MyTaskView(Long id, String taskName, ReviewType reviewType, TaskStatus status, List<MyTaskAction> actions) {
+    public record MyTaskView(Long id, ReviewType reviewType, String taskName, String projectName, Long designerId, String designerName,
+                             String designName, String pcbType, LocalDate expectedCompletedDate, Long expertLeaderId, String expertLeaderName,
+                             List<ReviewRole> reviewRoles, String reviewDescription, TaskStatus status, long version, List<MyTaskAction> actions) {
         static MyTaskView from(ReviewTaskRecord record, EnumSet<MyTaskAction> actions) {
-            return new MyTaskView(record.getId(), record.getTaskName(), ReviewType.valueOf(record.getReviewType()),
-                    TaskStatus.valueOf(record.getStatus()), List.copyOf(actions));
+            List<ReviewRole> reviewRoles = record.getReviewRoles() == null || record.getReviewRoles().isBlank() ? List.of()
+                    : java.util.Arrays.stream(record.getReviewRoles().split(",")).map(ReviewRole::valueOf).toList();
+            return new MyTaskView(record.getId(), ReviewType.valueOf(record.getReviewType()), record.getTaskName(), record.getProjectName(),
+                    record.getDesignerId(), record.getDesignerName(), record.getDesignName(), record.getPcbType(), record.getExpectedCompletedDate(),
+                    record.getExpertLeaderId(), record.getExpertLeaderName(), reviewRoles, record.getReviewDescription(),
+                    TaskStatus.valueOf(record.getStatus()), record.getVersion() == null ? 0L : record.getVersion(), List.copyOf(actions));
         }
     }
 }

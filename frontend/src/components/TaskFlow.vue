@@ -1,21 +1,32 @@
 <script setup lang="ts">
-defineProps<{ status: string; reviewType: string }>()
+import { computed } from 'vue'
 
-const pcbSteps = [
-  ['DRAFT', '创建任务'], ['PCB_PENDING_REVIEW', '专家分配'], ['PCB_EXPERT_REVIEWING', '专家评审'],
-  ['PCB_OPTIONAL_REVIEWING', '工艺/结构'], ['PENDING_MUTUAL_ASSIGNMENT', '互检分配'], ['MUTUAL_REVIEWING', '互检'],
-  ['PENDING_FINISH_CONFIRMATION', '结束确认'], ['FINISHED', '完成']
-]
+const props = defineProps<{ status: string; reviewType: string }>()
+const pcbSteps = ['创建', '专家评审', '设计者答复', '上传工艺/结构图', '工艺评审', '结构评审', '设计者答复', '互检分配', '互检', '设计者答复', '结束']
 const schematicSteps = [
-  ['DRAFT', '创建任务'], ['SCHEMATIC_PENDING_MUTUAL_ASSIGNMENT', '互检分配'], ['MUTUAL_REVIEWING', '互检'],
-  ['SCHEMATIC_PENDING_REVIEW', '专家分配'], ['HARDWARE_REVIEWING', '硬件评审'], ['PENDING_FINISH_CONFIRMATION', '结束确认'], ['FINISHED', '完成']
+  '创建', '互检分配', '互检', '设计者答复', '硬件专家分配', '原理图评审', '设计者答复', '结束'
 ]
+const pcbActiveStep = computed(() => ({
+  DRAFT: 1, PCB_PENDING_REVIEW: 2, PCB_EXPERT_REVIEWING: 2, PCB_OPTIONAL_REVIEWING: 5,
+  PENDING_MUTUAL_ASSIGNMENT: 8, MUTUAL_REVIEWING: 9, PENDING_FINISH_CONFIRMATION: 10, FINISHED: 11
+}[props.status] ?? 1))
+const schematicActiveStep = computed(() => ({
+  DRAFT: 1, SCHEMATIC_PENDING_MUTUAL_ASSIGNMENT: 2, MUTUAL_REVIEWING: 3, SCHEMATIC_PENDING_REVIEW: 5,
+  HARDWARE_REVIEWING: 6, PENDING_FINISH_CONFIRMATION: 7, FINISHED: 8
+}[props.status] ?? 1))
 </script>
 
 <template>
-  <div class="flow-steps">
-    <template v-for="([key, label], index) in reviewType === 'PCB' ? pcbSteps : schematicSteps" :key="key">
-      <div class="flow-step" :class="{ current: key === status, done: (reviewType === 'PCB' ? pcbSteps : schematicSteps).findIndex((item) => item[0] === status) > index }">
+  <div v-if="reviewType === 'PCB'" class="flow-steps pcb-flow">
+    <template v-for="(label, index) in pcbSteps" :key="`${index}-${label}`">
+      <div class="flow-step" :class="{ current: pcbActiveStep === index + 1, done: pcbActiveStep > index + 1 }">
+        <span class="step-dot">{{ index + 1 }}</span><span>{{ label }}</span>
+      </div>
+    </template>
+  </div>
+  <div v-else class="flow-steps">
+    <template v-for="(label, index) in schematicSteps" :key="`${index}-${label}`">
+      <div class="flow-step" :class="{ current: schematicActiveStep === index + 1, done: schematicActiveStep > index + 1 }">
         <span class="step-dot">{{ index + 1 }}</span><span>{{ label }}</span>
       </div>
     </template>

@@ -23,17 +23,22 @@ public interface ReviewOpinionMapper {
     @Select("SELECT COALESCE(MAX(id), 0) + 1 FROM opinion_confirmation")
     long nextConfirmationId();
 
-    @Insert("INSERT INTO review_opinion (id, task_id, source_type, source_item_id, severity, content, raised_by, file_version_id, status, version) "
-            + "VALUES (#{id}, #{taskId}, #{sourceType}, #{sourceItemId}, #{severity}, #{content}, #{raisedBy}, #{fileVersionId}, #{status}, #{version})")
+    @Insert("INSERT INTO review_opinion (id, task_id, source_type, source_item_id, severity, content, raised_by, file_version_id, image_url, status, version) "
+            + "VALUES (#{id}, #{taskId}, #{sourceType}, #{sourceItemId}, #{severity}, #{content}, #{raisedBy}, #{fileVersionId}, #{imageUrl}, #{status}, #{version})")
     int insert(ReviewOpinionRecord record);
 
     @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, content, raised_by AS raisedBy, "
-            + "file_version_id AS fileVersionId, status, version, created_at AS createdAt FROM review_opinion WHERE id=#{id}")
+            + "file_version_id AS fileVersionId, image_url AS imageUrl, status, version, created_at AS createdAt FROM review_opinion WHERE id=#{id}")
     ReviewOpinionRecord findById(long id);
 
     @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, content, raised_by AS raisedBy, "
-            + "file_version_id AS fileVersionId, status, version, created_at AS createdAt FROM review_opinion WHERE task_id=#{taskId} ORDER BY id")
+            + "file_version_id AS fileVersionId, image_url AS imageUrl, status, version, created_at AS createdAt FROM review_opinion WHERE task_id=#{taskId} ORDER BY id")
     List<ReviewOpinionRecord> findByTaskId(long taskId);
+
+    @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, content, raised_by AS raisedBy, " +
+            "file_version_id AS fileVersionId, image_url AS imageUrl, status, version, created_at AS createdAt FROM review_opinion " +
+            "WHERE task_id=#{taskId} AND source_type='MUTUAL_CHECK_ITEM' AND source_item_id=#{sourceItemId} AND status <> 'WITHDRAWN' ORDER BY id DESC LIMIT 1")
+    ReviewOpinionRecord findActiveMutualCheckItemOpinion(long taskId, long sourceItemId);
 
     @Select("SELECT status FROM review_opinion WHERE task_id=#{taskId} AND raised_by=#{raisedBy} ORDER BY id")
     List<String> findStatusesByTaskAndRaisedBy(long taskId, long raisedBy);
@@ -47,6 +52,10 @@ public interface ReviewOpinionMapper {
 
     @Update("UPDATE review_opinion SET status=#{status}, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=#{id} AND version=#{version}")
     int updateStatus(ReviewOpinionRecord record);
+
+    @Update("UPDATE review_opinion SET content=#{content}, image_url=#{imageUrl}, updated_at=CURRENT_TIMESTAMP, version=version+1 " +
+            "WHERE id=#{id} AND version=#{version}")
+    int updateContentAndImage(ReviewOpinionRecord record);
 
     @Insert("INSERT INTO opinion_reply (id, opinion_id, reply_type, reason, file_version_id, replied_by, reply_no) "
             + "VALUES (#{id}, #{opinionId}, #{replyType}, #{reason}, #{fileVersionId}, #{repliedBy}, #{replyNo})")

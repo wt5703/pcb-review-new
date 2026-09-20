@@ -20,6 +20,14 @@ import com.bms.task.infrastructure.ReviewTaskRecord;
 import com.bms.task.domain.TaskStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 
 /**
  * @author 王涛
@@ -76,6 +84,47 @@ public class FileApplicationService {
         appendAudit(first, "FILE_VERSION_REGISTERED", currentUser.id());
         outboxEventPublisher.publishTaskEvent("FILE_VERSION_REGISTERED", command.taskId(), currentUser.id());
         return FileView.from(first);
+    }
+
+    /**
+     * @author 王涛
+     * @date 2026-09-18
+     * @description 在创建或保存评审任务的 multipart 请求内登记初始评审文件，使客户端只提交任务表单和文件，不需要编排上传会话与文件登记接口。
+     */
+    @Transactional
+    public List<FileView> registerInitialMultipartFiles(long taskId, List<MultipartFile> files, CurrentUser currentUser) {
+        if (files == null || files.isEmpty()) {
+            return List.of();
+        }
+        requireTaskAccess(taskId, currentUser, FileCategory.PCB_SCHEMATIC, true);
+        List<FileView> result = new ArrayList<>();
+        for (int index = 0; index < files.size(); index++) {
+            MultipartFile file = files.get(index);
+            if (file == null || file.isEmpty() || file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()) {
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "评审文件不能为空");
+            }
+            String key = "INITIAL_" + String.format("%03d", index + 1);
+            String md5 = md5(file);
+            ReviewFileRecord latest = fileMapper.findLatest(taskId, FileCategory.PCB_SCHEMATIC.name(), key);
+            if (latest != null) {
+                UploadDecision decision = fileVersionPolicy.decide(latest.getMd5(), md5, latest.getVersionNo());
+                if (decision.duplicate()) {
+                    result.add(FileView.from(latest));
+                    continue;
+                }
+                fileMapper.markLatestAsHistorical(taskId, FileCategory.PCB_SCHEMATIC.name(), key);
+                ReviewFileRecord next = directRecord(nextId(), taskId, key, file, md5, decision.versionNo(), currentUser.id());
+                fileMapper.insert(next);
+                appendAudit(next, "INITIAL_FILE_REGISTERED", currentUser.id());
+                result.add(FileView.from(next));
+                continue;
+            }
+            ReviewFileRecord first = directRecord(nextId(), taskId, key, file, md5, 1, currentUser.id());
+            fileMapper.insert(first);
+            appendAudit(first, "INITIAL_FILE_REGISTERED", currentUser.id());
+            result.add(FileView.from(first));
+        }
+        return List.copyOf(result);
     }
 
     public DownloadView requestDownload(long fileId, CurrentUser currentUser) {
@@ -136,6 +185,25 @@ public class FileApplicationService {
         record.setUploadedBy(uploadedBy);
         record.setUploadedStage(uploadedStage);
         return record;
+    }
+
+    private ReviewFileRecord directRecord(long id, long taskId, String businessFileKey, MultipartFile file, String md5, int versionNo, long uploadedBy) {
+        ReviewFileRecord record = new ReviewFileRecord();
+        record.setId(id); record.setTaskId(taskId); record.setFileCategory(FileCategory.PCB_SCHEMATIC.name()); record.setBusinessFileKey(businessFileKey);
+        record.setFileName(file.getOriginalFilename()); record.setFileSize(file.getSize()); record.setMd5(md5); record.setVersionNo(versionNo);
+        record.setCompanyFileId("mock-inline-" + UUID.randomUUID()); record.setLatest(true); record.setUploadedBy(uploadedBy); record.setUploadedStage(TaskStatus.DRAFT.name());
+        return record;
+    }
+
+    private String md5(MultipartFile file) {
+        try {
+            byte[] hash = MessageDigest.getInstance("MD5").digest(file.getBytes());
+            StringBuilder result = new StringBuilder();
+            for (byte value : hash) { result.append(String.format("%02x", value)); }
+            return result.toString();
+        } catch (NoSuchAlgorithmException | IOException exception) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "无法读取评审文件：" + exception.getMessage());
+        }
     }
 
     public record RegisterFileCommand(long taskId, String uploadSessionId, FileCategory category, String businessFileKey,

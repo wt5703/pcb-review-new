@@ -17,6 +17,7 @@ import com.bms.review.infrastructure.CheckItemTemplateMapper;
 import com.bms.review.infrastructure.CheckItemTemplateRecord;
 import com.bms.review.infrastructure.CheckItemAttachmentMapper;
 import com.bms.review.infrastructure.CheckItemAttachmentRecord;
+import com.bms.review.infrastructure.CheckItemAttachmentViewRecord;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.infrastructure.ReviewOpinionRecord;
 import com.bms.review.infrastructure.TaskCheckItemMapper;
@@ -31,6 +32,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.LinkedHashSet;
 
 /**
  * @author 王涛
@@ -75,7 +77,9 @@ public class TaskCheckItemApplicationService {
             Set<Long> activeTemplateIds = templates.stream().map(CheckItemTemplateRecord::getId).collect(java.util.stream.Collectors.toSet());
             records = records.stream().filter(record -> activeTemplateIds.contains(record.getTemplateItemId())).toList();
         }
-        return records.stream().map(CheckItemView::from).toList();
+        Map<String, String> categoryNames = isFinished(task) ? new HashMap<>() : templateMapper.findEnabledByReviewType(task.getReviewType()).stream()
+                .collect(java.util.stream.Collectors.toMap(CheckItemTemplateRecord::getItemKey, CheckItemTemplateRecord::getItemName, (left, right) -> left));
+        return records.stream().map(record -> CheckItemView.from(record, categoryNames.get(record.getParentItemKey()), attachments(record.getId()))).toList();
     }
 
     @Transactional
@@ -101,7 +105,39 @@ public class TaskCheckItemApplicationService {
         }
         record.setVersion(record.getVersion() + 1);
         appendAudit(record.getId(), "CHECK_ITEM_SUBMITTED", currentUser.id(), command.result().name());
-        return CheckItemView.from(record);
+        return CheckItemView.from(record, null, attachments(record.getId()));
+    }
+
+    /**
+     * @author 王涛
+     * @date 2026-09-18
+     * @description 以互检单为原子单位提交多个检查项；不合格项自动建立或更新同源互检意见，并用已登记图片文件作为意见佐证附件。
+     */
+    @Transactional
+    public List<CheckItemView> submitBatch(long taskId, List<SubmitBatchItemCommand> commands, CurrentUser currentUser) {
+        ReviewTaskRecord task = requireTaskExists(taskId);
+        if (isFinished(task)) { throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许修改检查项"); }
+        taskNodeAuthorizationService.requireCurrentTaskProcessor(taskId, currentUser);
+        synchronizeIfActive(task);
+        if (commands == null || commands.isEmpty()) { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "互检单至少需要提交一条检查项结果"); }
+        Set<Long> duplicateGuard = new LinkedHashSet<>();
+        List<CheckItemView> views = new java.util.ArrayList<>();
+        for (SubmitBatchItemCommand command : commands) {
+            if (!duplicateGuard.add(command.itemId())) { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "互检单中存在重复检查项：" + command.itemId()); }
+            TaskCheckItemRecord record = taskCheckItemMapper.findByTaskIdAndId(taskId, command.itemId());
+            if (record == null) { throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务"); }
+            validateBatchCommand(command);
+            validateAttachmentFiles(taskId, command.attachmentFileIds());
+            Long opinionId = command.result() == CheckResult.FAIL ? createOrUpdateMutualOpinion(taskId, record, command, currentUser) : null;
+            replaceAttachments(record.getId(), command.attachmentFileIds());
+            record.setCheckResult(command.result().name()); record.setComment(command.comment()); record.setLinkedOpinionId(opinionId);
+            record.setStatus(CheckItemStatus.COMPLETED.name()); record.setVersion(command.version());
+            if (taskCheckItemMapper.submit(record) != 1) { throw new BusinessException(ErrorCode.VERSION_CONFLICT, "检查项已被其他操作更新，请刷新后重试"); }
+            record.setVersion(record.getVersion() + 1);
+            appendAudit(record.getId(), "CHECK_ITEM_BATCH_SUBMITTED", currentUser.id(), command.result().name());
+            views.add(CheckItemView.from(record, null, attachments(record.getId())));
+        }
+        return List.copyOf(views);
     }
 
     @Transactional
@@ -134,7 +170,9 @@ public class TaskCheckItemApplicationService {
         if (isFinished(task)) {
             return List.of();
         }
-        List<CheckItemTemplateRecord> templates = templateMapper.findEnabledByReviewType(task.getReviewType());
+        List<CheckItemTemplateRecord> allTemplates = templateMapper.findEnabledByReviewType(task.getReviewType());
+        Set<String> categoryKeys = allTemplates.stream().map(CheckItemTemplateRecord::getParentItemKey).filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        List<CheckItemTemplateRecord> templates = allTemplates.stream().filter(template -> !categoryKeys.contains(template.getItemKey())).toList();
         Map<Long, TaskCheckItemRecord> existing = new HashMap<>();
         for (TaskCheckItemRecord item : taskCheckItemMapper.findByTaskId(task.getId())) {
             existing.put(item.getTemplateItemId(), item);
@@ -206,15 +244,67 @@ public class TaskCheckItemApplicationService {
         }
     }
 
+    private void validateBatchCommand(SubmitBatchItemCommand command) {
+        if (command.result() == null) { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "检查结果不能为空"); }
+        if ((command.result() == CheckResult.FAIL || command.result() == CheckResult.NOT_APPLICABLE)
+                && (command.comment() == null || command.comment().isBlank())) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "不合格或不适用的检查项必须填写检查意见");
+        }
+        if (command.result() == CheckResult.FAIL && command.attachmentFileIds().isEmpty()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "不合格检查项至少需要关联一张问题图片");
+        }
+    }
+
+    private void validateAttachmentFiles(long taskId, List<Long> fileIds) {
+        for (Long fileId : fileIds) {
+            ReviewFileRecord file = fileMapper.findById(fileId);
+            if (file == null || !Long.valueOf(taskId).equals(file.getTaskId())) {
+                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项图片不存在或不属于当前任务");
+            }
+        }
+    }
+
+    private Long createOrUpdateMutualOpinion(long taskId, TaskCheckItemRecord item, SubmitBatchItemCommand command, CurrentUser currentUser) {
+        String imageUrl = command.attachmentFileIds().isEmpty() ? null : "/api/v1/files/" + command.attachmentFileIds().get(0) + "/download";
+        ReviewOpinionRecord opinion = opinionMapper.findActiveMutualCheckItemOpinion(taskId, item.getId());
+        if (opinion == null) {
+            opinion = new ReviewOpinionRecord(); opinion.setId(opinionMapper.nextOpinionId()); opinion.setTaskId(taskId);
+            opinion.setSourceType("MUTUAL_CHECK_ITEM"); opinion.setSourceItemId(item.getId()); opinion.setSeverity("GENERAL");
+            opinion.setContent(command.comment().trim()); opinion.setRaisedBy(currentUser.id()); opinion.setImageUrl(imageUrl);
+            opinion.setStatus("PENDING_REPLY"); opinion.setVersion(0L); opinionMapper.insert(opinion);
+        } else {
+            opinion.setContent(command.comment().trim()); opinion.setImageUrl(imageUrl);
+            if (opinionMapper.updateContentAndImage(opinion) != 1) { throw new BusinessException(ErrorCode.VERSION_CONFLICT, "关联互检意见已被其他操作更新，请刷新后重试"); }
+        }
+        return opinion.getId();
+    }
+
+    private void replaceAttachments(long itemId, List<Long> fileIds) {
+        attachmentMapper.deleteByCheckItemId(itemId);
+        for (int index = 0; index < fileIds.size(); index++) { attachmentMapper.insert(new CheckItemAttachmentRecord(itemId, fileIds.get(index), index)); }
+    }
+
+    private List<CheckItemAttachmentView> attachments(long itemId) {
+        List<CheckItemAttachmentViewRecord> records = attachmentMapper.findByCheckItemId(itemId);
+        return (records == null ? List.<CheckItemAttachmentViewRecord>of() : records).stream().map(CheckItemAttachmentView::from).toList();
+    }
+
     public record SubmitCheckItemCommand(CheckResult result, String comment, Long linkedOpinionId, long version) {
+    }
+    public record SubmitBatchItemCommand(long itemId, CheckResult result, String comment, List<Long> attachmentFileIds, long version) {
+        public SubmitBatchItemCommand { attachmentFileIds = attachmentFileIds == null ? List.of() : List.copyOf(attachmentFileIds); }
     }
 
     public record CheckItemView(Long id, String templateItemKey, String parentItemKey, String itemName, int sortNo,
-                                CheckResult result, String comment, Long linkedOpinionId, CheckItemStatus status, long version) {
-        static CheckItemView from(TaskCheckItemRecord record) {
+                                String categoryName, CheckResult result, String comment, Long linkedOpinionId, List<CheckItemAttachmentView> attachments,
+                                CheckItemStatus status, long version) {
+        static CheckItemView from(TaskCheckItemRecord record, String categoryName, List<CheckItemAttachmentView> attachments) {
             return new CheckItemView(record.getId(), record.getTemplateItemKey(), record.getParentItemKey(), record.getItemName(),
-                    record.getSortNo(), record.getCheckResult() == null ? null : CheckResult.valueOf(record.getCheckResult()), record.getComment(),
-                    record.getLinkedOpinionId(), CheckItemStatus.valueOf(record.getStatus()), record.getVersion());
+                    record.getSortNo(), categoryName, record.getCheckResult() == null ? null : CheckResult.valueOf(record.getCheckResult()), record.getComment(),
+                    record.getLinkedOpinionId(), attachments, CheckItemStatus.valueOf(record.getStatus()), record.getVersion());
         }
+    }
+    public record CheckItemAttachmentView(Long fileId, int sortNo, String fileName, String fileCategory, String previewUrl) {
+        static CheckItemAttachmentView from(CheckItemAttachmentViewRecord record) { return new CheckItemAttachmentView(record.getFileId(), record.getSortNo(), record.getFileName(), record.getFileCategory(), record.getPreviewUrl()); }
     }
 }

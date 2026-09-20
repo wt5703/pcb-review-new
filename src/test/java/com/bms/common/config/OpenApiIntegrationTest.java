@@ -28,4 +28,20 @@ class OpenApiIntegrationTest {
                 .andExpect(jsonPath("$.info.title").value("PCB评审平台后端 API"))
                 .andExpect(jsonPath("$.paths['/tasks']").exists());
     }
+
+    @Test
+    void shouldExposeTaskCreationDictionaryForFrontend() throws Exception {
+        mockMvc.perform(get("/dictionaries/task-options"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.pcbTypes[0]").value("BMU板"))
+                .andExpect(jsonPath("$.data.pcbTypes[1]").value("BSU板"))
+                .andExpect(jsonPath("$.data.pcbTypes[2]").value("分流器板"))
+                .andExpect(jsonPath("$.data.pcbTypes[3]").value("高压板"))
+                .andExpect(jsonPath("$.data.pcbTypes[4]").value("转接板"))
+                .andExpect(jsonPath("$.data.pcbTypes[5]").value("储能板"))
+                .andExpect(jsonPath("$.data.pcbTypes[6]").value("其他"))
+                .andExpect(jsonPath("$.data.reviewRoles[*].code").value(org.hamcrest.Matchers.contains(
+                        "PCB_EXPERT", "PROCESS_EXPERT", "STRUCTURE_EXPERT", "PCB_MUTUAL_CHECK",
+                        "SCHEMATIC_HARDWARE_EXPERT", "SCHEMATIC_OTHER_EXPERT", "SCHEMATIC_MUTUAL_CHECK")));
+    }
 }

@@ -26,6 +26,10 @@ public interface CheckItemTemplateMapper {
     List<CheckItemTemplateRecord> findEnabledByReviewType(String reviewType);
 
     @Select("SELECT id, review_type AS reviewType, item_key AS itemKey, parent_item_key AS parentItemKey, item_name AS itemName, "
+            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE (#{reviewType} IS NULL OR review_type=#{reviewType}) ORDER BY review_type, sort_no, id")
+    List<CheckItemTemplateRecord> findAll(String reviewType);
+
+    @Select("SELECT id, review_type AS reviewType, item_key AS itemKey, parent_item_key AS parentItemKey, item_name AS itemName, "
             + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE id=#{id}")
     CheckItemTemplateRecord findById(long id);
 
@@ -36,4 +40,7 @@ public interface CheckItemTemplateMapper {
     @Update("UPDATE check_item_template SET item_key=#{itemKey}, parent_item_key=#{parentItemKey}, item_name=#{itemName}, sort_no=#{sortNo}, "
             + "enabled=#{enabled}, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=#{id} AND version=#{version}")
     int update(CheckItemTemplateRecord record);
+
+    @Update("UPDATE check_item_template SET enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE parent_item_key=#{parentItemKey}")
+    int disableChildrenByParentItemKey(String parentItemKey);
 }

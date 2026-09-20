@@ -10,7 +10,9 @@ import com.bms.identity.domain.Permission;
 public enum FileCategory {
     PCB_SCHEMATIC(Permission.UPLOAD_PCB_SCHEMATIC_FILE, Permission.DOWNLOAD_PCB_SCHEMATIC_FILE),
     PROCESS(Permission.UPLOAD_PROCESS_FILE, Permission.DOWNLOAD_PROCESS_FILE),
-    STRUCTURE(Permission.UPLOAD_STRUCTURE_FILE, Permission.DOWNLOAD_STRUCTURE_FILE);
+    STRUCTURE(Permission.UPLOAD_STRUCTURE_FILE, Permission.DOWNLOAD_STRUCTURE_FILE),
+    MUTUAL_CHECK_ATTACHMENT(Permission.UPLOAD_MUTUAL_CHECK_ATTACHMENT, Permission.DOWNLOAD_MUTUAL_CHECK_ATTACHMENT),
+    OPINION_ATTACHMENT(Permission.UPLOAD_OPINION_ATTACHMENT, Permission.DOWNLOAD_OPINION_ATTACHMENT);
 
     private final Permission uploadPermission;
     private final Permission downloadPermission;
