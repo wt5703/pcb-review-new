@@ -8,7 +8,7 @@ import org.apache.ibatis.annotations.Update;
 /**
  * @author 王涛
  * @date 2026-09-16
- * @description 定义 review_file 表的版本链读写操作，负责定位最新版本、使旧版本失效及保存新版本，不承担文件权限判断。
+ * @description 定义 review_file 表的当前文件读写操作，负责定位并替换同一业务键的当前文件，不承担文件权限判断。
  */
 @Mapper
 public interface ReviewFileMapper {
@@ -16,27 +16,36 @@ public interface ReviewFileMapper {
     long nextId();
 
     @Select("SELECT id, task_id AS taskId, file_category AS fileCategory, business_file_key AS businessFileKey, "
-            + "file_name AS fileName, file_size AS fileSize, md5, version_no AS versionNo, company_file_id AS companyFileId, "
+            + "file_name AS fileName, file_format AS fileFormat, file_size AS fileSize, md5, company_file_id AS companyFileId, "
             + "is_latest AS latest, uploaded_by AS uploadedBy, uploaded_at AS uploadedAt, uploaded_stage AS uploadedStage FROM review_file WHERE task_id=#{taskId} "
             + "AND file_category=#{fileCategory} AND business_file_key=#{businessFileKey} AND is_latest=TRUE")
     ReviewFileRecord findLatest(long taskId, String fileCategory, String businessFileKey);
 
     @Select("SELECT id, task_id AS taskId, file_category AS fileCategory, business_file_key AS businessFileKey, "
-            + "file_name AS fileName, file_size AS fileSize, md5, version_no AS versionNo, company_file_id AS companyFileId, "
+            + "file_name AS fileName, file_format AS fileFormat, file_size AS fileSize, md5, company_file_id AS companyFileId, "
             + "is_latest AS latest, uploaded_by AS uploadedBy, uploaded_at AS uploadedAt, uploaded_stage AS uploadedStage FROM review_file WHERE id=#{id}")
     ReviewFileRecord findById(long id);
 
     @Select("SELECT id, task_id AS taskId, file_category AS fileCategory, business_file_key AS businessFileKey, file_name AS fileName, "
-            + "file_size AS fileSize, md5, version_no AS versionNo, company_file_id AS companyFileId, is_latest AS latest, uploaded_by AS uploadedBy, uploaded_at AS uploadedAt, uploaded_stage AS uploadedStage "
+            + "file_format AS fileFormat, file_size AS fileSize, md5, company_file_id AS companyFileId, is_latest AS latest, uploaded_by AS uploadedBy, uploaded_at AS uploadedAt, uploaded_stage AS uploadedStage "
             + "FROM review_file WHERE task_id=#{taskId} AND is_latest=TRUE ORDER BY id")
     java.util.List<ReviewFileRecord> findLatestByTaskId(long taskId);
+
+    @Select("SELECT id, task_id AS taskId, file_category AS fileCategory, business_file_key AS businessFileKey, file_name AS fileName, "
+            + "file_format AS fileFormat, file_size AS fileSize, md5, company_file_id AS companyFileId, is_latest AS latest, uploaded_by AS uploadedBy, uploaded_at AS uploadedAt, uploaded_stage AS uploadedStage "
+            + "FROM review_file WHERE task_id=#{taskId} AND file_category=#{fileCategory} AND is_latest=TRUE ORDER BY uploaded_at DESC, id DESC")
+    java.util.List<ReviewFileRecord> findLatestByTaskIdAndCategory(long taskId, String fileCategory);
 
     @Update("UPDATE review_file SET is_latest=FALSE WHERE task_id=#{taskId} AND file_category=#{fileCategory} "
             + "AND business_file_key=#{businessFileKey} AND is_latest=TRUE")
     int markLatestAsHistorical(long taskId, String fileCategory, String businessFileKey);
 
-    @Insert("INSERT INTO review_file (id, task_id, file_category, business_file_key, file_name, file_size, md5, version_no, "
-            + "company_file_id, is_latest, uploaded_by, uploaded_stage) VALUES (#{id}, #{taskId}, #{fileCategory}, #{businessFileKey}, #{fileName}, "
-            + "#{fileSize}, #{md5}, #{versionNo}, #{companyFileId}, #{latest}, #{uploadedBy}, #{uploadedStage})")
+    @Update("UPDATE review_file SET file_name=#{fileName}, file_format=#{fileFormat}, file_size=#{fileSize}, md5=#{md5}, company_file_id=#{companyFileId}, "
+            + "uploaded_by=#{uploadedBy}, uploaded_at=CURRENT_TIMESTAMP, uploaded_stage=#{uploadedStage} WHERE id=#{id}")
+    int updateCurrent(ReviewFileRecord record);
+
+    @Insert("INSERT INTO review_file (id, task_id, file_category, business_file_key, file_name, file_format, file_size, md5, "
+            + "company_file_id, is_latest, uploaded_by, uploaded_stage) VALUES (#{id}, #{taskId}, #{fileCategory}, #{businessFileKey}, #{fileName}, #{fileFormat}, "
+            + "#{fileSize}, #{md5}, #{companyFileId}, #{latest}, #{uploadedBy}, #{uploadedStage})")
     int insert(ReviewFileRecord record);
 }

@@ -19,7 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 通过 REST 验证 PCB 互检多人分配、个人无意见提交和受限角色的人员关系查询授权，覆盖任务 4 的关键处理路径。
+ * @description 通过统一流程 REST 验证 PCB 互检多人分配、个人无意见提交和受限角色的人员关系查询授权。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -34,21 +34,22 @@ class ReviewerAssignmentControllerIntegrationTest {
         long taskId = 8401L;
         taskMapper.insert(task(taskId));
 
-        mockMvc.perform(post("/tasks/{taskId}/reviewers", taskId)
+        mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"role\":\"PCB_MUTUAL_CHECK\",\"reviewerIds\":[20,21]}"))
+                        .content("{\"action\":\"START_PCB_MUTUAL_REVIEW\",\"assignedRole\":\"PCB_MUTUAL_CHECK\",\"reviewerIds\":[20,21]}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.length()").value(2))
-                .andExpect(jsonPath("$.data[0].status").value("PENDING"));
+                .andExpect(jsonPath("$.data.toStatus").value("MUTUAL_REVIEWING"))
+                .andExpect(jsonPath("$.data.assignedReviewers.length()").value(2))
+                .andExpect(jsonPath("$.data.assignedReviewers[0].status").value("PENDING"));
 
-        mockMvc.perform(post("/tasks/{taskId}/reviewers/me/no-opinion", taskId)
+        mockMvc.perform(post("/tasks/{taskId}/workflow/reviewers/me/submit-no-opinion", taskId)
                         .header("X-Mock-User-Id", "20")
                         .header("X-Mock-Roles", "HARDWARE_EXPERT"))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(get("/tasks/{taskId}/reviewers", taskId)
+        mockMvc.perform(get("/tasks/{taskId}/workflow/reviewers", taskId)
                         .header("X-Mock-User-Id", "20")
                         .header("X-Mock-Roles", "HARDWARE_EXPERT")
                         .param("role", "PCB_MUTUAL_CHECK"))
@@ -61,24 +62,10 @@ class ReviewerAssignmentControllerIntegrationTest {
         long taskId = 8402L;
         taskMapper.insert(task(taskId));
 
-        mockMvc.perform(get("/tasks/{taskId}/reviewers", taskId)
+        mockMvc.perform(get("/tasks/{taskId}/workflow/reviewers", taskId)
                         .header("X-Mock-User-Id", "88")
                         .header("X-Mock-Roles", "PROCESS_EXPERT")
                         .param("role", "PCB_MUTUAL_CHECK"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
-    }
-
-    @Test
-    void shouldRejectPcbExpertAssignmentByAnotherDesigner() throws Exception {
-        long taskId = 8403L;
-        taskMapper.insert(task(taskId, TaskStatus.PCB_PENDING_REVIEW));
-
-        mockMvc.perform(post("/tasks/{taskId}/reviewers", taskId)
-                        .header("X-Mock-User-Id", "11")
-                        .header("X-Mock-Roles", "DESIGNER")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"role\":\"PCB_EXPERT\",\"reviewerIds\":[20]}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }

@@ -26,7 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 验证互检固定检查项不合格时先创建同源意见、再关联意见完成检查项的端到端闭环，防止检查项问题与意见处理脱节。
+ * @description 验证互检固定检查项不合格时通过整单提交创建同源意见并关联附件，防止检查项问题与意见处理脱节。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -41,7 +41,7 @@ class CheckItemOpinionIntegrationTest {
     private ReviewFileMapper fileMapper;
 
     @Test
-    void shouldCompleteFailedCheckItemOnlyWithOpinionFromSameTaskAndItem() throws Exception {
+    void shouldCompleteFailedCheckItemWithOpinionAndAttachmentInOneBatchSubmission() throws Exception {
         long taskId = 8501L;
         taskMapper.insert(task(taskId));
         reviewerMapper.insert(reviewer(taskId));
@@ -51,7 +51,7 @@ class CheckItemOpinionIntegrationTest {
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"reviewType\":\"PCB\",\"itemKey\":\"integration-failed-item\",\"itemName\":\"线距检查\",\"sortNo\":1}"))
+                        .content("{\"reviewType\":\"PCB\",\"categoryName\":\"集成测试类别\",\"items\":[{\"itemName\":\"线距检查\"}]}"))
                 .andExpect(status().isOk());
 
         String itemsResponse = mockMvc.perform(get("/tasks/{taskId}/check-items", taskId)
@@ -61,30 +61,16 @@ class CheckItemOpinionIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         long itemId = ((Number) JsonPath.read(itemsResponse, "$.data[0].id")).longValue();
 
-        String opinionResponse = mockMvc.perform(post("/tasks/{taskId}/opinions", taskId)
+        mockMvc.perform(put("/tasks/{taskId}/check-items/batch", taskId)
                         .header("X-Mock-User-Id", "20")
                         .header("X-Mock-Roles", "HARDWARE_EXPERT")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sourceType\":\"MUTUAL_CHECK_ITEM\",\"sourceItemId\":" + itemId + ",\"content\":\"线距不满足要求\"}"))
+                        .content("{\"items\":[{\"itemId\":" + itemId + ",\"result\":\"FAIL\",\"comment\":\"线距不足\",\"richText\":\"线距不满足要求\",\"attachmentFileIds\":[8503]}]}"))
                 .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        long opinionId = ((Number) JsonPath.read(opinionResponse, "$.data.id")).longValue();
-
-        mockMvc.perform(put("/tasks/{taskId}/check-items/{itemId}", taskId, itemId)
-                        .header("X-Mock-User-Id", "20")
-                        .header("X-Mock-Roles", "HARDWARE_EXPERT")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"result\":\"FAIL\",\"comment\":\"线距不足\",\"linkedOpinionId\":" + opinionId + ",\"version\":0}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.result").value("FAIL"))
-                .andExpect(jsonPath("$.data.status").value("COMPLETED"));
-
-        mockMvc.perform(post("/tasks/{taskId}/check-items/{itemId}/attachments", taskId, itemId)
-                        .header("X-Mock-User-Id", "20")
-                        .header("X-Mock-Roles", "HARDWARE_EXPERT")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"fileId\":8503,\"sortNo\":1}"))
-                .andExpect(status().isOk());
+                .andExpect(jsonPath("$.data[0].result").value("FAIL"))
+                .andExpect(jsonPath("$.data[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data[0].linkedOpinionId").isNumber())
+                .andExpect(jsonPath("$.data[0].attachments[0].fileId").value(8503));
     }
 
     @Test
@@ -93,12 +79,13 @@ class CheckItemOpinionIntegrationTest {
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"reviewType\":\"PCB\",\"categoryKey\":\"template-tree-category\",\"categoryName\":\"模板树类别\",\"sortNo\":99,\"items\":[{\"itemKey\":\"template-tree-item\",\"itemName\":\"模板树检查项\",\"sortNo\":1,\"enabled\":true}]}"))
+                        .content("{\"reviewType\":\"PCB\",\"categoryName\":\"模板树类别\",\"items\":[{\"itemName\":\"模板树检查项\"}]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.category.itemName").value("模板树类别"))
                 .andExpect(jsonPath("$.data.items[0].itemName").value("模板树检查项"))
                 .andReturn().getResponse().getContentAsString();
         long categoryId = ((Number) JsonPath.read(created, "$.data.category.id")).longValue();
+        long itemId = ((Number) JsonPath.read(created, "$.data.items[0].id")).longValue();
 
         mockMvc.perform(get("/check-item-templates")
                         .param("reviewType", "PCB")
@@ -107,8 +94,19 @@ class CheckItemOpinionIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[?(@.category.id == " + categoryId + ")].items[0].itemName").value("模板树检查项"));
 
-        mockMvc.perform(delete("/check-item-templates/{templateId}", categoryId)
-                        .param("version", "0")
+        mockMvc.perform(delete("/check-item-templates/{id}", itemId)
+                        .header("X-Mock-User-Id", "1")
+                        .header("X-Mock-Roles", "PCB_LEADER"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/check-item-templates")
+                        .param("reviewType", "PCB")
+                        .header("X-Mock-User-Id", "1")
+                        .header("X-Mock-Roles", "PCB_LEADER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.category.id == " + categoryId + ")].items[0].enabled").value(false));
+
+        mockMvc.perform(delete("/check-item-templates/{id}", categoryId)
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER"))
                 .andExpect(status().isOk());
@@ -158,7 +156,6 @@ class CheckItemOpinionIntegrationTest {
         file.setFileName("check.png");
         file.setFileSize(12L);
         file.setMd5("check-attachment-md5");
-        file.setVersionNo(1);
         file.setCompanyFileId("mock-check-file");
         file.setLatest(true);
         file.setUploadedBy(20L);

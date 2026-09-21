@@ -1,6 +1,7 @@
 package com.bms.file.application;
 
 import com.bms.file.domain.FileCategory;
+import com.bms.file.domain.FileUploadScene;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
 import com.bms.identity.application.CurrentUser;
@@ -25,7 +26,7 @@ import static org.mockito.Mockito.when;
 /**
  * @author 王涛
  * @date 2026-09-16
- * @description 验证文件应用服务对上传会话、MD5 去重和版本递增的编排规则，使用 Mock 文件服务且不依赖真实文件或数据库。
+ * @description 验证文件应用服务对上传会话、当前文件替换和下载授权的编排规则，使用 Mock 文件服务且不依赖真实文件或数据库。
  */
 class FileApplicationServiceTest {
     private final ReviewFileMapper fileMapper = mock(ReviewFileMapper.class);
@@ -39,37 +40,37 @@ class FileApplicationServiceTest {
     private final CurrentUser designer = new CurrentUser(10L, Set.of(Role.DESIGNER));
 
     @Test
-    void shouldCreateFirstVersionAndIncrementWhenMd5Changes() {
+    void shouldReplaceCurrentFileWhenBusinessFileKeyIsUploadedAgain() {
         when(fileMapper.nextId()).thenReturn(101L, 102L);
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
         FileApplicationService.UploadSessionView firstSession = service.createUploadSession(1L, FileCategory.PCB_SCHEMATIC, designer);
         FileApplicationService.FileView first = service.register(new FileApplicationService.RegisterFileCommand(1L,
                 firstSession.uploadSessionId(), FileCategory.PCB_SCHEMATIC, "BMS-P1", "BMS.pcb", 100L, "md5-a"), designer);
 
-        ReviewFileRecord latest = record(101L, "md5-a", 1);
+        ReviewFileRecord latest = record(101L, "md5-a");
         when(fileMapper.findLatest(1L, FileCategory.PCB_SCHEMATIC.name(), "BMS-P1")).thenReturn(latest);
         FileApplicationService.UploadSessionView secondSession = service.createUploadSession(1L, FileCategory.PCB_SCHEMATIC, designer);
         FileApplicationService.FileView second = service.register(new FileApplicationService.RegisterFileCommand(1L,
                 secondSession.uploadSessionId(), FileCategory.PCB_SCHEMATIC, "BMS-P1", "BMS-v2.pcb", 110L, "md5-b"), designer);
 
-        assertThat(first.versionNo()).isEqualTo(1);
-        assertThat(second.versionNo()).isEqualTo(2);
-        verify(fileMapper).markLatestAsHistorical(1L, FileCategory.PCB_SCHEMATIC.name(), "BMS-P1");
-        verify(fileMapper, org.mockito.Mockito.times(2)).insert(any(ReviewFileRecord.class));
+        assertThat(first.id()).isEqualTo(101L);
+        assertThat(second.id()).isEqualTo(101L);
+        verify(fileMapper).updateCurrent(any(ReviewFileRecord.class));
+        verify(fileMapper).insert(any(ReviewFileRecord.class));
         verify(auditMapper, org.mockito.Mockito.times(2)).insert(any());
     }
 
     @Test
     void shouldAllowEmcExpertAndRejectHardwareExpertWhenDownloadingPcbFile() {
-        ReviewFileRecord file = record(101L, "md5-a", 1);
+        ReviewFileRecord file = record(101L, "md5-a");
         when(fileMapper.findById(101L)).thenReturn(file);
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
 
-        FileApplicationService.DownloadView download = service.requestDownload(101L,
+        FileApplicationService.DownloadContent download = service.downloadTaskFile(1L, 101L,
                 new CurrentUser(20L, Set.of(Role.EMC_EXPERT)));
 
-        assertThat(download.downloadUrl()).contains("mock-file-1");
-        assertThatThrownBy(() -> service.requestDownload(101L, new CurrentUser(21L, Set.of(Role.HARDWARE_EXPERT))))
+        assertThat(download.fileName()).isEqualTo("BMS.pcb");
+        assertThatThrownBy(() -> service.downloadTaskFile(1L, 101L, new CurrentUser(21L, Set.of(Role.HARDWARE_EXPERT))))
                 .isInstanceOf(com.bms.common.BusinessException.class)
                 .hasMessage("无对应文件操作权限");
     }
@@ -95,7 +96,29 @@ class FileApplicationServiceTest {
                 .hasMessage("仅任务设计者可以上传该任务的 PCB 或原理图文件");
     }
 
-    private ReviewFileRecord record(long id, String md5, int versionNo) {
+    @Test
+    void shouldRegisterStageFileAfterResourceUpload() {
+        when(fileMapper.nextId()).thenReturn(102L);
+        when(taskMapper.findById(1L)).thenReturn(taskRecord());
+
+        FileApplicationService.FileView uploaded = service.registerStageFile(1L, FileUploadScene.PROCESS_REVIEW,
+                new FileApplicationService.FileReferenceCommand("/bms/pcb/process.zip", "process.zip", 3L, "md5", null), designer);
+
+        assertThat(uploaded.category()).isEqualTo(FileCategory.PROCESS);
+        assertThat(uploaded.businessFileKey()).isEqualTo("PROCESS_REVIEW");
+        verify(fileMapper).insert(any(ReviewFileRecord.class));
+        verify(auditMapper).insert(any());
+    }
+
+    @Test
+    void shouldRejectTaskCreationSceneWhenRegisteringStageFile() {
+        assertThatThrownBy(() -> service.registerStageFile(1L, FileUploadScene.TASK_CREATION,
+                new FileApplicationService.FileReferenceCommand("/bms/pcb/design.pcb", "design.pcb", 1L, null, null), designer))
+                .isInstanceOf(com.bms.common.BusinessException.class)
+                .hasMessage("创建任务文件应通过任务保存或提交接口关联");
+    }
+
+    private ReviewFileRecord record(long id, String md5) {
         ReviewFileRecord record = new ReviewFileRecord();
         record.setId(id);
         record.setTaskId(1L);
@@ -104,7 +127,6 @@ class FileApplicationServiceTest {
         record.setFileName("BMS.pcb");
         record.setFileSize(100L);
         record.setMd5(md5);
-        record.setVersionNo(versionNo);
         record.setCompanyFileId("mock-file-1");
         record.setLatest(true);
         record.setUploadedBy(10L);

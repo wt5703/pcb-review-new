@@ -23,18 +23,16 @@ import java.util.List;
 @Tag(name = "系统字典", description = "提供前端下拉框和多选框使用的固定业务字典。")
 public class DictionaryController {
     @GetMapping("/task-options")
-    @Operation(summary = "查询任务创建字典", description = "返回 PCB 评审类型及 ReviewRole 枚举。code 是接口传参值，name 是前端显示中文名称。")
+    @Operation(summary = "查询任务创建字典", description = "返回 PCB 评审类型及创建任务可选的评审角色。code 是接口传参值，name 是前端显示中文名称；互检职责和原理图流程内部职责不在创建页选择。")
     public ApiResponse<TaskOptionsView> taskOptions(HttpServletRequest request) {
         return ApiResponse.ok(new TaskOptionsView(
                 List.of("BMU板", "BSU板", "分流器板", "高压板", "转接板", "储能板", "其他"),
                 List.of(
+                        new DictionaryItem(ReviewRole.HARDWARE_EXPERT.name(), "硬件评审"),
+                        new DictionaryItem(ReviewRole.EMC_EXPERT.name(), "EMC评审"),
                         new DictionaryItem(ReviewRole.PCB_EXPERT.name(), "PCB评审"),
                         new DictionaryItem(ReviewRole.PROCESS_EXPERT.name(), "工艺评审"),
-                        new DictionaryItem(ReviewRole.STRUCTURE_EXPERT.name(), "结构评审"),
-                        new DictionaryItem(ReviewRole.PCB_MUTUAL_CHECK.name(), "PCB互检"),
-                        new DictionaryItem(ReviewRole.SCHEMATIC_HARDWARE_EXPERT.name(), "硬件评审"),
-                        new DictionaryItem(ReviewRole.SCHEMATIC_OTHER_EXPERT.name(), "原理图其他评审"),
-                        new DictionaryItem(ReviewRole.SCHEMATIC_MUTUAL_CHECK.name(), "原理图互检"))), traceId(request));
+                        new DictionaryItem(ReviewRole.STRUCTURE_EXPERT.name(), "结构评审"))), traceId(request));
     }
 
     private String traceId(HttpServletRequest request) { return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString(); }

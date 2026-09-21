@@ -41,7 +41,6 @@ class OpenApiIntegrationTest {
                 .andExpect(jsonPath("$.data.pcbTypes[5]").value("储能板"))
                 .andExpect(jsonPath("$.data.pcbTypes[6]").value("其他"))
                 .andExpect(jsonPath("$.data.reviewRoles[*].code").value(org.hamcrest.Matchers.contains(
-                        "PCB_EXPERT", "PROCESS_EXPERT", "STRUCTURE_EXPERT", "PCB_MUTUAL_CHECK",
-                        "SCHEMATIC_HARDWARE_EXPERT", "SCHEMATIC_OTHER_EXPERT", "SCHEMATIC_MUTUAL_CHECK")));
+                        "HARDWARE_EXPERT", "EMC_EXPERT", "PCB_EXPERT", "PROCESS_EXPERT", "STRUCTURE_EXPERT")));
     }
 }

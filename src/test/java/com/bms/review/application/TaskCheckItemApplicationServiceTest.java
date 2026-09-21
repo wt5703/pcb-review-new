@@ -75,7 +75,7 @@ class TaskCheckItemApplicationServiceTest {
         when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(item(51L, 31L, "spacing", "线距检查"));
 
         assertThatThrownBy(() -> service.submit(1001L, 51L,
-                new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.FAIL, "线距不足", null, 0L), pcbLeader))
+                new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.FAIL, "线距不足", null), pcbLeader))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("不合格检查项必须关联评审意见");
     }

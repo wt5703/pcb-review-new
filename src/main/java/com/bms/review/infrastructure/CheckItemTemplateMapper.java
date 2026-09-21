@@ -43,4 +43,7 @@ public interface CheckItemTemplateMapper {
 
     @Update("UPDATE check_item_template SET enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE parent_item_key=#{parentItemKey}")
     int disableChildrenByParentItemKey(String parentItemKey);
+
+    @Update("UPDATE check_item_template SET enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=#{id}")
+    int disableById(long id);
 }

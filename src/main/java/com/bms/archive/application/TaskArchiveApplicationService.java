@@ -1,5 +1,7 @@
 package com.bms.archive.application;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,10 +13,6 @@ import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
 import com.bms.notification.infrastructure.NotificationSendRecord;
 import com.bms.notification.infrastructure.NotificationSendRecordMapper;
-import com.bms.review.domain.OpinionSourceType;
-import com.bms.review.infrastructure.OpinionReplyRecord;
-import com.bms.review.infrastructure.ReviewOpinionMapper;
-import com.bms.review.infrastructure.ReviewOpinionRecord;
 import com.bms.review.infrastructure.TaskReviewerMapper;
 import com.bms.review.infrastructure.TaskReviewerRecord;
 import com.bms.task.infrastructure.ReviewTaskRecord;
@@ -23,33 +21,29 @@ import com.bms.workflow.infrastructure.TaskFlowRecord;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 /**
  * @author 王涛
  * @date 2026-09-18
- * @description 在任务结束事务内冻结可展示的归档记录，覆盖流转意见、各阶段最新文件和实际邮件发送记录，确保后续业务明细变化不会影响历史回溯。
+ * @description 在任务结束事务内冻结可展示的归档记录，覆盖流程节点、各阶段最新文件和实际邮件发送记录，确保后续业务明细变化不会影响历史回溯。
  */
 @Service
 public class TaskArchiveApplicationService {
     private final TaskArchiveSnapshotMapper snapshotMapper;
     private final ReviewFileMapper fileMapper;
     private final TaskReviewerMapper reviewerMapper;
-    private final ReviewOpinionMapper opinionMapper;
     private final TaskFlowMapper flowMapper;
     private final NotificationSendRecordMapper sendRecordMapper;
     private final ObjectMapper objectMapper;
 
     public TaskArchiveApplicationService(TaskArchiveSnapshotMapper snapshotMapper, ReviewFileMapper fileMapper,
-                                         TaskReviewerMapper reviewerMapper, ReviewOpinionMapper opinionMapper,
+                                         TaskReviewerMapper reviewerMapper,
                                          TaskFlowMapper flowMapper, NotificationSendRecordMapper sendRecordMapper,
                                          ObjectMapper objectMapper) {
         this.snapshotMapper = snapshotMapper;
         this.fileMapper = fileMapper;
         this.reviewerMapper = reviewerMapper;
-        this.opinionMapper = opinionMapper;
         this.flowMapper = flowMapper;
         this.sendRecordMapper = sendRecordMapper;
         this.objectMapper = objectMapper;
@@ -61,13 +55,12 @@ public class TaskArchiveApplicationService {
         }
         long taskId = task.getId();
         List<StageFileView> stageFiles = fileMapper.findLatestByTaskId(taskId).stream().map(this::toStageFile).toList();
-        List<FlowOpinionView> flowOpinions = buildFlowOpinions(taskId);
         List<ReviewerView> reviewers = reviewerMapper.findActiveByTaskId(taskId).stream().map(this::toReviewer).toList();
-        List<FlowEventView> flowEvents = flowMapper.findByTaskId(taskId).stream().map(this::toFlowEvent).toList();
+        List<FlowNodeView> flowNodes = flowMapper.findByTaskId(taskId).stream().map(this::toFlowNode).toList();
         List<MailRecordView> mailRecords = sendRecordMapper.findByTaskId(taskId).stream().map(this::toMailRecord).toList();
         snapshotMapper.insert(new TaskArchiveSnapshotRecord(taskId, task.getStatus(),
                 json(new TaskSnapshot(taskId, task.getTaskName(), task.getStatus())), json(stageFiles), json(reviewers),
-                json(flowOpinions), json(flowEvents), json(mailRecords)));
+                json(List.of()), json(flowNodes), json(mailRecords)));
     }
 
     public ArchiveView get(long taskId) {
@@ -77,47 +70,22 @@ public class TaskArchiveApplicationService {
         }
         return new ArchiveView(snapshot.taskId(), snapshot.finalStatus(), read(snapshot.taskSnapshot(), TaskSnapshot.class),
                 readList(snapshot.fileSnapshot(), StageFileView.class), readList(snapshot.reviewerSnapshot(), ReviewerView.class),
-                readList(snapshot.opinionSnapshot(), FlowOpinionView.class), readList(snapshot.flowSnapshot(), FlowEventView.class),
+                readList(snapshot.flowSnapshot(), FlowNodeView.class),
                 readList(snapshot.notificationSnapshot(), MailRecordView.class));
-    }
-
-    private List<FlowOpinionView> buildFlowOpinions(long taskId) {
-        List<FlowOpinionView> values = new ArrayList<>();
-        for (ReviewOpinionRecord opinion : opinionMapper.findByTaskId(taskId)) {
-            List<DesignerReplyView> replies = opinionMapper.findRepliesByOpinionId(opinion.getId()).stream()
-                    .map(this::toDesignerReply).toList();
-            values.add(new FlowOpinionView(opinion.getCreatedAt(), stageNameForOpinion(opinion.getSourceType()), opinion.getRaisedBy(),
-                    displayName(opinion.getRaisedBy()), opinion.getContent(), "REVIEW_OPINION", opinion.getId(), replies));
-        }
-        for (TaskFlowRecord flow : flowMapper.findByTaskId(taskId)) {
-            if (flow.getComment() != null && !flow.getComment().isBlank()) {
-                values.add(new FlowOpinionView(flow.getCreatedAt(), stageNameForStatus(flow.getToStatus()), flow.getOperatorId(),
-                        displayName(flow.getOperatorId()), flow.getComment(), "FLOW_COMMENT", flow.getId(), List.of()));
-            }
-        }
-        values.sort(Comparator.comparing(FlowOpinionView::occurredAt, Comparator.nullsLast(Comparator.naturalOrder()))
-                .thenComparing(FlowOpinionView::sourceId));
-        return values;
     }
 
     private StageFileView toStageFile(ReviewFileRecord file) {
         return new StageFileView(file.getId(), stageNameForFile(file), file.getFileCategory(), file.getBusinessFileKey(),
-                file.getFileName(), file.getVersionNo(), file.getUploadedBy(), displayName(file.getUploadedBy()), file.getUploadedAt(),
-                file.getCompanyFileId(), file.getFileSize(), file.getMd5(), "/api/v1/files/" + file.getId() + "/download");
+                file.getFileName(), file.getUploadedBy(), displayName(file.getUploadedBy()), file.getUploadedAt(),
+                file.getCompanyFileId(), file.getFileFormat(), file.getFileSize(), file.getMd5(), "/api/v1/files/" + file.getId() + "/download");
     }
 
     private ReviewerView toReviewer(TaskReviewerRecord reviewer) {
         return new ReviewerView(reviewer.getReviewerId(), displayName(reviewer.getReviewerId()), reviewer.getReviewRole(), reviewer.getProcessStatus());
     }
 
-    private FlowEventView toFlowEvent(TaskFlowRecord flow) {
-        return new FlowEventView(flow.getId(), flow.getCreatedAt(), stageNameForStatus(flow.getToStatus()), flow.getAction(),
-                flow.getFromStatus(), flow.getToStatus(), flow.getOperatorId(), displayName(flow.getOperatorId()), flow.getComment());
-    }
-
-    private DesignerReplyView toDesignerReply(OpinionReplyRecord reply) {
-        return new DesignerReplyView(reply.getId(), reply.getReplyNo(), reply.getReplyType(), reply.getReason(), reply.getFileVersionId(),
-                reply.getRepliedBy(), displayName(reply.getRepliedBy()), reply.getCreatedAt());
+    private FlowNodeView toFlowNode(TaskFlowRecord flow) {
+        return new FlowNodeView(flow.getCreatedAt(), stageNameForStatus(flow.getToStatus()), displayName(flow.getOperatorId()), flow.getComment());
     }
 
     private MailRecordView toMailRecord(NotificationSendRecord record) {
@@ -125,20 +93,12 @@ public class TaskArchiveApplicationService {
                 deliveryStatus(record.deliveryStatus()), record.deliveryStatus(), record.failureReason(), record.outboxEventId());
     }
 
-    private String stageNameForOpinion(String sourceType) {
-        return switch (OpinionSourceType.valueOf(sourceType)) {
-            case MUTUAL_CHECK_ITEM, MUTUAL_EXTRA -> "互检";
-            case PROCESS_REVIEW -> "工艺评审";
-            case STRUCTURE_REVIEW -> "结构评审";
-            case EXPERT_REVIEW -> "专家评审";
-        };
-    }
-
     private String stageNameForFileCategory(String category) {
         return switch (category) {
             case "PCB_SCHEMATIC" -> "设计文件";
             case "PROCESS" -> "工艺评审";
             case "STRUCTURE" -> "结构评审";
+            case "MUTUAL_CHECK_ATTACHMENT" -> "互检单评审";
             default -> category;
         };
     }
@@ -171,7 +131,7 @@ public class TaskArchiveApplicationService {
             case "TASK_STATUS_CHANGED" -> "评审阶段流转通知";
             case "REVIEWERS_ASSIGNED" -> "评审人员分配通知";
             case "REVIEWERS_REASSIGNED" -> "评审人员改派通知";
-            case "FILE_VERSION_REGISTERED" -> "设计文件版本上传通知";
+            case "FILE_REGISTERED" -> "设计文件上传通知";
             case "OPINION_RAISED" -> "专家意见待答复通知";
             case "OPINION_REPLIED" -> "设计者答复待确认通知";
             case "OPINION_CONFIRMED_PASS" -> "意见确认通过通知";
@@ -214,31 +174,23 @@ public class TaskArchiveApplicationService {
     }
 
     public record ArchiveView(Long taskId, String finalStatus, TaskSnapshot task, List<StageFileView> stageFiles,
-                              List<ReviewerView> reviewers, List<FlowOpinionView> flowOpinions,
-                              List<FlowEventView> flowEvents, List<MailRecordView> mailRecords) {
+                              List<ReviewerView> reviewers, List<FlowNodeView> flowNodes, List<MailRecordView> mailRecords) {
     }
 
     public record TaskSnapshot(long taskId, String taskName, String status) {
     }
 
     public record StageFileView(Long fileId, String stageName, String fileCategory, String businessFileKey, String fileName,
-                                Integer versionNo, Long uploaderId, String uploaderName, LocalDateTime uploadedAt,
-                                String companyFileId, Long fileSize, String md5, String downloadPath) {
+                                Long uploaderId, String uploaderName, LocalDateTime uploadedAt,
+                                String resourcePath, String fileFormat, Long fileSize, String md5, String downloadPath) {
     }
 
     public record ReviewerView(Long reviewerId, String reviewerName, String reviewRole, String status) {
     }
 
-    public record FlowOpinionView(LocalDateTime occurredAt, String stageName, Long operatorId, String operatorName,
-                                  String content, String source, Long sourceId, List<DesignerReplyView> designerReplies) {
-    }
-
-    public record DesignerReplyView(Long replyId, Integer replyNo, String replyType, String content, Long fileVersionId,
-                                    Long designerId, String designerName, LocalDateTime repliedAt) {
-    }
-
-    public record FlowEventView(Long flowId, LocalDateTime occurredAt, String stageName, String action, String fromStatus,
-                                String toStatus, Long operatorId, String operatorName, String comment) {
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record FlowNodeView(LocalDateTime occurredAt, String stageName, String operatorName,
+                               @JsonAlias("comment") String content) {
     }
 
     public record MailRecordView(LocalDateTime sentAt, String scenario, String recipient, String status,

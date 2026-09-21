@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 定义检查项附件关联的追加写入接口，同一检查项不能重复关联同一个文件版本。
+ * @description 定义检查项附件关联的追加写入接口，同一检查项不能重复关联同一个文件。
  */
 @Mapper
 public interface CheckItemAttachmentMapper {

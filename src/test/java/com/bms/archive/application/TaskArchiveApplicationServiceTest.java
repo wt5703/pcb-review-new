@@ -6,10 +6,6 @@ import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
 import com.bms.notification.infrastructure.NotificationSendRecord;
 import com.bms.notification.infrastructure.NotificationSendRecordMapper;
-import com.bms.review.domain.OpinionSourceType;
-import com.bms.review.infrastructure.OpinionReplyRecord;
-import com.bms.review.infrastructure.ReviewOpinionMapper;
-import com.bms.review.infrastructure.ReviewOpinionRecord;
 import com.bms.review.infrastructure.TaskReviewerMapper;
 import com.bms.review.infrastructure.TaskReviewerRecord;
 import com.bms.task.infrastructure.ReviewTaskRecord;
@@ -30,17 +26,16 @@ import static org.mockito.Mockito.when;
 /**
  * @author 王涛
  * @date 2026-09-18
- * @description 验证任务结束时归档会冻结专家意见及设计者答复、当前阶段的最新文件和邮件投递记录，供归档页面按图片要求直接展示。
+ * @description 验证任务结束时归档只冻结流程节点、当前阶段的最新文件和邮件投递记录，不归档评审意见内容。
  */
 class TaskArchiveApplicationServiceTest {
     private final TaskArchiveSnapshotMapper snapshotMapper = mock(TaskArchiveSnapshotMapper.class);
     private final ReviewFileMapper fileMapper = mock(ReviewFileMapper.class);
     private final TaskReviewerMapper reviewerMapper = mock(TaskReviewerMapper.class);
-    private final ReviewOpinionMapper opinionMapper = mock(ReviewOpinionMapper.class);
     private final TaskFlowMapper flowMapper = mock(TaskFlowMapper.class);
     private final NotificationSendRecordMapper sendRecordMapper = mock(NotificationSendRecordMapper.class);
     private final TaskArchiveApplicationService service = new TaskArchiveApplicationService(snapshotMapper, fileMapper, reviewerMapper,
-            opinionMapper, flowMapper, sendRecordMapper, new ObjectMapper().findAndRegisterModules());
+            flowMapper, sendRecordMapper, new ObjectMapper().findAndRegisterModules());
 
     @Test
     void shouldFreezeStructuredArchiveFieldsForDisplay() {
@@ -50,29 +45,15 @@ class TaskArchiveApplicationServiceTest {
         file.setFileCategory("PCB_SCHEMATIC");
         file.setBusinessFileKey("MAIN_PCB");
         file.setFileName("BMU_Control_V2.PCB");
-        file.setVersionNo(2);
         file.setUploadedBy(9L);
         file.setUploadedAt(time);
         file.setUploadedStage("PCB_EXPERT_REVIEWING");
-        ReviewOpinionRecord opinion = new ReviewOpinionRecord();
-        opinion.setId(201L);
-        opinion.setSourceType(OpinionSourceType.EXPERT_REVIEW.name());
-        opinion.setContent("电源区走线间距不足");
-        opinion.setRaisedBy(20L);
-        opinion.setCreatedAt(time);
-        OpinionReplyRecord reply = new OpinionReplyRecord();
-        reply.setId(301L);
-        reply.setReplyNo(1);
-        reply.setReplyType("ACCEPT");
-        reply.setReason("已调整为安全间距");
-        reply.setRepliedBy(9L);
-        reply.setCreatedAt(time.plusMinutes(10));
         TaskFlowRecord flow = new TaskFlowRecord();
         flow.setId(401L);
         flow.setToStatus("MUTUAL_REVIEWING");
         flow.setAction("START_MUTUAL_CHECK");
         flow.setOperatorId(2L);
-        flow.setComment(null);
+        flow.setComment("互检人员已完成分配");
         flow.setCreatedAt(time.plusHours(1));
         TaskReviewerRecord reviewer = new TaskReviewerRecord();
         reviewer.setReviewerId(20L);
@@ -84,8 +65,6 @@ class TaskArchiveApplicationServiceTest {
         task.setStatus("FINISHED");
         when(fileMapper.findLatestByTaskId(1001L)).thenReturn(List.of(file));
         when(reviewerMapper.findActiveByTaskId(1001L)).thenReturn(List.of(reviewer));
-        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(opinion));
-        when(opinionMapper.findRepliesByOpinionId(201L)).thenReturn(List.of(reply));
         when(flowMapper.findByTaskId(1001L)).thenReturn(List.of(flow));
         when(sendRecordMapper.findByTaskId(1001L)).thenReturn(List.of(
                 new NotificationSendRecord(501L, "OPINION_RAISED", "expert@bms.com", "OPINION_RAISED", "SUCCESS", null, time)));
@@ -97,9 +76,10 @@ class TaskArchiveApplicationServiceTest {
         when(snapshotMapper.findByTaskId(1001L)).thenReturn(captured.getValue());
         TaskArchiveApplicationService.ArchiveView view = service.get(1001L);
 
-        assertThat(view.flowOpinions()).singleElement().satisfies(value -> {
-            assertThat(value.stageName()).isEqualTo("专家评审");
-            assertThat(value.designerReplies()).singleElement().satisfies(answer -> assertThat(answer.content()).isEqualTo("已调整为安全间距"));
+        assertThat(view.flowNodes()).singleElement().satisfies(value -> {
+            assertThat(value.stageName()).isEqualTo("互检");
+            assertThat(value.operatorName()).isEqualTo("用户#2");
+            assertThat(value.content()).isEqualTo("互检人员已完成分配");
         });
         assertThat(view.stageFiles()).singleElement().satisfies(value -> {
             assertThat(value.stageName()).isEqualTo("专家评审");

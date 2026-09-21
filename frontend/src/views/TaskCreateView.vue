@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { reviewApi } from '@/api/review-api'
+import type { InitialFileReference } from '@/api/types'
 import { identity } from '@/stores/identity'
 
 const router = useRouter()
+const route = useRoute()
+const editTaskId = computed(() => Number(route.params.taskId) || 0)
+const editing = computed(() => editTaskId.value > 0)
 const form = reactive({ reviewType: 'PCB', taskName: '', projectName: '', designName: '', designerId: identity.userId, designerName: `设计者#${identity.userId}`, expectedCompletedDate: '', pcbType: '', expertLeaderId: '', expertLeaderName: '', reviewRoles: [] as string[], reviewDescription: '' })
 const sourceFiles = ref<File[]>([])
+const initialFiles = ref<InitialFileReference[]>([])
 const pcbTypes = ref<string[]>(['BMU板', 'BSU板', '分流器板', '高压板', '转接板', '储能板', '其他'])
 const reviewRoles = ref<Array<{ code: string; name: string }>>([])
 const mockUsers = ref<Array<{ id: number; displayName: string; roles: string[] }>>([])
@@ -14,22 +19,28 @@ const saving = ref(false)
 const error = ref('')
 
 watch(() => form.reviewType, (type) => { if (type === 'SCHEMATIC') form.pcbType = '' })
-onMounted(async () => { try { const [options, users] = await Promise.all([reviewApi.getTaskOptions(), reviewApi.listMockUsers()]); pcbTypes.value = options.pcbTypes; reviewRoles.value = options.reviewRoles; mockUsers.value = users; const currentUser = users.find((user) => user.id === identity.userId); if (currentUser) form.designerName = currentUser.displayName } catch { error.value = '字典或用户目录加载失败，已保留默认选项。' } })
+onMounted(async () => { try { const [options, users] = await Promise.all([reviewApi.getTaskOptions(), reviewApi.listMockUsers()]); pcbTypes.value = options.pcbTypes; reviewRoles.value = options.reviewRoles; mockUsers.value = users; const currentUser = users.find((user) => user.id === identity.userId); if (currentUser) form.designerName = currentUser.displayName
+  if (editing.value) { const task = await reviewApi.getTask(editTaskId.value); if (task.status !== 'DRAFT' || task.designerId !== identity.userId) { throw new Error('只有任务设计者可以编辑尚未提交的任务。') }; Object.assign(form, { reviewType: task.reviewType, taskName: task.taskName, projectName: task.projectName, designName: task.designName, designerId: task.designerId, designerName: task.designerName, expectedCompletedDate: task.expectedCompletedDate, pcbType: task.pcbType ?? '', expertLeaderId: task.expertLeaderId, expertLeaderName: task.expertLeaderName, reviewRoles: task.reviewRoles, reviewDescription: task.reviewDescription ?? '' }) }
+} catch (cause) { error.value = cause instanceof Error ? cause.message : '字典、用户目录或任务加载失败。' } })
 function selectDesigner(): void { const user = mockUsers.value.find((item) => item.id === Number(form.designerId)); if (user) form.designerName = user.displayName }
 function selectLeader(): void { const user = mockUsers.value.find((item) => item.id === Number(form.expertLeaderId)); if (user) form.expertLeaderName = user.displayName }
-function selectFiles(event: Event): void { sourceFiles.value = Array.from((event.target as HTMLInputElement).files ?? []) }
+function selectFiles(event: Event): void { sourceFiles.value = Array.from((event.target as HTMLInputElement).files ?? []); initialFiles.value = [] }
 async function save(submitNow: boolean): Promise<void> {
   error.value = ''; saving.value = true
   try {
-    const task = await reviewApi.createTask({ reviewType: form.reviewType as 'PCB' | 'SCHEMATIC', taskName: form.taskName, projectName: form.projectName, designerId: Number(form.designerId), designerName: form.designerName, designName: form.designName, pcbType: form.pcbType || undefined, expectedCompletedDate: form.expectedCompletedDate, expertLeaderId: Number(form.expertLeaderId), expertLeaderName: form.expertLeaderName, reviewRoles: form.reviewRoles, reviewDescription: form.reviewDescription || undefined }, sourceFiles.value, submitNow)
+    if (sourceFiles.value.length && !initialFiles.value.length) initialFiles.value = await reviewApi.uploadInitialFilesToCompany(sourceFiles.value)
+    const body = { reviewType: form.reviewType as 'PCB' | 'SCHEMATIC', taskName: form.taskName, projectName: form.projectName, designerId: Number(form.designerId), designerName: form.designerName, designName: form.designName, pcbType: form.pcbType || undefined, expectedCompletedDate: form.expectedCompletedDate, expertLeaderId: Number(form.expertLeaderId), expertLeaderName: form.expertLeaderName, reviewRoles: form.reviewRoles, reviewDescription: form.reviewDescription || undefined, initialFiles: initialFiles.value }
+    const task = submitNow
+      ? await reviewApi.submitTask(body, editing.value ? editTaskId.value : undefined)
+      : await reviewApi.saveTask(body, editing.value ? editTaskId.value : undefined)
     await router.push(`/tasks/${task.id}`)
   } catch (cause) { error.value = cause instanceof Error ? cause.message : '保存失败，请检查服务端返回的字段错误。' } finally { saving.value = false }
 }
 </script>
 
 <template>
-  <div class="page-head"><div><h1>创建评审任务</h1><p>保存草稿或提交评审；必填规则由后端统一校验并返回准确提示。</p></div></div>
-  <form class="card form-card task-create-card" @submit.prevent="save(true)"><div class="notice">创建后会按照评审类型和角色进入对应流程。文件服务当前为本地 Mock，支持一次选择多个文件并登记元数据。</div>
+  <div class="page-head"><div><h1>{{ editing ? '编辑评审任务' : '创建评审任务' }}</h1><p>{{ editing ? '仅可编辑尚未提交的任务草稿，可继续追加文件后保存或直接提交。' : '保存草稿或提交评审；必填规则由后端统一校验并返回准确提示。' }}</p></div></div>
+  <form class="card form-card task-create-card" @submit.prevent="save(true)"><div class="notice">文件先上传到公司资源服务，提交任务时仅携带资源服务返回的唯一标识和文件元数据；PCB 系统负责登记关联关系。</div>
     <div class="form-grid create-grid">
       <label>评审类型 *<select v-model="form.reviewType"><option value="PCB">PCB布局布线评审</option><option value="SCHEMATIC">原理图评审</option></select></label>
       <label>{{ form.reviewType === 'PCB' ? 'PCB 名称 *' : '原理图名称 *' }}<input v-model.trim="form.designName" placeholder="根据评审类型填写" /></label>
@@ -41,7 +52,7 @@ async function save(submitNow: boolean): Promise<void> {
     <label class="role-label">评审角色 *<div class="role-options"><label v-for="role in reviewRoles" :key="role.code" class="role-option"><input v-model="form.reviewRoles" type="checkbox" :value="role.code" /><span>{{ role.name }}</span><small>{{ role.code }}</small></label></div></label>
     <label>评审文件 *<input type="file" multiple @change="selectFiles" /><small>{{ sourceFiles.length ? `已选择 ${sourceFiles.length} 个文件：${sourceFiles.map(item => item.name).join('、')}` : '支持多个文件上传' }}</small></label>
     <label>评审描述<textarea v-model.trim="form.reviewDescription" rows="4" placeholder="请输入评审描述（可选）" /></label>
-    <p v-if="error" class="form-error">{{ error }}</p><footer class="form-footer"><button class="btn" :disabled="saving" type="button" @click="save(false)">保存</button><button class="btn primary" :disabled="saving" type="submit">{{ saving ? '正在处理…' : '提交评审任务' }}</button></footer>
+    <p v-if="error" class="form-error">{{ error }}</p><footer class="form-footer"><button class="btn" :disabled="saving" type="button" @click="save(false)">{{ editing ? '保存修改' : '保存' }}</button><button class="btn primary" :disabled="saving" type="submit">{{ saving ? '正在处理…' : (editing ? '保存并提交' : '提交评审任务') }}</button></footer>
   </form>
 </template>
 

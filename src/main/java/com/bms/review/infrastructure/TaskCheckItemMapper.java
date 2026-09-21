@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 定义任务内检查项实例的数据访问接口，支持模板同步后的新增、显示字段刷新、任务查询和带版本号的检查结论提交。
+ * @description 定义任务内检查项实例的数据访问接口，支持模板同步后的新增、显示字段刷新、任务查询和检查结论提交。
  */
 @Mapper
 public interface TaskCheckItemMapper {
@@ -26,16 +26,16 @@ public interface TaskCheckItemMapper {
     int refreshTemplateSnapshot(TaskCheckItemRecord record);
 
     @Select("SELECT id, task_id AS taskId, template_item_id AS templateItemId, template_item_key AS templateItemKey, "
-            + "parent_item_key AS parentItemKey, item_name AS itemName, sort_no AS sortNo, check_result AS checkResult, comment, "
+            + "parent_item_key AS parentItemKey, item_name AS itemName, sort_no AS sortNo, check_result AS checkResult, comment, opinion_rich_text AS richText, "
             + "linked_opinion_id AS linkedOpinionId, status, version FROM task_check_item WHERE task_id=#{taskId} ORDER BY sort_no, id")
     List<TaskCheckItemRecord> findByTaskId(long taskId);
 
     @Select("SELECT id, task_id AS taskId, template_item_id AS templateItemId, template_item_key AS templateItemKey, "
-            + "parent_item_key AS parentItemKey, item_name AS itemName, sort_no AS sortNo, check_result AS checkResult, comment, "
+            + "parent_item_key AS parentItemKey, item_name AS itemName, sort_no AS sortNo, check_result AS checkResult, comment, opinion_rich_text AS richText, "
             + "linked_opinion_id AS linkedOpinionId, status, version FROM task_check_item WHERE task_id=#{taskId} AND id=#{id}")
     TaskCheckItemRecord findByTaskIdAndId(long taskId, long id);
 
-    @Update("UPDATE task_check_item SET check_result=#{checkResult}, comment=#{comment}, linked_opinion_id=#{linkedOpinionId}, status=#{status}, "
-            + "updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=#{id} AND task_id=#{taskId} AND version=#{version}")
+    @Update("UPDATE task_check_item SET check_result=#{checkResult}, comment=#{comment}, opinion_rich_text=#{richText}, linked_opinion_id=#{linkedOpinionId}, status=#{status}, "
+            + "updated_at=CURRENT_TIMESTAMP WHERE id=#{id} AND task_id=#{taskId}")
     int submit(TaskCheckItemRecord record);
 }

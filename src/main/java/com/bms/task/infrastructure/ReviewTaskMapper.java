@@ -35,6 +35,12 @@ public interface ReviewTaskMapper {
             "status, initial_file_ids AS initialFileIds, version FROM review_task ORDER BY id")
     List<ReviewTaskRecord> findAll();
 
-    @Update("UPDATE review_task SET pcb_type=#{pcbType}, status=#{status}, initial_file_ids=#{initialFileIds}, version=#{version}+1, updated_at=CURRENT_TIMESTAMP WHERE id=#{id} AND version=#{version}")
+    @Update("UPDATE review_task SET pcb_type=#{pcbType}, status=#{status}, initial_file_ids=#{initialFileIds}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
     int update(ReviewTaskRecord record);
+
+    @Update("UPDATE review_task SET review_type=#{reviewType}, task_name=#{taskName}, project_name=#{projectName}, designer_name=#{designerName}, "
+            + "design_name=#{designName}, pcb_type=#{pcbType}, expected_completed_date=#{expectedCompletedDate}, expert_leader_id=#{expertLeaderId}, "
+            + "expert_leader_name=#{expertLeaderName}, review_roles=#{reviewRoles}, review_description=#{reviewDescription}, updated_at=CURRENT_TIMESTAMP "
+            + "WHERE id=#{id} AND status='DRAFT'")
+    int updateDraft(ReviewTaskRecord record);
 }

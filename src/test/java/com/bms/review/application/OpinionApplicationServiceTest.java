@@ -52,7 +52,7 @@ class OpinionApplicationServiceTest {
         CurrentUser mutualReviewer = new CurrentUser(20L, Set.of(Role.PCB_LEADER));
 
         OpinionApplicationService.OpinionView view = service.raise(new OpinionApplicationService.RaiseOpinionCommand(1001L,
-                OpinionSourceType.MUTUAL_EXTRA, null, "补充检查发现的问题", 101L), mutualReviewer);
+                OpinionSourceType.MUTUAL_EXTRA, null, "补充检查发现的问题"), mutualReviewer);
 
         assertThat(view.id()).isEqualTo(31L);
         assertThat(view.status()).isEqualTo(OpinionStatus.PENDING_REPLY);
@@ -61,7 +61,7 @@ class OpinionApplicationServiceTest {
 
     @Test
     void shouldReplyAndConfirmWithoutRestartingReview() {
-        ReviewOpinionRecord opinion = opinion(31L, 1001L, 20L, OpinionStatus.PENDING_REPLY, 0L);
+        ReviewOpinionRecord opinion = opinion(31L, 1001L, 20L, OpinionStatus.PENDING_REPLY);
         when(opinionMapper.findById(31L)).thenReturn(opinion);
         when(taskMapper.findById(1001L)).thenReturn(task(9L));
         when(opinionMapper.nextReplyId()).thenReturn(41L);
@@ -69,7 +69,7 @@ class OpinionApplicationServiceTest {
         when(opinionMapper.updateStatus(any(ReviewOpinionRecord.class))).thenReturn(1, 1);
 
         OpinionApplicationService.OpinionView replied = service.reply(31L,
-                new OpinionApplicationService.ReplyOpinionCommand(ReplyType.ACCEPT, "已上传新设计文件", 102L),
+                new OpinionApplicationService.ReplyOpinionCommand(ReplyType.ACCEPT, "已上传新设计文件"),
                 new CurrentUser(9L, Set.of(Role.DESIGNER)));
 
         OpinionReplyRecord persistedReply = new OpinionReplyRecord();
@@ -91,8 +91,8 @@ class OpinionApplicationServiceTest {
     void shouldSummarizeOpinionsByLifecycleStatus() {
         when(taskMapper.findById(1001L)).thenReturn(task(9L));
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(
-                opinion(31L, 1001L, 20L, OpinionStatus.PENDING_REPLY, 0L),
-                opinion(32L, 1001L, 20L, OpinionStatus.CONFIRMED_PASS, 0L)));
+                opinion(31L, 1001L, 20L, OpinionStatus.PENDING_REPLY),
+                opinion(32L, 1001L, 20L, OpinionStatus.CONFIRMED_PASS)));
 
         OpinionApplicationService.OpinionSummary summary = service.summary(1001L, new CurrentUser(20L, Set.of(Role.HARDWARE_EXPERT)));
 
@@ -102,15 +102,14 @@ class OpinionApplicationServiceTest {
     }
 
     @Test
-    void shouldExposeDesignerReplyHistoryWhenListingOpinions() {
-        ReviewOpinionRecord opinion = opinion(31L, 1001L, 20L, OpinionStatus.PENDING_CONFIRMATION, 0L);
+    void shouldExposeEveryDesignerReplyWithItsPairedConfirmationWhenListingOpinions() {
+        ReviewOpinionRecord opinion = opinion(31L, 1001L, 20L, OpinionStatus.PENDING_CONFIRMATION);
         OpinionReplyRecord reply = new OpinionReplyRecord();
         reply.setId(41L);
         reply.setOpinionId(31L);
         reply.setReplyNo(1);
         reply.setReplyType(ReplyType.ACCEPT.name());
-        reply.setReason("已优化布局并上传 V2 文件");
-        reply.setFileVersionId(102L);
+        reply.setReason("已优化布局并更新文件");
         reply.setRepliedBy(9L);
         OpinionConfirmationRecord confirmation = new OpinionConfirmationRecord();
         confirmation.setId(51L);
@@ -118,19 +117,33 @@ class OpinionApplicationServiceTest {
         confirmation.setReplyId(41L);
         confirmation.setPassed(true);
         confirmation.setConfirmedBy(20L);
+        OpinionReplyRecord secondReply = new OpinionReplyRecord();
+        secondReply.setId(42L);
+        secondReply.setOpinionId(31L);
+        secondReply.setReplyNo(2);
+        secondReply.setReplyType(ReplyType.ACCEPT.name());
+        secondReply.setReason("根据退回意见再次调整");
+        secondReply.setRepliedBy(9L);
+        OpinionConfirmationRecord secondConfirmation = new OpinionConfirmationRecord();
+        secondConfirmation.setId(52L);
+        secondConfirmation.setOpinionId(31L);
+        secondConfirmation.setReplyId(42L);
+        secondConfirmation.setPassed(false);
+        secondConfirmation.setComment("仍需补充说明");
+        secondConfirmation.setConfirmedBy(20L);
         when(taskMapper.findById(1001L)).thenReturn(task(9L));
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(opinion));
-        when(opinionMapper.findRepliesByOpinionId(31L)).thenReturn(List.of(reply));
-        when(opinionMapper.findConfirmationsByOpinionId(31L)).thenReturn(List.of(confirmation));
+        when(opinionMapper.findRepliesByOpinionId(31L)).thenReturn(List.of(reply, secondReply));
+        when(opinionMapper.findConfirmationsByOpinionId(31L)).thenReturn(List.of(confirmation, secondConfirmation));
 
         OpinionApplicationService.OpinionView view = service.list(1001L,
                 new CurrentUser(20L, Set.of(Role.HARDWARE_EXPERT))).get(0);
 
-        assertThat(view.designerReplies()).singleElement().satisfies(value -> {
-            assertThat(value.reason()).isEqualTo("已优化布局并上传 V2 文件");
-            assertThat(value.fileVersionId()).isEqualTo(102L);
-        });
-        assertThat(view.confirmations()).singleElement().satisfies(value -> assertThat(value.passed()).isTrue());
+        assertThat(view.replies()).hasSize(2);
+        assertThat(view.replies().get(0).reason()).isEqualTo("已优化布局并更新文件");
+        assertThat(view.replies().get(0).confirmation().passed()).isTrue();
+        assertThat(view.replies().get(1).reason()).isEqualTo("根据退回意见再次调整");
+        assertThat(view.replies().get(1).confirmation().comment()).isEqualTo("仍需补充说明");
     }
 
     private ReviewTaskRecord task(long designerId) {
@@ -142,7 +155,7 @@ class OpinionApplicationServiceTest {
         return task;
     }
 
-    private ReviewOpinionRecord opinion(long id, long taskId, long raisedBy, OpinionStatus status, long version) {
+    private ReviewOpinionRecord opinion(long id, long taskId, long raisedBy, OpinionStatus status) {
         ReviewOpinionRecord opinion = new ReviewOpinionRecord();
         opinion.setId(id);
         opinion.setTaskId(taskId);
@@ -150,7 +163,6 @@ class OpinionApplicationServiceTest {
         opinion.setContent("问题");
         opinion.setRaisedBy(raisedBy);
         opinion.setStatus(status.name());
-        opinion.setVersion(version);
         return opinion;
     }
 }

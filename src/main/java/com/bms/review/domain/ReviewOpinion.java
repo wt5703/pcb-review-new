@@ -7,7 +7,7 @@ import java.util.Objects;
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 评审意见聚合根，维护提出人、答复内容、确认结果和撤回记录，并保证设计者答复后仅由原提出人确认且版本重新上传只影响对应意见确认。
+ * @description 评审意见聚合根，维护提出人、答复内容、确认结果和撤回记录，并保证设计者答复后仅由原提出人确认。
  */
 
 
@@ -16,32 +16,30 @@ public final class ReviewOpinion {
     private final String sourceType;
     private final String content;
     private final Long raisedBy;
-    private final Long fileVersionId;
     private final List<OpinionReply> replies = new ArrayList<>();
     private final List<OpinionConfirmation> confirmations = new ArrayList<>();
     private OpinionStatus status;
 
-    private ReviewOpinion(Long taskId, String sourceType, String content, Long raisedBy, Long fileVersionId) {
+    private ReviewOpinion(Long taskId, String sourceType, String content, Long raisedBy) {
         this.taskId = Objects.requireNonNull(taskId);
         this.sourceType = Objects.requireNonNull(sourceType);
         this.content = requireText(content, "意见内容不能为空");
         this.raisedBy = Objects.requireNonNull(raisedBy);
-        this.fileVersionId = Objects.requireNonNull(fileVersionId);
         this.status = OpinionStatus.PENDING_REPLY;
     }
 
-    public static ReviewOpinion raise(Long taskId, String sourceType, String content, Long raisedBy, Long fileVersionId) {
-        return new ReviewOpinion(taskId, sourceType, content, raisedBy, fileVersionId);
+    public static ReviewOpinion raise(Long taskId, String sourceType, String content, Long raisedBy) {
+        return new ReviewOpinion(taskId, sourceType, content, raisedBy);
     }
 
-    public void reply(Long replierId, ReplyType replyType, String reason, Long repliedFileVersionId) {
+    public void reply(Long replierId, ReplyType replyType, String reason) {
         requireState(OpinionStatus.PENDING_REPLY, "当前意见不允许答复");
         Objects.requireNonNull(replierId);
         Objects.requireNonNull(replyType);
         if (replyType != ReplyType.ACCEPT) {
             requireText(reason, "接受但不修改或不接受时必须填写原因");
         }
-        replies.add(new OpinionReply(replierId, replyType, reason, repliedFileVersionId));
+        replies.add(new OpinionReply(replierId, replyType, reason));
         status = OpinionStatus.PENDING_CONFIRMATION;
     }
 
@@ -77,9 +75,6 @@ public final class ReviewOpinion {
         return raisedBy;
     }
 
-    public Long fileVersionId() {
-        return fileVersionId;
-    }
 
     public List<OpinionReply> replies() {
         return List.copyOf(replies);
@@ -102,7 +97,7 @@ public final class ReviewOpinion {
         return value;
     }
 
-    public record OpinionReply(Long replierId, ReplyType replyType, String reason, Long fileVersionId) {
+    public record OpinionReply(Long replierId, ReplyType replyType, String reason) {
     }
 
     public record OpinionConfirmation(Long confirmerId, boolean passed, String comment) {

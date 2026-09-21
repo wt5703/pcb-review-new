@@ -97,13 +97,12 @@ public class TaskCheckItemApplicationService {
         validateCommand(command, taskId, itemId);
         record.setCheckResult(command.result().name());
         record.setComment(command.comment());
+        record.setRichText(command.richText());
         record.setLinkedOpinionId(command.linkedOpinionId());
         record.setStatus(CheckItemStatus.COMPLETED.name());
-        record.setVersion(command.version());
         if (taskCheckItemMapper.submit(record) != 1) {
-            throw new BusinessException(ErrorCode.VERSION_CONFLICT, "检查项已被其他操作更新，请刷新后重试");
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务");
         }
-        record.setVersion(record.getVersion() + 1);
         appendAudit(record.getId(), "CHECK_ITEM_SUBMITTED", currentUser.id(), command.result().name());
         return CheckItemView.from(record, null, attachments(record.getId()));
     }
@@ -111,7 +110,7 @@ public class TaskCheckItemApplicationService {
     /**
      * @author 王涛
      * @date 2026-09-18
-     * @description 以互检单为原子单位提交多个检查项；不合格项自动建立或更新同源互检意见，并用已登记图片文件作为意见佐证附件。
+     * @description 以互检单为原子单位提交多个检查项；不合格项自动建立或更新同源互检意见，图文提取意见以富文本字符串保存。
      */
     @Transactional
     public List<CheckItemView> submitBatch(long taskId, List<SubmitBatchItemCommand> commands, CurrentUser currentUser) {
@@ -130,10 +129,9 @@ public class TaskCheckItemApplicationService {
             validateAttachmentFiles(taskId, command.attachmentFileIds());
             Long opinionId = command.result() == CheckResult.FAIL ? createOrUpdateMutualOpinion(taskId, record, command, currentUser) : null;
             replaceAttachments(record.getId(), command.attachmentFileIds());
-            record.setCheckResult(command.result().name()); record.setComment(command.comment()); record.setLinkedOpinionId(opinionId);
-            record.setStatus(CheckItemStatus.COMPLETED.name()); record.setVersion(command.version());
-            if (taskCheckItemMapper.submit(record) != 1) { throw new BusinessException(ErrorCode.VERSION_CONFLICT, "检查项已被其他操作更新，请刷新后重试"); }
-            record.setVersion(record.getVersion() + 1);
+            record.setCheckResult(command.result().name()); record.setComment(command.comment()); record.setRichText(command.richText()); record.setLinkedOpinionId(opinionId);
+            record.setStatus(CheckItemStatus.COMPLETED.name());
+            if (taskCheckItemMapper.submit(record) != 1) { throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务"); }
             appendAudit(record.getId(), "CHECK_ITEM_BATCH_SUBMITTED", currentUser.id(), command.result().name());
             views.add(CheckItemView.from(record, null, attachments(record.getId())));
         }
@@ -146,24 +144,6 @@ public class TaskCheckItemApplicationService {
         if (!isFinished(task)) {
             synchronizeIfActive(task);
         }
-    }
-
-    @Transactional
-    public void attachFile(long taskId, long itemId, long fileId, int sortNo, CurrentUser currentUser) {
-        ReviewTaskRecord task = requireTaskExists(taskId);
-        if (isFinished(task)) {
-            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许新增检查项附件");
-        }
-        taskNodeAuthorizationService.requireCurrentTaskProcessor(taskId, currentUser);
-        if (taskCheckItemMapper.findByTaskIdAndId(taskId, itemId) == null) {
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务");
-        }
-        ReviewFileRecord file = fileMapper.findById(fileId);
-        if (file == null || !Long.valueOf(taskId).equals(file.getTaskId())) {
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "附件文件不存在或不属于当前任务");
-        }
-        attachmentMapper.insert(new CheckItemAttachmentRecord(itemId, fileId, sortNo));
-        appendAudit(itemId, "CHECK_ITEM_ATTACHMENT_ADDED", currentUser.id(), "fileId=" + fileId);
     }
 
     private List<CheckItemTemplateRecord> synchronizeIfActive(ReviewTaskRecord task) {
@@ -246,12 +226,12 @@ public class TaskCheckItemApplicationService {
 
     private void validateBatchCommand(SubmitBatchItemCommand command) {
         if (command.result() == null) { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "检查结果不能为空"); }
-        if ((command.result() == CheckResult.FAIL || command.result() == CheckResult.NOT_APPLICABLE)
-                && (command.comment() == null || command.comment().isBlank())) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "不合格或不适用的检查项必须填写检查意见");
+        if (command.result() == CheckResult.FAIL
+                && (command.richText() == null || command.richText().isBlank())) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "不合格检查项必须填写富文本提取意见");
         }
-        if (command.result() == CheckResult.FAIL && command.attachmentFileIds().isEmpty()) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "不合格检查项至少需要关联一张问题图片");
+        if (command.result() == CheckResult.NOT_APPLICABLE && (command.comment() == null || command.comment().isBlank())) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "不适用的检查项必须填写检查说明");
         }
     }
 
@@ -265,16 +245,15 @@ public class TaskCheckItemApplicationService {
     }
 
     private Long createOrUpdateMutualOpinion(long taskId, TaskCheckItemRecord item, SubmitBatchItemCommand command, CurrentUser currentUser) {
-        String imageUrl = command.attachmentFileIds().isEmpty() ? null : "/api/v1/files/" + command.attachmentFileIds().get(0) + "/download";
         ReviewOpinionRecord opinion = opinionMapper.findActiveMutualCheckItemOpinion(taskId, item.getId());
         if (opinion == null) {
             opinion = new ReviewOpinionRecord(); opinion.setId(opinionMapper.nextOpinionId()); opinion.setTaskId(taskId);
             opinion.setSourceType("MUTUAL_CHECK_ITEM"); opinion.setSourceItemId(item.getId()); opinion.setSeverity("GENERAL");
-            opinion.setContent(command.comment().trim()); opinion.setRaisedBy(currentUser.id()); opinion.setImageUrl(imageUrl);
-            opinion.setStatus("PENDING_REPLY"); opinion.setVersion(0L); opinionMapper.insert(opinion);
+            opinion.setContent(command.richText().trim()); opinion.setRichText(command.richText().trim()); opinion.setRaisedBy(currentUser.id());
+            opinion.setStatus("PENDING_REPLY"); opinionMapper.insert(opinion);
         } else {
-            opinion.setContent(command.comment().trim()); opinion.setImageUrl(imageUrl);
-            if (opinionMapper.updateContentAndImage(opinion) != 1) { throw new BusinessException(ErrorCode.VERSION_CONFLICT, "关联互检意见已被其他操作更新，请刷新后重试"); }
+            opinion.setContent(command.richText().trim()); opinion.setRichText(command.richText().trim());
+            if (opinionMapper.updateContent(opinion) != 1) { throw new BusinessException(ErrorCode.VERSION_CONFLICT, "关联互检意见已被其他操作更新，请刷新后重试"); }
         }
         return opinion.getId();
     }
@@ -289,19 +268,25 @@ public class TaskCheckItemApplicationService {
         return (records == null ? List.<CheckItemAttachmentViewRecord>of() : records).stream().map(CheckItemAttachmentView::from).toList();
     }
 
-    public record SubmitCheckItemCommand(CheckResult result, String comment, Long linkedOpinionId, long version) {
+    public record SubmitCheckItemCommand(CheckResult result, String comment, String richText, Long linkedOpinionId) {
+        public SubmitCheckItemCommand(CheckResult result, String comment, Long linkedOpinionId) {
+            this(result, comment, null, linkedOpinionId);
+        }
     }
-    public record SubmitBatchItemCommand(long itemId, CheckResult result, String comment, List<Long> attachmentFileIds, long version) {
+    public record SubmitBatchItemCommand(long itemId, CheckResult result, String comment, String richText, List<Long> attachmentFileIds) {
+        public SubmitBatchItemCommand(long itemId, CheckResult result, String comment, List<Long> attachmentFileIds) {
+            this(itemId, result, comment, null, attachmentFileIds);
+        }
         public SubmitBatchItemCommand { attachmentFileIds = attachmentFileIds == null ? List.of() : List.copyOf(attachmentFileIds); }
     }
 
     public record CheckItemView(Long id, String templateItemKey, String parentItemKey, String itemName, int sortNo,
-                                String categoryName, CheckResult result, String comment, Long linkedOpinionId, List<CheckItemAttachmentView> attachments,
-                                CheckItemStatus status, long version) {
+                                String categoryName, CheckResult result, String comment, String richText, Long linkedOpinionId, List<CheckItemAttachmentView> attachments,
+                                CheckItemStatus status) {
         static CheckItemView from(TaskCheckItemRecord record, String categoryName, List<CheckItemAttachmentView> attachments) {
             return new CheckItemView(record.getId(), record.getTemplateItemKey(), record.getParentItemKey(), record.getItemName(),
-                    record.getSortNo(), categoryName, record.getCheckResult() == null ? null : CheckResult.valueOf(record.getCheckResult()), record.getComment(),
-                    record.getLinkedOpinionId(), attachments, CheckItemStatus.valueOf(record.getStatus()), record.getVersion());
+                    record.getSortNo(), categoryName, record.getCheckResult() == null ? null : CheckResult.valueOf(record.getCheckResult()), record.getComment(), record.getRichText(),
+                    record.getLinkedOpinionId(), attachments, CheckItemStatus.valueOf(record.getStatus()));
         }
     }
     public record CheckItemAttachmentView(Long fileId, int sortNo, String fileName, String fileCategory, String previewUrl) {

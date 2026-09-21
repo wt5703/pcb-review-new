@@ -87,4 +87,4 @@ mvn test "-Dtest=MySqlMigrationIntegrationTest"
 mvn test
 ```
 
-测试覆盖任务、权限、文件版本、人员分配、检查项、意见闭环、流程结束、归档、Outbox 通知和 OpenAPI 契约。详细业务和工程约束见 [docs](docs)。
+测试覆盖任务、权限、文件上传与下载、人员分配、检查项、意见闭环、流程结束、归档、Outbox 通知和 OpenAPI 契约。详细业务和工程约束见 [docs](docs)。

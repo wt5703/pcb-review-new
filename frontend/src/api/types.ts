@@ -15,7 +15,28 @@ export interface Task {
   reviewRoles: string[]
   reviewDescription?: string
   status: string
-  version: number
+}
+
+/** 公司资源服务上传完成后返回并随任务保存/提交请求传回 PCB 的初始文件引用。 */
+export interface InitialFileReference {
+  fileId: string
+  fileName: string
+  fileSize: number
+  md5?: string
+}
+
+/** 公司资源服务文件引用；用于阶段文件登记等非任务创建场景。 */
+export interface CompanyFileReference {
+  companyFileId: string
+  fileName: string
+  fileSize: number
+  md5?: string
+}
+
+/** 公司资源服务上传代理的返回值。 */
+export interface ResourceUploadResult {
+  resourceId: string
+  resourcePath: string
 }
 
 export interface TaskPage {
@@ -29,40 +50,36 @@ export interface MyTask extends Task {
   actions: string[]
 }
 
-export interface OpinionReply {
-  id: number
-  opinionId: number
-  replyNo: number
-  replyType: 'ACCEPT' | 'REJECT'
-  reason?: string
-  fileVersionId?: number
-  repliedBy: number
-  repliedAt?: string
-}
-
-export interface OpinionConfirmation {
-  id: number
-  replyId: number
-  passed: boolean
-  comment?: string
-  confirmedBy: number
-  confirmedAt?: string
-}
-
 export interface Opinion {
   id: number
   taskId: number
   sourceType: 'EXPERT_REVIEW' | 'PROCESS_REVIEW' | 'STRUCTURE_REVIEW' | 'MUTUAL_CHECK_ITEM' | 'MUTUAL_EXTRA'
   sourceItemId?: number
   content: string
+  richText?: string
   raisedBy: number
-  fileVersionId?: number
-  imageUrl?: string
+  severity: 'SERIOUS' | 'GENERAL' | 'MINOR'
+  createdAt?: string
   status: 'PENDING_REPLY' | 'PENDING_CONFIRMATION' | 'CONFIRMED_PASS' | 'CONFIRMED_REJECTED' | 'WITHDRAWN'
-  version: number
-  designerReplies: OpinionReply[]
-  confirmations: OpinionConfirmation[]
-  attachments: Array<{ fileId: number; sortNo: number; fileName: string; fileCategory: string; previewUrl?: string }>
+  replies: OpinionReply[]
+}
+
+export interface OpinionReply {
+  id: number
+  replyNo: number
+  replyType: 'ACCEPT' | 'REJECT'
+  reason?: string
+  repliedBy: number
+  repliedAt?: string
+  confirmation?: OpinionConfirmation
+}
+
+export interface OpinionConfirmation {
+  id: number
+  passed: boolean
+  comment?: string
+  confirmedBy: number
+  confirmedAt?: string
 }
 
 export interface CheckItem {
@@ -74,10 +91,10 @@ export interface CheckItem {
   sortNo: number
   result?: 'PASS' | 'FAIL' | 'NOT_APPLICABLE'
   comment?: string
+  richText?: string
   linkedOpinionId?: number
   attachments: Array<{ fileId: number; sortNo: number; fileName: string; fileCategory: string; previewUrl?: string }>
   status: string
-  version: number
 }
 
 export interface Reviewer {
@@ -94,22 +111,37 @@ export interface ArchiveFile {
   fileCategory: string
   businessFileKey: string
   fileName: string
-  versionNo: number
+  fileFormat?: string
   uploaderId: number
   uploaderName: string
   uploadedAt?: string
+  resourcePath?: string
+  fileSize?: number
+  md5?: string
   downloadPath: string
 }
 
-export interface FlowOpinion {
+export interface TaskFile {
+  id: number
+  taskId: number
+  category: string
+  businessFileKey: string
+  fileName: string
+  fileFormat?: string
+  fileSize: number
+  md5: string
+  resourcePath: string
+  uploadedBy: number
+  uploadedAt?: string
+  uploadedStage?: string
+  latest: boolean
+}
+
+export interface FlowNode {
   occurredAt?: string
   stageName: string
-  operatorId: number
   operatorName: string
   content: string
-  source: string
-  sourceId: number
-  designerReplies: Array<{ replyNo: number; replyType: string; content?: string; repliedAt?: string }>
 }
 
 export interface MailRecord {
@@ -127,8 +159,7 @@ export interface Archive {
   task: { taskId: number; taskName: string; status: string }
   stageFiles: ArchiveFile[]
   reviewers: Reviewer[]
-  flowOpinions: FlowOpinion[]
-  flowEvents: Array<{ occurredAt?: string; stageName: string; action: string; operatorName: string; comment?: string }>
+  flowNodes: FlowNode[]
   mailRecords: MailRecord[]
 }
 

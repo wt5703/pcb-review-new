@@ -8,7 +8,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -27,21 +26,17 @@ class PcbHappyPathIntegrationTest {
 
     @Test
     void shouldCompletePcbTaskFromCreationToImmutableArchive() throws Exception {
-        long taskId = createTask();
-        long fileId = registerPcbFile(taskId);
-        submitTask(taskId, fileId);
+        long taskId = createAndSubmitTask();
 
-        assign(taskId, "PCB_EXPERT", 20L, 10L, "DESIGNER");
-        transition(taskId, "START_PCB_EXPERT_REVIEW", 1L, 10L, "DESIGNER");
-        submitNoOpinion(taskId, 20L, "HARDWARE_EXPERT");
+        transition(taskId, "START_PCB_EXPERT_REVIEW", 10L, "DESIGNER");
+        submitNoOpinion(taskId, 10L, "DESIGNER");
 
-        transition(taskId, "PREPARE_PCB_MUTUAL_ASSIGNMENT", 2L, 1L, "PCB_LEADER");
-        assign(taskId, "PCB_MUTUAL_CHECK", 21L, 1L, "PCB_LEADER");
-        transition(taskId, "START_PCB_MUTUAL_REVIEW", 3L, 1L, "PCB_LEADER");
+        transition(taskId, "PREPARE_PCB_MUTUAL_ASSIGNMENT", 1L, "PCB_LEADER");
+        assignAndTransition(taskId, "START_PCB_MUTUAL_REVIEW", "PCB_MUTUAL_CHECK", 21L, 1L, "PCB_LEADER");
         submitNoOpinion(taskId, 21L, "HARDWARE_EXPERT");
 
-        transition(taskId, "REQUEST_FINISH", 4L, 1L, "PCB_LEADER");
-        transition(taskId, "FINISH", 5L, 1L, "PCB_LEADER");
+        transition(taskId, "REQUEST_FINISH", 1L, "PCB_LEADER");
+        transition(taskId, "FINISH", 1L, "PCB_LEADER");
 
         mockMvc.perform(get("/tasks/{taskId}/archive", taskId)
                         .header("X-Mock-User-Id", "1")
@@ -54,77 +49,46 @@ class PcbHappyPathIntegrationTest {
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"action\":\"FINISH\",\"version\":6}"))
+                        .content("{\"action\":\"FINISH\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TASK_STATUS_CONFLICT"));
     }
 
-    private long createTask() throws Exception {
-        MvcResult result = mockMvc.perform(post("/tasks")
+    private long createAndSubmitTask() throws Exception {
+        String taskRequest = """
+                {"reviewType":"PCB","taskName":"PCB 全链路验收","projectName":"BMS","designerId":10,"designName":"BMS-P1","pcbType":"BMU","initialFiles":[{"fileId":"company-pcb-p1","fileName":"BMS-P1.pcb","fileSize":8}]}
+                """;
+        MvcResult result = mockMvc.perform(post("/tasks/submit").contentType(MediaType.APPLICATION_JSON).content(taskRequest)
                         .header("X-Mock-User-Id", "10")
-                        .header("X-Mock-Roles", "DESIGNER")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"reviewType\":\"PCB\",\"taskName\":\"PCB 全链路验收\",\"projectName\":\"BMS\","
-                                + "\"designerId\":10,\"designName\":\"BMS-P1\",\"pcbType\":\"BMU\"}"))
+                        .header("X-Mock-Roles", "DESIGNER"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("PCB_PENDING_REVIEW"))
                 .andReturn();
         return ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.data.id")).longValue();
     }
 
-    private void submitTask(long taskId, long fileId) throws Exception {
-        mockMvc.perform(post("/tasks/{taskId}/submit", taskId)
-                        .header("X-Mock-User-Id", "10")
-                        .header("X-Mock-Roles", "DESIGNER")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"initialFileIds\":[" + fileId + "]}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("PCB_PENDING_REVIEW"));
-    }
-
-    private long registerPcbFile(long taskId) throws Exception {
-        MvcResult sessionResult = mockMvc.perform(post("/tasks/{taskId}/files/upload-sessions", taskId)
-                        .header("X-Mock-User-Id", "10")
-                        .header("X-Mock-Roles", "DESIGNER")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"category\":\"PCB_SCHEMATIC\"}"))
-                .andExpect(status().isOk())
-                .andReturn();
-        String sessionId = JsonPath.read(sessionResult.getResponse().getContentAsString(), "$.data.uploadSessionId");
-
-        MvcResult fileResult = mockMvc.perform(post("/tasks/{taskId}/files", taskId)
-                        .header("X-Mock-User-Id", "10")
-                        .header("X-Mock-Roles", "DESIGNER")
-                        .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"uploadSessionId\":\"" + sessionId + "\",\"category\":\"PCB_SCHEMATIC\","
-                                + "\"businessFileKey\":\"BMS-P1\",\"fileName\":\"BMS.pcb\",\"fileSize\":100,\"md5\":\"e2e-md5\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.versionNo").value(1))
-                .andReturn();
-        return ((Number) JsonPath.read(fileResult.getResponse().getContentAsString(), "$.data.id")).longValue();
-    }
-
-    private void assign(long taskId, String reviewRole, long reviewerId, long operatorId, String operatorRole) throws Exception {
-        mockMvc.perform(post("/tasks/{taskId}/reviewers", taskId)
+    private void assignAndTransition(long taskId, String action, String reviewRole, long reviewerId, long operatorId, String operatorRole) throws Exception {
+        mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-User-Id", String.valueOf(operatorId))
                         .header("X-Mock-Roles", operatorRole)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"role\":\"" + reviewRole + "\",\"reviewerIds\":[" + reviewerId + "]}"))
+                        .content("{\"action\":\"" + action + "\",\"assignedRole\":\"" + reviewRole + "\",\"reviewerIds\":[" + reviewerId + "]}"))
                 .andExpect(status().isOk());
     }
 
     private void submitNoOpinion(long taskId, long userId, String role) throws Exception {
-        mockMvc.perform(post("/tasks/{taskId}/reviewers/me/no-opinion", taskId)
+        mockMvc.perform(post("/tasks/{taskId}/workflow/reviewers/me/submit-no-opinion", taskId)
                         .header("X-Mock-User-Id", String.valueOf(userId))
                         .header("X-Mock-Roles", role))
                 .andExpect(status().isOk());
     }
 
-    private void transition(long taskId, String action, long version, long userId, String role) throws Exception {
+    private void transition(long taskId, String action, long userId, String role) throws Exception {
         mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-User-Id", String.valueOf(userId))
                         .header("X-Mock-Roles", role)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"action\":\"" + action + "\",\"version\":" + version + "}"))
+                        .content("{\"action\":\"" + action + "\"}"))
                 .andExpect(status().isOk());
     }
 }

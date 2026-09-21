@@ -4,8 +4,8 @@ spring:
       on-profile: mysql
   datasource:
     url: ${PCB_REVIEW_DB_URL:jdbc:mysql://localhost:3306/pcb_review?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
-    username: ${PCB_REVIEW_DB_USERNAME:root}
-    password: ${PCB_REVIEW_DB_PASSWORD:}
+    username: admin
+    password: Wt260831
     driver-class-name: com.mysql.cj.jdbc.Driver
   flyway:
     enabled: true

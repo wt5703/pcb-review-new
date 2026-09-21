@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -46,17 +47,18 @@ public class CheckItemTemplateApplicationService {
     @Transactional
     public TemplateCategoryView create(CreateCategoryCommand command, CurrentUser currentUser) {
         requireManagePermission(currentUser);
-        requireUniqueItemKey(command.reviewType(), command.categoryKey());
-        CheckItemTemplateRecord category = newTemplate(command.reviewType(), command.categoryKey(), null, command.categoryName(), command.sortNo(), true);
+        String categoryKey = generatedInternalKey(command.reviewType(), "CATEGORY", command.categoryName());
+        CheckItemTemplateRecord category = newTemplate(command.reviewType(), categoryKey, null, command.categoryName(), nextCategorySort(command.reviewType()), true);
         templateMapper.insert(category);
-        List<TemplateView> items = command.items().stream().map(item -> {
-            requireUniqueItemKey(command.reviewType(), item.itemKey());
-            CheckItemTemplateRecord child = newTemplate(command.reviewType(), item.itemKey(), category.getItemKey(), item.itemName(), item.sortNo(), item.enabled());
+        List<TemplateView> items = new ArrayList<>();
+        for (int index = 0; index < command.items().size(); index++) {
+            CreateItemCommand item = command.items().get(index);
+            CheckItemTemplateRecord child = newTemplate(command.reviewType(), generatedInternalKey(command.reviewType(), "ITEM", item.itemName()), category.getItemKey(), item.itemName(), index, true);
             templateMapper.insert(child);
-            return TemplateView.from(child);
-        }).toList();
+            items.add(TemplateView.from(child));
+        }
         appendAudit(category.getId(), "CHECK_ITEM_TEMPLATE_CREATED", currentUser.id(), category.getItemKey());
-        return new TemplateCategoryView(TemplateView.from(category), items);
+        return new TemplateCategoryView(TemplateView.from(category), List.copyOf(items));
     }
 
     @Transactional
@@ -69,23 +71,27 @@ public class CheckItemTemplateApplicationService {
         if (category.getParentItemKey() != null) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "请使用检查项大类 ID 调整类别及其子检查项");
         }
-        String originalCategoryKey = category.getItemKey();
-        category.setItemKey(command.categoryKey()); category.setItemName(command.categoryName()); category.setSortNo(command.sortNo());
+        String categoryKey = category.getItemKey();
+        category.setItemName(command.categoryName());
         category.setEnabled(command.enabled()); category.setVersion(command.version());
         if (templateMapper.update(category) != 1) {
             throw new BusinessException(ErrorCode.VERSION_CONFLICT, "检查项模板已被其他操作更新，请刷新后重试");
         }
-        List<TemplateView> items = command.items().stream().map(item -> {
-            CheckItemTemplateRecord child = item.id() == null ? newTemplate(ReviewType.valueOf(category.getReviewType()), item.itemKey(), category.getItemKey(), item.itemName(), item.sortNo(), item.enabled()) : templateMapper.findById(item.id());
-            if (child == null || (child.getParentItemKey() != null && !child.getParentItemKey().equals(originalCategoryKey))) {
+        List<TemplateView> items = new ArrayList<>();
+        for (int index = 0; index < command.items().size(); index++) {
+            UpdateItemCommand item = command.items().get(index);
+            CheckItemTemplateRecord child = item.id() == null
+                    ? newTemplate(ReviewType.valueOf(category.getReviewType()), generatedInternalKey(ReviewType.valueOf(category.getReviewType()), "ITEM", item.itemName()), categoryKey, item.itemName(), index, item.enabled())
+                    : templateMapper.findById(item.id());
+            if (child == null || (child.getParentItemKey() != null && !child.getParentItemKey().equals(categoryKey))) {
                 throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不属于当前类别");
             }
-            child.setItemKey(item.itemKey()); child.setParentItemKey(category.getItemKey()); child.setItemName(item.itemName()); child.setSortNo(item.sortNo()); child.setEnabled(item.enabled());
+            child.setParentItemKey(categoryKey); child.setItemName(item.itemName()); child.setSortNo(index); child.setEnabled(item.enabled());
             if (item.id() == null) { templateMapper.insert(child); } else { child.setVersion(item.version()); if (templateMapper.update(child) != 1) throw new BusinessException(ErrorCode.VERSION_CONFLICT, "检查项已被其他操作更新，请刷新后重试"); }
-            return TemplateView.from(child);
-        }).toList();
+            items.add(TemplateView.from(child));
+        }
         appendAudit(category.getId(), "CHECK_ITEM_TEMPLATE_UPDATED", currentUser.id(), category.getItemKey());
-        return new TemplateCategoryView(TemplateView.from(category), items);
+        return new TemplateCategoryView(TemplateView.from(category), List.copyOf(items));
     }
 
     /**
@@ -108,22 +114,22 @@ public class CheckItemTemplateApplicationService {
     /**
      * @author 王涛
      * @date 2026-09-20
-     * @description 逻辑停用检查项大类及其全部子项，避免物理删除破坏已创建任务对模板快照和历史导入记录的引用。
+     * @description 按记录 ID 逻辑停用检查项或大类；大类会级联停用子项，避免物理删除破坏已创建任务的模板快照与历史导入记录。
      */
     @Transactional
-    public void disable(long templateId, long version, CurrentUser currentUser) {
+    public void disable(long id, CurrentUser currentUser) {
         requireManagePermission(currentUser);
-        CheckItemTemplateRecord category = templateMapper.findById(templateId);
-        if (category == null || category.getParentItemKey() != null) {
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项大类不存在");
+        CheckItemTemplateRecord template = templateMapper.findById(id);
+        if (template == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在");
         }
-        category.setEnabled(false);
-        category.setVersion(version);
-        if (templateMapper.update(category) != 1) {
-            throw new BusinessException(ErrorCode.VERSION_CONFLICT, "检查项模板已被其他操作更新，请刷新后重试");
+        if (templateMapper.disableById(id) != 1) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在");
         }
-        templateMapper.disableChildrenByParentItemKey(category.getItemKey());
-        appendAudit(category.getId(), "CHECK_ITEM_TEMPLATE_DISABLED", currentUser.id(), category.getItemKey());
+        if (template.getParentItemKey() == null) {
+            templateMapper.disableChildrenByParentItemKey(template.getItemKey());
+        }
+        appendAudit(template.getId(), "CHECK_ITEM_TEMPLATE_DISABLED", currentUser.id(), template.getItemKey());
     }
 
     /**
@@ -200,8 +206,8 @@ public class CheckItemTemplateApplicationService {
                     if (!categoryCell.isBlank()) {
                         previousCategoryName = categoryCell;
                     }
-                    String itemName = cell(row, headers, "检查项", formatter);
-                    if (itemName.isBlank()) {
+                    String itemCell = cell(row, headers, "检查项", formatter);
+                    if (itemCell.isBlank()) {
                         continue;
                     }
                     if (previousCategoryName == null || previousCategoryName.isBlank()) {
@@ -212,7 +218,9 @@ public class CheckItemTemplateApplicationService {
                     if (importedCategories.putIfAbsent(reviewType.name() + "|" + categoryKey, true) == null) {
                         rows.add(new ImportRow(reviewType, categoryKey, null, previousCategoryName, sortNo, true));
                     }
-                    rows.add(new ImportRow(reviewType, generatedKey(reviewType, categoryKey, itemName), categoryKey, itemName, sortNo, true));
+                    for (String itemName : splitEmbeddedItems(itemCell)) {
+                        rows.add(new ImportRow(reviewType, generatedKey(reviewType, categoryKey, itemName), categoryKey, itemName, generatedSortNo++, true));
+                    }
                 } else if (headers.containsKey("类别编码")) {
                     String categoryKey = required(cell(row, headers, "类别编码", formatter), displayRow, "类别编码");
                     String categoryName = required(cell(row, headers, "类别名称", formatter), displayRow, "类别名称");
@@ -317,8 +325,49 @@ public class CheckItemTemplateApplicationService {
         return value == null || value.isBlank() ? null : value;
     }
 
+    /**
+     * @author 王涛
+     * @date 2026-09-18
+     * @description 解析 PCB 互评 Excel 中写在同一单元格里的连续编号检查项，识别 1）、2)、3.、4、 等编号并保留每段检查要求的完整文字。
+     */
+    private List<String> splitEmbeddedItems(String itemCell) {
+        String normalized = itemCell == null ? "" : itemCell.replace(' ', ' ').trim();
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(?<!\\d)\\d{1,3}\\s*[）).、】【]").matcher(normalized);
+        List<Integer> starts = new java.util.ArrayList<>();
+        while (matcher.find()) {
+            starts.add(matcher.start());
+        }
+        if (starts.isEmpty()) {
+            return List.of(normalized);
+        }
+        List<String> items = new java.util.ArrayList<>();
+        for (int index = 0; index < starts.size(); index++) {
+            int start = starts.get(index);
+            int end = index + 1 < starts.size() ? starts.get(index + 1) : normalized.length();
+            String item = normalized.substring(start, end).replaceFirst("^\\s*\\d{1,3}\\s*[）).、】【]\\s*", "").trim();
+            if (!item.isBlank()) {
+                items.add(item);
+            }
+        }
+        return items.isEmpty() ? List.of(normalized) : List.copyOf(items);
+    }
+
     private String generatedKey(ReviewType reviewType, String prefix, String value) {
         return reviewType.name() + "-" + prefix + "-" + Integer.toUnsignedString(value.trim().replaceAll("\\s+", " ").hashCode(), 16).toUpperCase();
+    }
+
+    private String generatedInternalKey(ReviewType reviewType, String prefix, String value) {
+        return generatedKey(reviewType, prefix, value) + "-" + templateMapper.nextId();
+    }
+
+    private int nextCategorySort(ReviewType reviewType) {
+        return templateMapper.findAll(reviewType.name()).stream()
+                .filter(record -> record.getParentItemKey() == null)
+                .map(CheckItemTemplateRecord::getSortNo)
+                .filter(java.util.Objects::nonNull)
+                .max(Integer::compareTo)
+                .map(value -> value + 1)
+                .orElse(0);
     }
 
     private void requireManagePermission(CurrentUser currentUser) {
@@ -340,10 +389,10 @@ public class CheckItemTemplateApplicationService {
         if (templateMapper.findByReviewTypeAndItemKey(reviewType.name(), itemKey) != null) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "检查项编码已存在：" + itemKey);
     }
 
-    public record CreateCategoryCommand(ReviewType reviewType, String categoryKey, String categoryName, int sortNo, List<CreateItemCommand> items) { }
-    public record CreateItemCommand(String itemKey, String itemName, int sortNo, boolean enabled) { }
-    public record UpdateCategoryCommand(String categoryKey, String categoryName, int sortNo, boolean enabled, long version, List<UpdateItemCommand> items) { }
-    public record UpdateItemCommand(Long id, String itemKey, String itemName, int sortNo, boolean enabled, Long version) { }
+    public record CreateCategoryCommand(ReviewType reviewType, String categoryName, List<CreateItemCommand> items) { }
+    public record CreateItemCommand(String itemName) { }
+    public record UpdateCategoryCommand(String categoryName, boolean enabled, long version, List<UpdateItemCommand> items) { }
+    public record UpdateItemCommand(Long id, String itemName, boolean enabled, Long version) { }
 
     public record ImportResult(int totalRows, int createdCount, int updatedCount) {
     }

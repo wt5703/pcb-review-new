@@ -15,6 +15,7 @@ public class TaskCheckItemRecord {
     private Integer sortNo;
     private String checkResult;
     private String comment;
+    private String richText;
     private Long linkedOpinionId;
     private String status;
     private Long version;
@@ -37,6 +38,8 @@ public class TaskCheckItemRecord {
     public void setCheckResult(String checkResult) { this.checkResult = checkResult; }
     public String getComment() { return comment; }
     public void setComment(String comment) { this.comment = comment; }
+    public String getRichText() { return richText; }
+    public void setRichText(String richText) { this.richText = richText; }
     public Long getLinkedOpinionId() { return linkedOpinionId; }
     public void setLinkedOpinionId(Long linkedOpinionId) { this.linkedOpinionId = linkedOpinionId; }
     public String getStatus() { return status; }

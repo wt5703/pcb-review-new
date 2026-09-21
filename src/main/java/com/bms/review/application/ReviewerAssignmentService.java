@@ -26,7 +26,7 @@ import java.util.List;
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 编排评审人员和互检人员的分配、改派与无意见提交，使用参与者记录表达多人并行进度，不推进任务整体状态。
+ * @description 为流程域提供评审人员首次分配、无意见提交和在途人员查询能力；任务整体状态仅由 WorkflowApplicationService 统一推进。
  */
 @Service
 public class ReviewerAssignmentService {
@@ -54,7 +54,7 @@ public class ReviewerAssignmentService {
         requireAssignmentAuthorized(taskId, role, currentUser, false);
         validateReviewerIds(reviewerIds);
         if (!reviewerMapper.findActiveByTaskAndRole(taskId, role.name()).isEmpty()) {
-            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "该职责已有在途人员，请使用改派操作");
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "该职责已有在途人员，不允许重复分配");
         }
         List<ReviewerView> views = createAssignments(taskId, role, reviewerIds, currentUser);
         appendAudit(taskId, "REVIEWERS_ASSIGNED", currentUser.id(), role.name());
@@ -157,16 +157,18 @@ public class ReviewerAssignmentService {
         TaskStatus status = TaskStatus.valueOf(task.getStatus());
         ReviewType type = ReviewType.valueOf(task.getReviewType());
         return switch (role) {
-            case PCB_EXPERT -> type == ReviewType.PCB && (status == TaskStatus.PCB_PENDING_REVIEW
+            case HARDWARE_EXPERT, EMC_EXPERT, PCB_EXPERT -> type == ReviewType.PCB && (status == TaskStatus.PCB_PENDING_REVIEW
                     || reassign && status == TaskStatus.PCB_EXPERT_REVIEWING);
             case PROCESS_EXPERT, STRUCTURE_EXPERT -> type == ReviewType.PCB && (status == TaskStatus.PCB_EXPERT_REVIEWING
                     || reassign && status == TaskStatus.PCB_OPTIONAL_REVIEWING);
             case PCB_MUTUAL_CHECK -> type == ReviewType.PCB && (status == TaskStatus.PENDING_MUTUAL_ASSIGNMENT
                     || reassign && status == TaskStatus.MUTUAL_REVIEWING);
-            case SCHEMATIC_MUTUAL_CHECK -> type == ReviewType.SCHEMATIC && (status == TaskStatus.SCHEMATIC_PENDING_MUTUAL_ASSIGNMENT
+            case SCHEMATIC_MUTUAL_CHECK -> type == ReviewType.SCHEMATIC && (status == TaskStatus.SCHEMATIC_PENDING_LEADER_ASSIGNMENT
+                    || status == TaskStatus.SCHEMATIC_PENDING_MUTUAL_ASSIGNMENT
                     || reassign && status == TaskStatus.MUTUAL_REVIEWING);
             case SCHEMATIC_HARDWARE_EXPERT, SCHEMATIC_OTHER_EXPERT -> type == ReviewType.SCHEMATIC
                     && (status == TaskStatus.SCHEMATIC_PENDING_REVIEW || reassign && status == TaskStatus.HARDWARE_REVIEWING);
+            case SCHEMATIC_LEADER -> false;
         };
     }
 

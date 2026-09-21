@@ -22,7 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 通过 REST 验证专家提出意见、设计者携带新版本答复、原提出人确认通过及统计看板更新的完整意见闭环。
+ * @description 通过 REST 验证专家提出意见、设计者答复、原提出人确认通过及统计看板更新的完整意见闭环。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -44,21 +44,22 @@ class OpinionControllerIntegrationTest {
                         .header("X-Mock-User-Id", "20")
                         .header("X-Mock-Roles", "HARDWARE_EXPERT")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sourceType\":\"EXPERT_REVIEW\",\"content\":\"请调整走线\",\"fileVersionId\":101}"))
+                        .content("{\"sourceType\":\"EXPERT_REVIEW\",\"content\":\"<p>请调整走线</p><img src='data:image/png;base64,AA==' alt='问题截图' />\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PENDING_REPLY"))
+                .andExpect(jsonPath("$.data.content").value("<p>请调整走线</p><img src='data:image/png;base64,AA==' alt='问题截图' />"))
                 .andReturn().getResponse().getContentAsString();
         long opinionId = ((Number) JsonPath.read(raiseResponse, "$.data.id")).longValue();
 
-        mockMvc.perform(post("/opinions/{opinionId}/replies", opinionId)
+        mockMvc.perform(post("/opinions/{opinionId}/reply", opinionId)
                         .header("X-Mock-User-Id", "10")
                         .header("X-Mock-Roles", "DESIGNER")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"replyType\":\"ACCEPT\",\"reason\":\"已在新版修正\",\"fileVersionId\":102}"))
+                        .content("{\"replyType\":\"ACCEPT\",\"reason\":\"已修正\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PENDING_CONFIRMATION"));
 
-        mockMvc.perform(post("/opinions/{opinionId}/confirmations", opinionId)
+        mockMvc.perform(post("/opinions/{opinionId}/confirm", opinionId)
                         .header("X-Mock-User-Id", "20")
                         .header("X-Mock-Roles", "HARDWARE_EXPERT")
                         .contentType(MediaType.APPLICATION_JSON)

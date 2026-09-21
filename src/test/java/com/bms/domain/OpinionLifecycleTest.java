@@ -19,23 +19,23 @@ class OpinionLifecycleTest {
 
     @Test
     void opinionShouldFollowReplyConfirmAndRetryLifecycle() {
-        ReviewOpinion opinion = ReviewOpinion.raise(1L, "PCB_EXPERT", "严重问题", 10L, 100L);
+        ReviewOpinion opinion = ReviewOpinion.raise(1L, "PCB_EXPERT", "严重问题", 10L);
 
-        opinion.reply(20L, ReplyType.ACCEPT, null, 101L);
+        opinion.reply(20L, ReplyType.ACCEPT, null);
         assertThat(opinion.status()).isEqualTo(OpinionStatus.PENDING_CONFIRMATION);
 
         opinion.confirm(10L, false, "请补充修改说明");
         assertThat(opinion.status()).isEqualTo(OpinionStatus.PENDING_REPLY);
 
-        opinion.reply(20L, ReplyType.ACCEPT, null, 102L);
+        opinion.reply(20L, ReplyType.ACCEPT, null);
         opinion.confirm(10L, true, "通过");
         assertThat(opinion.status()).isEqualTo(OpinionStatus.CONFIRMED_PASS);
     }
 
     @Test
     void onlyRaiserMayConfirmOpinion() {
-        ReviewOpinion opinion = ReviewOpinion.raise(1L, "PCB_EXPERT", "问题", 10L, 100L);
-        opinion.reply(20L, ReplyType.ACCEPT, null, 101L);
+        ReviewOpinion opinion = ReviewOpinion.raise(1L, "PCB_EXPERT", "问题", 10L);
+        opinion.reply(20L, ReplyType.ACCEPT, null);
 
         assertThatThrownBy(() -> opinion.confirm(11L, true, ""))
                 .isInstanceOf(IllegalStateException.class);

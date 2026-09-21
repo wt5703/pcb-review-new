@@ -11,12 +11,10 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.NotEmpty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,7 +24,7 @@ import java.util.List;
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 提供任务内互检固定检查项的查询和提交接口；提交采用乐观锁版本号，防止两位互检人员覆盖彼此的检查结论。
+ * @description 提供任务内互检固定检查项的查询和提交接口；提交不需要携带版本号。
  */
 @RestController
 @RequestMapping("/tasks/{taskId}/check-items")
@@ -51,26 +49,18 @@ public class CheckItemController {
                                                                         @Valid @RequestBody SubmitCheckItemRequest request,
                                                                         HttpServletRequest servletRequest) {
         return ApiResponse.ok(taskCheckItemApplicationService.submit(taskId, itemId,
-                new TaskCheckItemApplicationService.SubmitCheckItemCommand(request.result(), request.comment(), request.linkedOpinionId(), request.version()),
+                new TaskCheckItemApplicationService.SubmitCheckItemCommand(request.result(), request.comment(), request.richText(), request.linkedOpinionId()),
                 CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @PutMapping("/batch")
-    @Operation(summary = "批量提交整张互检单", description = "一次提交多个检查项。FAIL 时检查意见和问题图片必填，后端自动创建或更新同源互检意见并关联图片；任意一项失败则整单回滚。")
+    @Operation(summary = "批量提交整张互检单", description = "一次提交多个检查项。FAIL 时 richText（图文富文本提取意见）必填，后端自动创建或更新同源互检意见并随检查项回显；图片可作为 data URI 内嵌于字符串，接口不要求图片 URL 或附件文件。任意一项失败则整单回滚。")
     ApiResponse<List<TaskCheckItemApplicationService.CheckItemView>> submitBatch(@PathVariable long taskId,
                                                                                    @Valid @RequestBody SubmitCheckItemsRequest request,
                                                                                    HttpServletRequest servletRequest) {
         return ApiResponse.ok(taskCheckItemApplicationService.submitBatch(taskId, request.items().stream()
-                .map(item -> new TaskCheckItemApplicationService.SubmitBatchItemCommand(item.itemId(), item.result(), item.comment(), item.attachmentFileIds(), item.version())).toList(),
+                .map(item -> new TaskCheckItemApplicationService.SubmitBatchItemCommand(item.itemId(), item.result(), item.comment(), item.richText(), item.attachmentFileIds())).toList(),
                 CurrentUserHolder.require()), traceId(servletRequest));
-    }
-
-    @PostMapping("/{itemId}/attachments")
-    @Operation(summary = "关联检查项附件", description = "将已登记文件作为指定检查项的佐证附件，并按排序号展示。")
-    ApiResponse<Void> attachFile(@PathVariable long taskId, @PathVariable long itemId,
-                                 @Valid @RequestBody AttachFileRequest request, HttpServletRequest servletRequest) {
-        taskCheckItemApplicationService.attachFile(taskId, itemId, request.fileId(), request.sortNo(), CurrentUserHolder.require());
-        return ApiResponse.ok(null, traceId(servletRequest));
     }
 
     private String traceId(HttpServletRequest request) {
@@ -79,19 +69,16 @@ public class CheckItemController {
 
     @Schema(description = "提交检查项结论请求")
     record SubmitCheckItemRequest(@Schema(description = "检查结论：PASS 通过、FAIL 不通过、NOT_APPLICABLE 不适用", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull CheckResult result,
-                                  @Schema(description = "检查说明") String comment, @Schema(description = "不通过时关联的同源评审意见 ID") Long linkedOpinionId,
-                                  @Schema(description = "当前检查项乐观锁版本号", requiredMode = Schema.RequiredMode.REQUIRED) @PositiveOrZero long version) {
-    }
-    @Schema(description = "关联检查项附件请求")
-    record AttachFileRequest(@Schema(description = "已登记的文件 ID", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull Long fileId,
-                             @Schema(description = "附件显示排序号") @PositiveOrZero int sortNo) {
+                                  @Schema(description = "检查说明") String comment,
+                                  @Schema(description = "富文本提取意见，支持文字与内嵌 data URI 图片") String richText,
+                                  @Schema(description = "不通过时关联的同源评审意见 ID") Long linkedOpinionId) {
     }
     @Schema(description = "整张互检单批量提交请求")
     record SubmitCheckItemsRequest(@Schema(description = "待提交的检查项结果列表，至少一项", requiredMode = Schema.RequiredMode.REQUIRED) @NotEmpty List<@Valid BatchCheckItemRequest> items) { }
     @Schema(description = "互检单中的单条检查项结果")
     record BatchCheckItemRequest(@Schema(description = "任务检查项实例 ID", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull Long itemId,
                                  @Schema(description = "检查结果：PASS 合格、FAIL 不合格、NOT_APPLICABLE 不适用", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull CheckResult result,
-                                 @Schema(description = "检查意见。FAIL 或 NOT_APPLICABLE 时必填；FAIL 会作为自动创建的互检意见内容") String comment,
-                                 @Schema(description = "已登记的问题图片文件 ID 列表。FAIL 时至少一张，顺序即图片展示顺序") List<Long> attachmentFileIds,
-                                 @Schema(description = "检查项当前乐观锁版本号", requiredMode = Schema.RequiredMode.REQUIRED) @PositiveOrZero long version) { }
+                                 @Schema(description = "检查说明。NOT_APPLICABLE 时必填") String comment,
+                                 @Schema(description = "富文本提取意见。FAIL 时必填，可包含文字和内嵌 data URI 图片；后端以字符串保存并回显") String richText,
+                                 @Schema(description = "可选的已登记附件文件 ID 列表；不作为富文本图片的必填参数") List<Long> attachmentFileIds) { }
 }

@@ -13,6 +13,7 @@ export default createRouter({
     { path: '/', name: 'dashboard', component: DashboardView, meta: { title: '工作台' } },
     { path: '/tasks', name: 'tasks', component: TaskListView, meta: { title: '任务列表' } },
     { path: '/tasks/create', name: 'task-create', component: TaskCreateView, meta: { title: '创建评审任务' } },
+    { path: '/tasks/:taskId/edit', name: 'task-edit', component: TaskCreateView, props: true, meta: { title: '编辑评审任务' } },
     { path: '/tasks/:taskId', name: 'task-detail', component: TaskDetailView, props: true, meta: { title: '任务详情' } },
     { path: '/my-tasks', name: 'my-tasks', component: MyTasksView, meta: { title: '我的任务' } },
     { path: '/templates', name: 'templates', component: TemplateView, meta: { title: '互检管理' } },

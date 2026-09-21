@@ -37,6 +37,25 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
   return (payload as Envelope<T>).data
 }
 
+/** 以与 JSON 接口一致的当前用户身份下载二进制内容。 */
+export async function requestBinary(path: string): Promise<Blob> {
+  const headers = new Headers()
+  headers.set('Accept', '*/*')
+  headers.set('X-Mock-User-Id', String(identity.userId))
+  headers.set('X-Mock-Roles', identity.roles)
+  let response: Response
+  try {
+    response = await fetch(`${baseUrl()}${path}`, { headers })
+  } catch {
+    throw new ApiError('无法连接后端服务，请确认 Spring Boot 已启动。', 0)
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => undefined) as { message?: string; traceId?: string } | undefined
+    throw new ApiError(payload?.message ?? `下载失败（HTTP ${response.status}）`, response.status, payload?.traceId)
+  }
+  return response.blob()
+}
+
 export function queryString(values: Record<string, string | number | undefined | null>): string {
   const search = new URLSearchParams()
   Object.entries(values).forEach(([key, value]) => {

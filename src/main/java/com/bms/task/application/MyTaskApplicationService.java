@@ -89,14 +89,14 @@ public class MyTaskApplicationService {
 
     public record MyTaskView(Long id, ReviewType reviewType, String taskName, String projectName, Long designerId, String designerName,
                              String designName, String pcbType, LocalDate expectedCompletedDate, Long expertLeaderId, String expertLeaderName,
-                             List<ReviewRole> reviewRoles, String reviewDescription, TaskStatus status, long version, List<MyTaskAction> actions) {
+                             List<ReviewRole> reviewRoles, String reviewDescription, TaskStatus status, List<MyTaskAction> actions) {
         static MyTaskView from(ReviewTaskRecord record, EnumSet<MyTaskAction> actions) {
             List<ReviewRole> reviewRoles = record.getReviewRoles() == null || record.getReviewRoles().isBlank() ? List.of()
                     : java.util.Arrays.stream(record.getReviewRoles().split(",")).map(ReviewRole::valueOf).toList();
             return new MyTaskView(record.getId(), ReviewType.valueOf(record.getReviewType()), record.getTaskName(), record.getProjectName(),
                     record.getDesignerId(), record.getDesignerName(), record.getDesignName(), record.getPcbType(), record.getExpectedCompletedDate(),
                     record.getExpertLeaderId(), record.getExpertLeaderName(), reviewRoles, record.getReviewDescription(),
-                    TaskStatus.valueOf(record.getStatus()), record.getVersion() == null ? 0L : record.getVersion(), List.copyOf(actions));
+                    TaskStatus.valueOf(record.getStatus()), List.copyOf(actions));
         }
     }
 }

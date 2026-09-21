@@ -21,3 +21,6 @@ springdoc:
     path: /openapi.json
   swagger-ui:
     path: /swagger-ui.html
+resource-service:
+  base-url: ${RESOURCE_SERVICE_BASE_URL:}
+  dir-path: ${RESOURCE_SERVICE_DIR_PATH:/bms/pcb}

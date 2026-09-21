@@ -48,7 +48,7 @@ class WorkflowControllerIntegrationTest {
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"action\":\"FINISH\",\"version\":0,\"comment\":\"完成\"}"))
+                        .content("{\"action\":\"FINISH\",\"comment\":\"完成\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.toStatus").value("FINISHED"));
 
@@ -62,9 +62,31 @@ class WorkflowControllerIntegrationTest {
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"action\":\"FINISH\",\"version\":1}"))
+                        .content("{\"action\":\"FINISH\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TASK_STATUS_CONFLICT"));
+    }
+
+    @Test
+    void shouldRegisterCompanyProcessFileAndStartOptionalReviewInOneTransition() throws Exception {
+        long taskId = 8303L;
+        ReviewTaskRecord task = task(taskId);
+        task.setStatus(TaskStatus.PCB_DESIGNER_REPLYING.name());
+        task.setReviewRoles("PROCESS_EXPERT");
+        taskMapper.insert(task);
+
+        mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
+                        .header("X-Mock-User-Id", "10")
+                        .header("X-Mock-Roles", "DESIGNER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"action":"START_PCB_OPTIONAL_REVIEW","comment":"上传工艺图并开启评审",
+                                 "stageFiles":[{"scene":"PROCESS_REVIEW","companyFileId":"/bms/pcb/8303/process.zip","fileName":"工艺结构图.zip","fileSize":128}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.toStatus").value("PCB_OPTIONAL_REVIEWING"))
+                .andExpect(jsonPath("$.data.stageFiles.length()").value(1))
+                .andExpect(jsonPath("$.data.stageFiles[0].category").value("PROCESS"));
     }
 
     private ReviewTaskRecord task(long taskId) {
@@ -104,7 +126,6 @@ class WorkflowControllerIntegrationTest {
         file.setFileName("BMS.pcb");
         file.setFileSize(100L);
         file.setMd5("workflow-md5");
-        file.setVersionNo(1);
         file.setCompanyFileId("mock-8302");
         file.setLatest(true);
         file.setUploadedBy(10L);

@@ -40,20 +40,22 @@ public class OpinionController {
     }
 
     @PostMapping("/tasks/{taskId}/opinions")
-    @Operation(summary = "提出评审意见", description = "在当前任务节点提交一条具体意见，可关联问题等级、设计文件版本及多张已登记的意见图片；图片先使用 OPINION_ATTACHMENT 类别上传，再传入图片文件 ID。")
+    @Operation(summary = "提出评审意见", description = "在当前任务节点提交一条具体意见。richText 为前端编辑器生成的完整富文本字符串（可内嵌图片），后端按字符串原样保存并随意见列表回显；content 保留为兼容字段。接口不接收图片 URL、附件文件 ID 或独立图片上传参数。")
     ApiResponse<OpinionApplicationService.OpinionView> raise(@PathVariable long taskId, @Valid @RequestBody RaiseOpinionRequest request,
                                                                HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.raise(new OpinionApplicationService.RaiseOpinionCommand(taskId, request.sourceType(),
-                request.sourceItemId(), request.content(), request.fileVersionId(), request.severity(), request.imageUrl(), request.attachmentFileIds()), CurrentUserHolder.require()), traceId(servletRequest));
+                request.sourceItemId(), request.content(), request.richText(), request.severity()), CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @GetMapping("/tasks/{taskId}/opinions")
-    @Operation(summary = "查询任务意见列表", description = "返回意见、设计者答复和确认记录。severity 可按 SERIOUS、GENERAL、MINOR 筛选，status 可按意见闭环状态筛选。")
+    @Operation(summary = "查询任务意见列表", description = "每条记录在同一个扁平模型中返回专家意见、最新设计者答复及该答复的确认结果，默认按意见提出时间倒序。severity 可按 SERIOUS、GENERAL、MINOR 筛选；sourceType 可按专家、工艺或结构来源筛选；scene=REVIEW_WORKSPACE 仅返回当前登录专家提出的意见，scene=DESIGNER_REPLY 返回任务所有意见。")
     ApiResponse<List<OpinionApplicationService.OpinionView>> list(@PathVariable long taskId,
             @RequestParam(required = false) @Parameter(description = "问题等级：SERIOUS 严重、GENERAL 一般、MINOR 轻微") String severity,
             @RequestParam(required = false) @Parameter(description = "意见状态：PENDING_REPLY、PENDING_CONFIRMATION、CONFIRMED_PASS、CONFIRMED_REJECTED、WITHDRAWN") OpinionStatus status,
+            @RequestParam(required = false) @Parameter(description = "意见来源：EXPERT_REVIEW 专家评审、PROCESS_REVIEW 工艺评审、STRUCTURE_REVIEW 结构评审") OpinionSourceType sourceType,
+            @RequestParam(required = false, defaultValue = "DESIGNER_REPLY") @Parameter(description = "查询场景：REVIEW_WORKSPACE 仅当前登录专家提出的意见；DESIGNER_REPLY 展示任务全部意见") String scene,
             HttpServletRequest servletRequest) {
-        return ApiResponse.ok(opinionApplicationService.list(taskId, severity, status, CurrentUserHolder.require()), traceId(servletRequest));
+        return ApiResponse.ok(opinionApplicationService.list(taskId, severity, status, sourceType, scene, CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @GetMapping("/tasks/{taskId}/opinions/summary")
@@ -62,15 +64,15 @@ public class OpinionController {
         return ApiResponse.ok(opinionApplicationService.summary(taskId, CurrentUserHolder.require()), traceId(servletRequest));
     }
 
-    @PostMapping({"/opinions/{opinionId}/reply", "/opinions/{opinionId}/replies"})
-    @Operation(summary = "设计者答复专家意见", description = "推荐路径为 /opinions/{opinionId}/reply；设计者可对指定意见提交答复，答复返回 opinionId，便于前端与原意见一一对应。旧 replies 路径暂时兼容。")
+    @PostMapping("/opinions/{opinionId}/reply")
+    @Operation(summary = "设计者答复专家意见", description = "设计者仅提交答复结论和文字整改说明；答复不接收文件版本、图片或富文本图片，返回 opinionId 便于前端与原意见一一对应。")
     ApiResponse<OpinionApplicationService.OpinionView> reply(@PathVariable long opinionId, @Valid @RequestBody ReplyOpinionRequest request,
                                                                HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.reply(opinionId, new OpinionApplicationService.ReplyOpinionCommand(
-                request.replyType(), request.reason(), request.fileVersionId()), CurrentUserHolder.require()), traceId(servletRequest));
+                request.replyType(), request.reason()), CurrentUserHolder.require()), traceId(servletRequest));
     }
 
-    @PostMapping({"/opinions/{opinionId}/confirm", "/opinions/{opinionId}/confirmations"})
+    @PostMapping("/opinions/{opinionId}/confirm")
     @Operation(summary = "专家确认设计者答复", description = "推荐路径为 /opinions/{opinionId}/confirm；意见提出人确认答复通过或不通过，不通过后设计者可重新答复。旧 confirmations 路径暂时兼容。")
     ApiResponse<OpinionApplicationService.OpinionView> confirm(@PathVariable long opinionId,
                                                                  @Valid @RequestBody ConfirmOpinionRequest request,
@@ -95,15 +97,13 @@ public class OpinionController {
     @Schema(description = "提出评审意见请求")
     record RaiseOpinionRequest(@Schema(description = "意见来源类型", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull OpinionSourceType sourceType,
                                @Schema(description = "来源检查项 ID；固定互检检查项意见时必填") Long sourceItemId,
-                               @Schema(description = "具体、可执行的评审意见内容", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String content,
-                               @Schema(description = "关联的设计文件版本 ID") Long fileVersionId,
-                               @Schema(description = "问题等级：SERIOUS 严重、GENERAL 一般、MINOR 轻微") String severity,
-                               @Schema(description = "兼容历史调用的单张图片 URL；新调用请使用 attachmentFileIds") String imageUrl,
-                               @Schema(description = "专家意见图片对应的文件 ID 列表；文件须先以 OPINION_ATTACHMENT 类别登记，支持多张图片并按传入顺序展示") List<Long> attachmentFileIds) {
+                               @Schema(description = "具体、可执行的评审意见内容，支持富文本 HTML", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String content,
+                               @Schema(description = "富文本提取意见，支持文字与内嵌 data URI 图片；为空时使用 content", requiredMode = Schema.RequiredMode.NOT_REQUIRED) String richText,
+                               @Schema(description = "问题等级：SERIOUS 严重、GENERAL 一般、MINOR 轻微") String severity) {
     }
     @Schema(description = "设计者答复意见请求")
     record ReplyOpinionRequest(@Schema(description = "答复结论", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull ReplyType replyType,
-                               @Schema(description = "答复说明或整改说明") String reason, @Schema(description = "重新上传后关联的文件版本 ID") Long fileVersionId) {
+                               @Schema(description = "答复说明或整改说明；不支持上传文件或粘贴图片") String reason) {
     }
     @Schema(description = "专家确认答复请求")
     record ConfirmOpinionRequest(@Schema(description = "是否确认通过", requiredMode = Schema.RequiredMode.REQUIRED) boolean passed, @Schema(description = "确认意见") String comment) {

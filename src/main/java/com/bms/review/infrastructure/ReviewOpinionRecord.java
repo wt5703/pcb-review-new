@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 映射 review_opinion 表的一条主意见记录，保存来源、提出人、关联文件版本和当前闭环状态；答复及确认历史由独立记录保存。
+ * @description 映射 review_opinion 表的一条主意见记录，保存来源、提出人和当前闭环状态；答复及确认历史由独立记录保存。
  */
 public class ReviewOpinionRecord {
     private Long id;
@@ -14,11 +14,9 @@ public class ReviewOpinionRecord {
     private Long sourceItemId;
     private String severity;
     private String content;
+    private String richText;
     private Long raisedBy;
-    private Long fileVersionId;
-    private String imageUrl;
     private String status;
-    private Long version;
     private LocalDateTime createdAt;
 
     public Long getId() { return id; }
@@ -33,16 +31,12 @@ public class ReviewOpinionRecord {
     public void setSeverity(String severity) { this.severity = severity; }
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }
+    public String getRichText() { return richText; }
+    public void setRichText(String richText) { this.richText = richText; }
     public Long getRaisedBy() { return raisedBy; }
     public void setRaisedBy(Long raisedBy) { this.raisedBy = raisedBy; }
-    public Long getFileVersionId() { return fileVersionId; }
-    public void setFileVersionId(Long fileVersionId) { this.fileVersionId = fileVersionId; }
-    public String getImageUrl() { return imageUrl; }
-    public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
-    public Long getVersion() { return version; }
-    public void setVersion(Long version) { this.version = version; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

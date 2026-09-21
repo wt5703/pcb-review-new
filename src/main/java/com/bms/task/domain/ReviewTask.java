@@ -98,7 +98,7 @@ public final class ReviewTask {
         if (reviewType == ReviewType.PCB && (pcbType == null || pcbType.isBlank())) {
             throw new IllegalStateException("PCB评审任务必须填写PCB类型");
         }
-        status = reviewType == ReviewType.PCB ? TaskStatus.PCB_PENDING_REVIEW : TaskStatus.SCHEMATIC_PENDING_MUTUAL_ASSIGNMENT;
+        status = reviewType == ReviewType.PCB ? TaskStatus.PCB_PENDING_REVIEW : TaskStatus.SCHEMATIC_PENDING_LEADER_ASSIGNMENT;
     }
 
     public void moveTo(TaskStatus targetStatus) {

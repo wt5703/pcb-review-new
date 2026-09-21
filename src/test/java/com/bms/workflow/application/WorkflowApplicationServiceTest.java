@@ -5,10 +5,12 @@ import com.bms.archive.application.TaskArchiveApplicationService;
 import com.bms.common.BusinessException;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
+import com.bms.file.application.FileApplicationService;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Role;
 import com.bms.notification.infrastructure.OutboxEventMapper;
 import com.bms.review.application.TaskCheckItemApplicationService;
+import com.bms.review.application.ReviewerAssignmentService;
 import com.bms.review.domain.ReviewerProcessStatus;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.infrastructure.TaskReviewerMapper;
@@ -46,8 +48,11 @@ class WorkflowApplicationServiceTest {
     private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
     private final OutboxEventMapper outboxEventMapper = mock(OutboxEventMapper.class);
     private final TaskArchiveApplicationService taskArchiveApplicationService = mock(TaskArchiveApplicationService.class);
+    private final ReviewerAssignmentService reviewerAssignmentService = mock(ReviewerAssignmentService.class);
+    private final FileApplicationService fileApplicationService = mock(FileApplicationService.class);
     private final WorkflowApplicationService service = new WorkflowApplicationService(taskMapper, reviewerMapper, opinionMapper,
-            fileMapper, checkItemApplicationService, flowMapper, auditMapper, outboxEventMapper, taskArchiveApplicationService);
+            fileMapper, checkItemApplicationService, flowMapper, auditMapper, outboxEventMapper, taskArchiveApplicationService,
+            reviewerAssignmentService, fileApplicationService);
 
     @Test
     void shouldStartPcbExpertReviewForAuthorizedDesigner() {
@@ -55,7 +60,7 @@ class WorkflowApplicationServiceTest {
         when(taskMapper.update(any())).thenReturn(1);
         when(flowMapper.nextId()).thenReturn(1L);
 
-        WorkflowApplicationService.WorkflowView view = service.transition(1001L, WorkflowAction.START_PCB_EXPERT_REVIEW, 0L, null,
+        WorkflowApplicationService.WorkflowView view = service.transition(1001L, WorkflowAction.START_PCB_EXPERT_REVIEW, null,
                 new CurrentUser(10L, Set.of(Role.DESIGNER)));
 
         assertThat(view.toStatus()).isEqualTo(TaskStatus.PCB_EXPERT_REVIEWING);
@@ -72,7 +77,7 @@ class WorkflowApplicationServiceTest {
         when(taskMapper.update(any())).thenReturn(1);
         when(flowMapper.nextId()).thenReturn(2L);
 
-        WorkflowApplicationService.WorkflowView view = service.transition(1001L, WorkflowAction.FINISH, 0L, "评审结束",
+        WorkflowApplicationService.WorkflowView view = service.transition(1001L, WorkflowAction.FINISH, "评审结束",
                 new CurrentUser(1L, Set.of(Role.PCB_LEADER)));
 
         assertThat(view.toStatus()).isEqualTo(TaskStatus.FINISHED);
@@ -84,7 +89,7 @@ class WorkflowApplicationServiceTest {
     void shouldNeverReopenFinishedTask() {
         when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.FINISHED));
 
-        assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.FINISH, 0L, null,
+        assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.FINISH, null,
                 new CurrentUser(1L, Set.of(Role.PCB_LEADER))))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("已结束任务不允许重新打开或流转");
@@ -99,23 +104,23 @@ class WorkflowApplicationServiceTest {
         when(flowMapper.nextId()).thenReturn(3L);
 
         WorkflowApplicationService.WorkflowView view = service.transition(1001L, WorkflowAction.PREPARE_SCHEMATIC_EXPERT_ASSIGNMENT,
-                0L, null, new CurrentUser(1L, Set.of(Role.HARDWARE_DEPARTMENT_MANAGER)));
+                null, new CurrentUser(1L, Set.of(Role.HARDWARE_DEPARTMENT_MANAGER)));
 
         assertThat(view.toStatus()).isEqualTo(TaskStatus.SCHEMATIC_PENDING_REVIEW);
     }
 
     @Test
-    void shouldRejectConcurrentFinishWhenTaskVersionUpdateLosesRace() {
+    void shouldReportMissingTaskWhenStatusUpdateDoesNotPersist() {
         when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PENDING_FINISH_CONFIRMATION));
         when(reviewerMapper.findActiveByTaskId(1001L)).thenReturn(List.of(reviewer(20L)));
         when(opinionMapper.findStatusesByTaskAndRaisedBy(1001L, 20L)).thenReturn(List.of());
         when(fileMapper.findLatestByTaskId(1001L)).thenReturn(List.of(new ReviewFileRecord()));
         when(taskMapper.update(any())).thenReturn(0);
 
-        assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.FINISH, 0L, null,
+        assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.FINISH, null,
                 new CurrentUser(1L, Set.of(Role.PCB_LEADER))))
                 .isInstanceOf(BusinessException.class)
-                .hasMessage("任务状态已被其他操作更新，请刷新后重试");
+                .hasMessage("任务不存在");
     }
 
     private ReviewTaskRecord task(TaskStatus status) {
