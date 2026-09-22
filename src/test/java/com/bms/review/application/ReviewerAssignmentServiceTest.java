@@ -10,7 +10,6 @@ import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
-import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.notification.application.OutboxEventPublisher;
 import com.bms.audit.infrastructure.OperationAuditMapper;
 import org.junit.jupiter.api.Test;
@@ -34,11 +33,10 @@ class ReviewerAssignmentServiceTest {
     private final ReviewTaskMapper taskMapper = mock(ReviewTaskMapper.class);
     private final com.bms.identity.application.TaskNodeAuthorizationService taskNodeAuthorizationService =
             mock(com.bms.identity.application.TaskNodeAuthorizationService.class);
-    private final TaskAssignmentAccessMapper assignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
     private final OutboxEventPublisher outboxEventPublisher = mock(OutboxEventPublisher.class);
     private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
     private final ReviewerAssignmentService service = new ReviewerAssignmentService(reviewerMapper, taskMapper, taskNodeAuthorizationService,
-            assignmentAccessMapper, outboxEventPublisher, auditMapper);
+            outboxEventPublisher, auditMapper);
     private final CurrentUser pcbLeader = new CurrentUser(1L, Set.of(Role.PCB_LEADER));
 
     @Test

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { reviewApi } from '@/api/review-api'
-import type { TemplateCategory } from '@/api/types'
+import type { TemplateListCategory } from '@/api/types'
 
 type EditorMode = 'create-category' | 'edit-category' | 'edit-item' | null
-type EditableItem = { id?: number; itemName: string; enabled: boolean; version?: number }
+type EditableItem = { id?: number; itemName: string }
 
 const fileInput = ref<HTMLInputElement>()
 const importing = ref(false)
@@ -13,30 +13,28 @@ const loading = ref(true)
 const error = ref('')
 const message = ref('')
 const reviewType = ref('PCB')
-const categories = ref<TemplateCategory[]>([])
+const categories = ref<TemplateListCategory[]>([])
 const editorMode = ref<EditorMode>(null)
 const editingId = ref<number>()
 const editingGroupId = ref<number>()
 const activeItemIndex = ref<number>()
-const editor = reactive({ categoryName: '', enabled: true, version: 0, items: [] as EditableItem[] })
-const enabledCategories = computed(() => categories.value.filter((item) => item.category.enabled))
+const editor = reactive({ categoryName: '', items: [] as EditableItem[] })
+const categoryCount = computed(() => categories.value.length)
 const activeItem = computed(() => activeItemIndex.value === undefined ? undefined : editor.items[activeItemIndex.value])
 
 function resetEditor(): void {
   editingId.value = undefined
   editingGroupId.value = undefined
   activeItemIndex.value = undefined
-  Object.assign(editor, { categoryName: '', enabled: true, version: 0, items: [{ itemName: '', enabled: true }] })
+  Object.assign(editor, { categoryName: '', items: [{ itemName: '' }] })
 }
 
-function fillEditor(group: TemplateCategory): void {
+function fillEditor(group: TemplateListCategory): void {
   editingId.value = group.category.id
   editingGroupId.value = group.category.id
   Object.assign(editor, {
     categoryName: group.category.itemName,
-    enabled: group.category.enabled,
-    version: group.category.version,
-    items: group.items.map((item) => ({ id: item.id, itemName: item.itemName, enabled: item.enabled, version: item.version }))
+    items: group.items.map((item) => ({ id: item.id, itemName: item.itemName }))
   })
 }
 
@@ -47,16 +45,16 @@ async function load(): Promise<void> {
 }
 
 function closeEditor(): void { editorMode.value = null; resetEditor() }
-function openCreate(): void { resetEditor(); editorMode.value = 'create-category' }
-function openCategoryEditor(group: TemplateCategory): void { fillEditor(group); editorMode.value = 'edit-category' }
-function openItemEditor(group: TemplateCategory, itemId: number): void {
+function openCreate(): void { resetEditor(); editor.items = []; editorMode.value = 'create-category' }
+function openCategoryEditor(group: TemplateListCategory): void { fillEditor(group); editorMode.value = 'edit-category' }
+function openItemEditor(group: TemplateListCategory, itemId: number): void {
   fillEditor(group)
   activeItemIndex.value = editor.items.findIndex((item) => item.id === itemId)
   editorMode.value = 'edit-item'
 }
-function openNewItem(group: TemplateCategory): void {
+function openNewItem(group: TemplateListCategory): void {
   fillEditor(group)
-  editor.items.push({ itemName: '', enabled: true })
+  editor.items.push({ itemName: '' })
   activeItemIndex.value = editor.items.length - 1
   editorMode.value = 'edit-item'
 }
@@ -77,8 +75,11 @@ async function save(): Promise<void> {
     if (editorMode.value === 'create-category') {
       await reviewApi.createTemplate({ reviewType: reviewType.value, categoryName, items: items.map(({ itemName }) => ({ itemName })) })
       message.value = '互检类别已创建。'
+    } else if (editorMode.value === 'edit-item' && activeItem.value?.id) {
+      await reviewApi.updateTemplateItem(activeItem.value.id, activeItem.value.itemName.trim())
+      message.value = '检查项已保存。'
     } else if (editingId.value) {
-      await reviewApi.updateTemplate(editingId.value, { categoryName, enabled: editor.enabled, version: editor.version, items })
+      await reviewApi.updateTemplate({ categoryId: editingId.value, categoryName, items: items.map(({ id, itemName }) => ({ itemId: id, itemName })) })
       message.value = editorMode.value === 'edit-item' ? '检查项已保存。' : '类别及检查项已更新。'
     }
     await load()
@@ -92,7 +93,7 @@ async function removeTemplate(id: number, name: string, category = false): Promi
   const target = category ? `“${name}”及其检查项` : `检查项“${name}”`
   if (!window.confirm(`确认删除${target}吗？已创建任务不会被删除。`)) return
   try {
-    await reviewApi.deleteTemplate(id)
+    await reviewApi.deleteTemplate(id, category ? 'CATEGORY' : 'ITEM')
     message.value = category ? '类别已删除。' : '检查项已删除。'
     if (editingGroupId.value === id || activeItem.value?.id === id) closeEditor()
     await load()
@@ -135,19 +136,19 @@ onMounted(load)
     <form v-if="editorMode === 'create-category'" class="card category-editor" @submit.prevent="save">
       <div class="editor-title"><h2>新增类别</h2><button class="btn compact" type="button" @click="closeEditor">取消</button></div>
       <label>类别 *<input v-model="editor.categoryName" required placeholder="例如：高速信号" /></label>
-      <div class="editor-title item-title"><b>检查项 *</b><button class="btn compact" type="button" @click="editor.items.push({ itemName: '', enabled: true })">＋ 新增检查项</button></div>
-      <div v-for="(item, index) in editor.items" :key="index" class="item-input-row"><input v-model="item.itemName" required placeholder="请输入检查项名称" /><button class="btn compact danger" type="button" :disabled="editor.items.length === 1" @click="editor.items.splice(index, 1)">删除</button></div>
+      <div class="editor-title item-title"><b>检查项 *</b><button class="btn compact" type="button" @click="editor.items.push({ itemName: '' })">＋ 新增检查项</button></div>
+      <div v-for="(item, index) in editor.items" :key="index" class="item-input-row"><input v-model="item.itemName" required placeholder="请输入检查项名称" /><button class="btn compact danger" type="button" @click="editor.items.splice(index, 1)">删除</button></div>
       <footer><button class="btn primary" :disabled="saving" type="submit">{{ saving ? '保存中…' : '保存类别' }}</button></footer>
     </form>
 
     <section v-if="loading" class="card loading">正在加载互检模板…</section>
     <section v-else class="card template-root">
-      <div class="template-heading"><h2>互检单模板</h2><span class="tag">{{ enabledCategories.length }} 个类别</span></div>
+      <div class="template-heading"><h2>互检单模板</h2><span class="tag">{{ categoryCount }} 个类别</span></div>
       <div class="template-list">
-        <article v-for="group in categories" :key="group.category.id" class="template-group" :class="{ disabled: !group.category.enabled }">
+        <article v-for="group in categories" :key="group.category.id" class="template-group">
           <header class="group-header">
             <div><span class="category-badge">类别</span><b>{{ group.category.itemName }}</b><small>{{ group.items.length }} 个检查项</small></div>
-            <div class="group-actions"><button class="btn compact" @click="openCategoryEditor(group)">编辑类别</button><button v-if="group.category.enabled" class="btn compact danger" @click="removeTemplate(group.category.id, group.category.itemName, true)">删除</button></div>
+            <div class="group-actions"><button class="btn compact" @click="openCategoryEditor(group)">编辑类别</button><button class="btn compact danger" @click="removeTemplate(group.category.id, group.category.itemName, true)">删除</button></div>
           </header>
 
           <form v-if="editorMode === 'edit-category' && editingGroupId === group.category.id" class="category-editor inner-editor" @submit.prevent="save">
@@ -157,7 +158,7 @@ onMounted(load)
           </form>
 
           <template v-for="(item, index) in group.items" :key="item.id">
-            <div class="template-item"><span>{{ index + 1 }}</span><b>{{ item.itemName }}</b><em v-if="!item.enabled">已停用</em><button class="text-link" @click="openItemEditor(group, item.id)">编辑检查项</button></div>
+            <div class="template-item"><span>{{ index + 1 }}</span><b>{{ item.itemName }}</b><button class="text-link" @click="openItemEditor(group, item.id)">编辑检查项</button></div>
             <form v-if="editorMode === 'edit-item' && editingGroupId === group.category.id && activeItem?.id === item.id" class="item-editor" @submit.prevent="save">
               <div class="editor-title"><h3>编辑检查项</h3><button class="btn compact" type="button" @click="closeEditor">取消</button></div>
               <label>检查项 *<div class="item-input-row"><input v-model="activeItem.itemName" required /><button class="btn compact danger" type="button" @click="removeTemplate(item.id, item.itemName)">删除</button></div></label>
@@ -171,7 +172,7 @@ onMounted(load)
             <footer><button class="btn primary compact" :disabled="saving" type="submit">{{ saving ? '保存中…' : '保存检查项' }}</button></footer>
           </form>
 
-          <div class="group-footer"><button v-if="group.category.enabled" class="btn compact" @click="openNewItem(group)">＋ 新增检查项</button></div>
+          <div class="group-footer"><button class="btn compact" @click="openNewItem(group)">＋ 新增检查项</button></div>
         </article>
         <div v-if="!categories.length" class="empty">暂无模板类别，请新增类别或导入 Excel。</div>
       </div>

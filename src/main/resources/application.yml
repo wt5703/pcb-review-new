@@ -12,7 +12,7 @@ spring:
     default-property-inclusion: non_null
 server:
   servlet:
-    context-path: /api/v1
+    context-path: /leapmotor/pcb_review
 logging:
   level:
     com.bms: INFO
@@ -22,5 +22,5 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 resource-service:
-  base-url: ${RESOURCE_SERVICE_BASE_URL:}
-  dir-path: ${RESOURCE_SERVICE_DIR_PATH:/bms/pcb}
+  api-prefix: ${RESOURCE_SERVICE_API_PREFIX:http://10.195.135.149:30860/leapmotor/pm/resource}
+  dir-path: ${RESOURCE_SERVICE_DIR_PATH:/user/bms_platform/pcb_review/test1}

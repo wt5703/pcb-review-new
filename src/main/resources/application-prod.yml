@@ -1,0 +1,7 @@
+spring:
+  config:
+    activate:
+      on-profile: prod
+resource-service:
+  api-prefix: ${RESOURCE_SERVICE_API_PREFIX:http://10.195.135.149:30860/leapmotor/pm/resource}
+  dir-path: ${RESOURCE_SERVICE_DIR_PATH:/user/bms_platform/pcb_review/pro}

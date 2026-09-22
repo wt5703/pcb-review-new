@@ -33,6 +33,11 @@ public class MockUserDirectoryApplicationService {
         return userAccountMapper.findRoleCodesByUserId(userId).stream().map(Role::valueOf).collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
+    public String findDisplayName(long userId) {
+        MockUserAccountRecord account = userAccountMapper.findEnabledById(userId);
+        return account == null ? "用户#" + userId : account.getDisplayName();
+    }
+
     private MockUserView toView(MockUserAccountRecord account) {
         return new MockUserView(account.getId(), account.getDisplayName(), account.getEmail(), account.getDepartmentName(),
                 userAccountMapper.findRoleCodesByUserId(account.getId()));

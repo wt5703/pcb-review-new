@@ -2,6 +2,7 @@ package com.bms.review.infrastructure;
 
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
@@ -41,8 +42,9 @@ public interface CheckItemTemplateMapper {
             + "enabled=#{enabled}, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=#{id} AND version=#{version}")
     int update(CheckItemTemplateRecord record);
 
-    @Update("UPDATE check_item_template SET enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE parent_item_key=#{parentItemKey}")
-    int disableChildrenByParentItemKey(String parentItemKey);
+    @Update("UPDATE check_item_template SET enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 "
+            + "WHERE review_type=#{reviewType} AND parent_item_key=#{parentItemKey}")
+    int disableChildrenByParentItemKey(@Param("reviewType") String reviewType, @Param("parentItemKey") String parentItemKey);
 
     @Update("UPDATE check_item_template SET enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=#{id}")
     int disableById(long id);

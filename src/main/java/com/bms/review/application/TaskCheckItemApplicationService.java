@@ -4,8 +4,6 @@ import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
 import com.bms.audit.infrastructure.OperationAuditMapper;
 import com.bms.audit.infrastructure.OperationAuditRecord;
-import com.bms.file.infrastructure.ReviewFileMapper;
-import com.bms.file.infrastructure.ReviewFileRecord;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.application.TaskNodeAuthorizationService;
 import com.bms.identity.domain.Permission;
@@ -13,11 +11,9 @@ import com.bms.identity.domain.PermissionPolicy;
 import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.review.domain.CheckItemStatus;
 import com.bms.review.domain.CheckResult;
+import com.bms.review.domain.OpinionStatus;
 import com.bms.review.infrastructure.CheckItemTemplateMapper;
 import com.bms.review.infrastructure.CheckItemTemplateRecord;
-import com.bms.review.infrastructure.CheckItemAttachmentMapper;
-import com.bms.review.infrastructure.CheckItemAttachmentRecord;
-import com.bms.review.infrastructure.CheckItemAttachmentViewRecord;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.infrastructure.ReviewOpinionRecord;
 import com.bms.review.infrastructure.TaskCheckItemMapper;
@@ -47,15 +43,12 @@ public class TaskCheckItemApplicationService {
     private final TaskAssignmentAccessMapper assignmentAccessMapper;
     private final TaskNodeAuthorizationService taskNodeAuthorizationService;
     private final ReviewOpinionMapper opinionMapper;
-    private final ReviewFileMapper fileMapper;
-    private final CheckItemAttachmentMapper attachmentMapper;
     private final OperationAuditMapper auditMapper;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public TaskCheckItemApplicationService(ReviewTaskMapper taskMapper, CheckItemTemplateMapper templateMapper,
                                            TaskCheckItemMapper taskCheckItemMapper, TaskAssignmentAccessMapper assignmentAccessMapper,
                                            TaskNodeAuthorizationService taskNodeAuthorizationService, ReviewOpinionMapper opinionMapper,
-                                           ReviewFileMapper fileMapper, CheckItemAttachmentMapper attachmentMapper,
                                            OperationAuditMapper auditMapper) {
         this.taskMapper = taskMapper;
         this.templateMapper = templateMapper;
@@ -63,13 +56,11 @@ public class TaskCheckItemApplicationService {
         this.assignmentAccessMapper = assignmentAccessMapper;
         this.taskNodeAuthorizationService = taskNodeAuthorizationService;
         this.opinionMapper = opinionMapper;
-        this.fileMapper = fileMapper;
-        this.attachmentMapper = attachmentMapper;
         this.auditMapper = auditMapper;
     }
 
     @Transactional
-    public List<CheckItemView> list(long taskId, CurrentUser currentUser) {
+    public List<CheckItemCategoryView> list(long taskId, CurrentUser currentUser) {
         ReviewTaskRecord task = requireVisibleTask(taskId, currentUser);
         List<CheckItemTemplateRecord> templates = synchronizeIfActive(task);
         List<TaskCheckItemRecord> records = taskCheckItemMapper.findByTaskId(taskId);
@@ -77,9 +68,19 @@ public class TaskCheckItemApplicationService {
             Set<Long> activeTemplateIds = templates.stream().map(CheckItemTemplateRecord::getId).collect(java.util.stream.Collectors.toSet());
             records = records.stream().filter(record -> activeTemplateIds.contains(record.getTemplateItemId())).toList();
         }
-        Map<String, String> categoryNames = isFinished(task) ? new HashMap<>() : templateMapper.findEnabledByReviewType(task.getReviewType()).stream()
-                .collect(java.util.stream.Collectors.toMap(CheckItemTemplateRecord::getItemKey, CheckItemTemplateRecord::getItemName, (left, right) -> left));
-        return records.stream().map(record -> CheckItemView.from(record, categoryNames.get(record.getParentItemKey()), attachments(record.getId()))).toList();
+        Map<Long, List<TaskCheckItemRecord>> itemsByParentId = records.stream()
+                .filter(record -> record.getParentId() != null)
+                .collect(java.util.stream.Collectors.groupingBy(TaskCheckItemRecord::getParentId));
+        return records.stream()
+                .filter(record -> record.getParentId() == null)
+                .sorted(java.util.Comparator.comparing(TaskCheckItemRecord::getSortNo))
+                .map(category -> new CheckItemCategoryView(new CheckItemCategoryInfo(category.getId(), task.getReviewType(),
+                        category.getItemName(), category.getSortNo()),
+                        itemsByParentId.getOrDefault(category.getId(), List.of()).stream()
+                                .sorted(java.util.Comparator.comparing(TaskCheckItemRecord::getSortNo))
+                                .map(CheckItemListItemView::from)
+                                .toList()))
+                .toList();
     }
 
     @Transactional
@@ -94,17 +95,20 @@ public class TaskCheckItemApplicationService {
         if (record == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务");
         }
-        validateCommand(command, taskId, itemId);
+        requireLeafCheckItem(record);
+        validateCommand(command);
+        Long opinionId = command.result() == CheckResult.FAIL
+                ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), currentUser) : null;
         record.setCheckResult(command.result().name());
         record.setComment(command.comment());
         record.setRichText(command.richText());
-        record.setLinkedOpinionId(command.linkedOpinionId());
+        record.setLinkedOpinionId(opinionId);
         record.setStatus(CheckItemStatus.COMPLETED.name());
         if (taskCheckItemMapper.submit(record) != 1) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务");
         }
         appendAudit(record.getId(), "CHECK_ITEM_SUBMITTED", currentUser.id(), command.result().name());
-        return CheckItemView.from(record, null, attachments(record.getId()));
+        return CheckItemView.from(record, linkedOpinion(record));
     }
 
     /**
@@ -125,15 +129,14 @@ public class TaskCheckItemApplicationService {
             if (!duplicateGuard.add(command.itemId())) { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "互检单中存在重复检查项：" + command.itemId()); }
             TaskCheckItemRecord record = taskCheckItemMapper.findByTaskIdAndId(taskId, command.itemId());
             if (record == null) { throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务"); }
+            requireLeafCheckItem(record);
             validateBatchCommand(command);
-            validateAttachmentFiles(taskId, command.attachmentFileIds());
-            Long opinionId = command.result() == CheckResult.FAIL ? createOrUpdateMutualOpinion(taskId, record, command, currentUser) : null;
-            replaceAttachments(record.getId(), command.attachmentFileIds());
+            Long opinionId = command.result() == CheckResult.FAIL ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), currentUser) : null;
             record.setCheckResult(command.result().name()); record.setComment(command.comment()); record.setRichText(command.richText()); record.setLinkedOpinionId(opinionId);
             record.setStatus(CheckItemStatus.COMPLETED.name());
             if (taskCheckItemMapper.submit(record) != 1) { throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务"); }
             appendAudit(record.getId(), "CHECK_ITEM_BATCH_SUBMITTED", currentUser.id(), command.result().name());
-            views.add(CheckItemView.from(record, null, attachments(record.getId())));
+            views.add(CheckItemView.from(record, linkedOpinion(record)));
         }
         return List.copyOf(views);
     }
@@ -151,32 +154,46 @@ public class TaskCheckItemApplicationService {
             return List.of();
         }
         List<CheckItemTemplateRecord> allTemplates = templateMapper.findEnabledByReviewType(task.getReviewType());
-        Set<String> categoryKeys = allTemplates.stream().map(CheckItemTemplateRecord::getParentItemKey).filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet());
-        List<CheckItemTemplateRecord> templates = allTemplates.stream().filter(template -> !categoryKeys.contains(template.getItemKey())).toList();
+        List<CheckItemTemplateRecord> templates = allTemplates;
         Map<Long, TaskCheckItemRecord> existing = new HashMap<>();
         for (TaskCheckItemRecord item : taskCheckItemMapper.findByTaskId(task.getId())) {
             existing.put(item.getTemplateItemId(), item);
         }
-        for (CheckItemTemplateRecord template : templates) {
-            TaskCheckItemRecord snapshot = snapshotOf(task.getId(), template);
-            if (existing.containsKey(template.getId())) {
-                taskCheckItemMapper.refreshTemplateSnapshot(snapshot);
-            } else {
-                snapshot.setId(taskCheckItemMapper.nextId());
-                snapshot.setStatus(CheckItemStatus.PENDING.name());
-                snapshot.setVersion(0L);
-                taskCheckItemMapper.insert(snapshot);
-            }
+        Map<String, CheckItemTemplateRecord> templateByKey = allTemplates.stream()
+                .collect(java.util.stream.Collectors.toMap(CheckItemTemplateRecord::getItemKey, template -> template, (left, right) -> left));
+        for (CheckItemTemplateRecord template : templates.stream().filter(item -> item.getParentItemKey() == null).toList()) {
+            materializeSnapshot(task.getId(), template, null, existing);
+        }
+        for (CheckItemTemplateRecord template : templates.stream().filter(item -> item.getParentItemKey() != null).toList()) {
+            CheckItemTemplateRecord parentTemplate = templateByKey.get(template.getParentItemKey());
+            TaskCheckItemRecord parent = parentTemplate == null ? null : existing.get(parentTemplate.getId());
+            materializeSnapshot(task.getId(), template, parent == null ? null : parent.getId(), existing);
         }
         return templates;
     }
 
-    private TaskCheckItemRecord snapshotOf(long taskId, CheckItemTemplateRecord template) {
+    private void materializeSnapshot(long taskId, CheckItemTemplateRecord template, Long parentId, Map<Long, TaskCheckItemRecord> existing) {
+        TaskCheckItemRecord snapshot = snapshotOf(taskId, template, parentId);
+        TaskCheckItemRecord current = existing.get(template.getId());
+        if (current != null) {
+            snapshot.setId(current.getId());
+            snapshot.setStatus(current.getStatus());
+            snapshot.setVersion(current.getVersion());
+            taskCheckItemMapper.refreshTemplateSnapshot(snapshot);
+        } else {
+            snapshot.setId(taskCheckItemMapper.nextId());
+            snapshot.setStatus(CheckItemStatus.PENDING.name());
+            snapshot.setVersion(0L);
+            taskCheckItemMapper.insert(snapshot);
+        }
+        existing.put(template.getId(), snapshot);
+    }
+
+    private TaskCheckItemRecord snapshotOf(long taskId, CheckItemTemplateRecord template, Long parentId) {
         TaskCheckItemRecord item = new TaskCheckItemRecord();
         item.setTaskId(taskId);
         item.setTemplateItemId(template.getId());
-        item.setTemplateItemKey(template.getItemKey());
-        item.setParentItemKey(template.getParentItemKey());
+        item.setParentId(parentId);
         item.setItemName(template.getItemName());
         item.setSortNo(template.getSortNo());
         return item;
@@ -207,89 +224,79 @@ public class TaskCheckItemApplicationService {
         auditMapper.insert(new OperationAuditRecord("TASK_CHECK_ITEM", itemId, action, operatorId, detail));
     }
 
-    private void validateCommand(SubmitCheckItemCommand command, long taskId, long itemId) {
-        boolean hasComment = command.comment() != null && !command.comment().isBlank();
-        if ((command.result() == CheckResult.FAIL || command.result() == CheckResult.NOT_APPLICABLE) && !hasComment) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "不合格或不适用的检查项必须填写说明");
-        }
-        if (command.result() == CheckResult.FAIL && command.linkedOpinionId() == null) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "不合格检查项必须关联评审意见");
-        }
-        if (command.result() == CheckResult.FAIL) {
-            ReviewOpinionRecord opinion = opinionMapper.findById(command.linkedOpinionId());
-            if (opinion == null || !Long.valueOf(taskId).equals(opinion.getTaskId())
-                    || !"MUTUAL_CHECK_ITEM".equals(opinion.getSourceType()) || !Long.valueOf(itemId).equals(opinion.getSourceItemId())) {
-                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "不合格检查项必须关联本任务当前检查项提出的意见");
-            }
+    private void validateCommand(SubmitCheckItemCommand command) {
+        validateResult(command.result(), command.comment());
+    }
+
+    private void requireLeafCheckItem(TaskCheckItemRecord record) {
+        if (record.getParentId() == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "互检类别不能直接提交，必须提交其下检查项");
         }
     }
 
     private void validateBatchCommand(SubmitBatchItemCommand command) {
-        if (command.result() == null) { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "检查结果不能为空"); }
-        if (command.result() == CheckResult.FAIL
-                && (command.richText() == null || command.richText().isBlank())) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "不合格检查项必须填写富文本提取意见");
-        }
-        if (command.result() == CheckResult.NOT_APPLICABLE && (command.comment() == null || command.comment().isBlank())) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "不适用的检查项必须填写检查说明");
+        validateResult(command.result(), command.comment());
+    }
+
+    private void validateResult(CheckResult result, String comment) {
+        if (result == null) { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "检查结果不能为空"); }
+        if ((result == CheckResult.FAIL || result == CheckResult.NC) && (comment == null || comment.isBlank())) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "不合格或 NC 检查项必须填写意见");
         }
     }
 
-    private void validateAttachmentFiles(long taskId, List<Long> fileIds) {
-        for (Long fileId : fileIds) {
-            ReviewFileRecord file = fileMapper.findById(fileId);
-            if (file == null || !Long.valueOf(taskId).equals(file.getTaskId())) {
-                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项图片不存在或不属于当前任务");
-            }
-        }
-    }
-
-    private Long createOrUpdateMutualOpinion(long taskId, TaskCheckItemRecord item, SubmitBatchItemCommand command, CurrentUser currentUser) {
+    private Long createOrUpdateMutualOpinion(long taskId, TaskCheckItemRecord item, String comment, String richText, CurrentUser currentUser) {
+        String opinionContent = richText == null || richText.isBlank() ? comment.trim() : richText.trim();
         ReviewOpinionRecord opinion = opinionMapper.findActiveMutualCheckItemOpinion(taskId, item.getId());
         if (opinion == null) {
             opinion = new ReviewOpinionRecord(); opinion.setId(opinionMapper.nextOpinionId()); opinion.setTaskId(taskId);
             opinion.setSourceType("MUTUAL_CHECK_ITEM"); opinion.setSourceItemId(item.getId()); opinion.setSeverity("GENERAL");
-            opinion.setContent(command.richText().trim()); opinion.setRichText(command.richText().trim()); opinion.setRaisedBy(currentUser.id());
+            opinion.setContent(opinionContent); opinion.setRichText(opinionContent); opinion.setRaisedBy(currentUser.id()); opinion.setRaisedByName(currentUser.resolvedDisplayName());
             opinion.setStatus("PENDING_REPLY"); opinionMapper.insert(opinion);
         } else {
-            opinion.setContent(command.richText().trim()); opinion.setRichText(command.richText().trim());
+            opinion.setContent(opinionContent); opinion.setRichText(opinionContent);
             if (opinionMapper.updateContent(opinion) != 1) { throw new BusinessException(ErrorCode.VERSION_CONFLICT, "关联互检意见已被其他操作更新，请刷新后重试"); }
         }
         return opinion.getId();
     }
 
-    private void replaceAttachments(long itemId, List<Long> fileIds) {
-        attachmentMapper.deleteByCheckItemId(itemId);
-        for (int index = 0; index < fileIds.size(); index++) { attachmentMapper.insert(new CheckItemAttachmentRecord(itemId, fileIds.get(index), index)); }
+    private ReviewOpinionRecord linkedOpinion(TaskCheckItemRecord record) {
+        if (record.getLinkedOpinionId() == null) {
+            return null;
+        }
+        return opinionMapper.findById(record.getLinkedOpinionId());
     }
 
-    private List<CheckItemAttachmentView> attachments(long itemId) {
-        List<CheckItemAttachmentViewRecord> records = attachmentMapper.findByCheckItemId(itemId);
-        return (records == null ? List.<CheckItemAttachmentViewRecord>of() : records).stream().map(CheckItemAttachmentView::from).toList();
-    }
+    public record SubmitCheckItemCommand(CheckResult result, String comment, String richText) { }
+    public record SubmitBatchItemCommand(long itemId, CheckResult result, String comment, String richText) { }
 
-    public record SubmitCheckItemCommand(CheckResult result, String comment, String richText, Long linkedOpinionId) {
-        public SubmitCheckItemCommand(CheckResult result, String comment, Long linkedOpinionId) {
-            this(result, comment, null, linkedOpinionId);
+    public record CheckItemCategoryView(CheckItemCategoryInfo category, List<CheckItemListItemView> items) { }
+    public record CheckItemCategoryInfo(Long id, String reviewType, String itemName, int sortNo) { }
+    /**
+     * 互检单查询子项：检查结论、文字意见和富文本只存在于可空 opinion 内，避免把同一信息平铺在 items 中。
+     */
+    public record CheckItemListItemView(Long id, String itemName, int sortNo, CheckItemListOpinionView opinion) {
+        static CheckItemListItemView from(TaskCheckItemRecord record) {
+            CheckItemListOpinionView opinion = record.getCheckResult() == null ? null
+                    : new CheckItemListOpinionView(CheckResult.valueOf(record.getCheckResult()), record.getComment(), record.getRichText());
+            return new CheckItemListItemView(record.getId(), record.getItemName(), record.getSortNo(), opinion);
         }
     }
-    public record SubmitBatchItemCommand(long itemId, CheckResult result, String comment, String richText, List<Long> attachmentFileIds) {
-        public SubmitBatchItemCommand(long itemId, CheckResult result, String comment, List<Long> attachmentFileIds) {
-            this(itemId, result, comment, null, attachmentFileIds);
-        }
-        public SubmitBatchItemCommand { attachmentFileIds = attachmentFileIds == null ? List.of() : List.copyOf(attachmentFileIds); }
-    }
-
-    public record CheckItemView(Long id, String templateItemKey, String parentItemKey, String itemName, int sortNo,
-                                String categoryName, CheckResult result, String comment, String richText, Long linkedOpinionId, List<CheckItemAttachmentView> attachments,
+    public record CheckItemListOpinionView(CheckResult result, String comment, String richText) { }
+    public record CheckItemView(Long id, String itemName, int sortNo,
+                                CheckResult result, String comment, String richText, CheckItemOpinionView opinion,
                                 CheckItemStatus status) {
-        static CheckItemView from(TaskCheckItemRecord record, String categoryName, List<CheckItemAttachmentView> attachments) {
-            return new CheckItemView(record.getId(), record.getTemplateItemKey(), record.getParentItemKey(), record.getItemName(),
-                    record.getSortNo(), categoryName, record.getCheckResult() == null ? null : CheckResult.valueOf(record.getCheckResult()), record.getComment(), record.getRichText(),
-                    record.getLinkedOpinionId(), attachments, CheckItemStatus.valueOf(record.getStatus()));
+        static CheckItemView from(TaskCheckItemRecord record, ReviewOpinionRecord opinion) {
+            return new CheckItemView(record.getId(), record.getItemName(),
+                    record.getSortNo(), record.getCheckResult() == null ? null : CheckResult.valueOf(record.getCheckResult()), record.getComment(), record.getRichText(),
+                    opinion == null ? null : CheckItemOpinionView.from(opinion), CheckItemStatus.valueOf(record.getStatus()));
         }
     }
-    public record CheckItemAttachmentView(Long fileId, int sortNo, String fileName, String fileCategory, String previewUrl) {
-        static CheckItemAttachmentView from(CheckItemAttachmentViewRecord record) { return new CheckItemAttachmentView(record.getFileId(), record.getSortNo(), record.getFileName(), record.getFileCategory(), record.getPreviewUrl()); }
+    public record CheckItemOpinionView(Long id, String content, String richText, Long raisedBy, String raisedByName, String severity,
+                                       OpinionStatus status, java.time.LocalDateTime createdAt) {
+        static CheckItemOpinionView from(ReviewOpinionRecord opinion) {
+            return new CheckItemOpinionView(opinion.getId(), opinion.getContent(), opinion.getRichText(), opinion.getRaisedBy(),
+                    opinion.getRaisedByName(), opinion.getSeverity(), OpinionStatus.valueOf(opinion.getStatus()), opinion.getCreatedAt());
+        }
     }
 }

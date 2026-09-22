@@ -12,7 +12,7 @@ interface Envelope<T> {
 }
 
 function baseUrl(): string {
-  return import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
+  return import.meta.env.VITE_API_BASE_URL ?? '/leapmotor/pcb_review'
 }
 
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -38,14 +38,14 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
 }
 
 /** 以与 JSON 接口一致的当前用户身份下载二进制内容。 */
-export async function requestBinary(path: string): Promise<Blob> {
-  const headers = new Headers()
+export async function requestBinary(path: string, options: RequestInit = {}): Promise<Blob> {
+  const headers = new Headers(options.headers)
   headers.set('Accept', '*/*')
   headers.set('X-Mock-User-Id', String(identity.userId))
   headers.set('X-Mock-Roles', identity.roles)
   let response: Response
   try {
-    response = await fetch(`${baseUrl()}${path}`, { headers })
+    response = await fetch(`${baseUrl()}${path}`, { ...options, headers })
   } catch {
     throw new ApiError('无法连接后端服务，请确认 Spring Boot 已启动。', 0)
   }

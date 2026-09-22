@@ -67,6 +67,16 @@ class OpinionControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("CONFIRMED_PASS"));
 
+        mockMvc.perform(get("/tasks/{taskId}/opinions", taskId)
+                        .param("pageNo", "1")
+                        .param("pageSize", "10")
+                        .header("X-Mock-User-Id", "10")
+                        .header("X-Mock-Roles", "DESIGNER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.pageNo").value(1))
+                .andExpect(jsonPath("$.data.items[0].id").value(opinionId));
+
         mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)
                         .header("X-Mock-User-Id", "20")
                         .header("X-Mock-Roles", "HARDWARE_EXPERT"))

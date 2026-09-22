@@ -24,11 +24,11 @@ import java.util.List;
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 提供任务内互检固定检查项的查询和提交接口；提交不需要携带版本号。
+ * @description 提供任务内互检固定检查项的查询和意见提交接口
  */
 @RestController
 @RequestMapping("/tasks/{taskId}/check-items")
-@Tag(name = "任务互检检查项", description = "查询、填写任务内固定互检检查项，并关联不合格项的评审意见和附件。")
+@Tag(name = "任务互检检查项", description = "查询任务内固定互检检查项，填写互检单意见。")
 public class CheckItemController {
     private final TaskCheckItemApplicationService taskCheckItemApplicationService;
 
@@ -37,29 +37,29 @@ public class CheckItemController {
     }
 
     @GetMapping
-    @Operation(summary = "查询任务互检检查项", description = "读取当前任务按模板生成的检查项实例及处理结果。")
-    ApiResponse<List<TaskCheckItemApplicationService.CheckItemView>> list(@PathVariable long taskId,
-                                                                            HttpServletRequest servletRequest) {
+    @Operation(summary = "查询任务互检检查项", description = "返回 [{ category, items }] 分组结构：category 是检查大类，items 是其子检查项。items 仅返回 id、itemName、sortNo 和可空 opinion；检查结论、文字意见和富文本只在 opinion.result、opinion.comment、opinion.richText 中返回。opinion 不返回 content、status；接口不返回 parentItemKey、version 等模板字段。")
+    ApiResponse<List<TaskCheckItemApplicationService.CheckItemCategoryView>> list(@PathVariable long taskId,
+                                                                                    HttpServletRequest servletRequest) {
         return ApiResponse.ok(taskCheckItemApplicationService.list(taskId, CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @PutMapping("/{itemId}")
-    @Operation(summary = "提交互检检查项结论", description = "提交通过、不通过或不适用结论。不通过时必须关联同任务、同检查项来源的评审意见。")
+    @Operation(summary = "提交互检检查项结论", description = "comment 是用户填写的文字意见，richText 是富文本信息，result 可传 PASS（合格）、FAIL（不合格）或 NC")
     ApiResponse<TaskCheckItemApplicationService.CheckItemView> submit(@PathVariable long taskId, @PathVariable long itemId,
                                                                         @Valid @RequestBody SubmitCheckItemRequest request,
                                                                         HttpServletRequest servletRequest) {
         return ApiResponse.ok(taskCheckItemApplicationService.submit(taskId, itemId,
-                new TaskCheckItemApplicationService.SubmitCheckItemCommand(request.result(), request.comment(), request.richText(), request.linkedOpinionId()),
+                new TaskCheckItemApplicationService.SubmitCheckItemCommand(request.result(), request.comment(), request.richText()),
                 CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @PutMapping("/batch")
-    @Operation(summary = "批量提交整张互检单", description = "一次提交多个检查项。FAIL 时 richText（图文富文本提取意见）必填，后端自动创建或更新同源互检意见并随检查项回显；图片可作为 data URI 内嵌于字符串，接口不要求图片 URL 或附件文件。任意一项失败则整单回滚。")
+    @Operation(summary = "批量提交整张互检单", description = "每项仅接收 itemId、result、comment、richText。comment 是用户填写的文字意见，richText 是富文本信息，result 可传 PASS（合格）、FAIL（不合格）或 NC")
     ApiResponse<List<TaskCheckItemApplicationService.CheckItemView>> submitBatch(@PathVariable long taskId,
                                                                                    @Valid @RequestBody SubmitCheckItemsRequest request,
                                                                                    HttpServletRequest servletRequest) {
         return ApiResponse.ok(taskCheckItemApplicationService.submitBatch(taskId, request.items().stream()
-                .map(item -> new TaskCheckItemApplicationService.SubmitBatchItemCommand(item.itemId(), item.result(), item.comment(), item.richText(), item.attachmentFileIds())).toList(),
+                .map(item -> new TaskCheckItemApplicationService.SubmitBatchItemCommand(item.itemId(), item.result(), item.comment(), item.richText())).toList(),
                 CurrentUserHolder.require()), traceId(servletRequest));
     }
 
@@ -68,17 +68,15 @@ public class CheckItemController {
     }
 
     @Schema(description = "提交检查项结论请求")
-    record SubmitCheckItemRequest(@Schema(description = "检查结论：PASS 通过、FAIL 不通过、NOT_APPLICABLE 不适用", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull CheckResult result,
-                                  @Schema(description = "检查说明") String comment,
-                                  @Schema(description = "富文本提取意见，支持文字与内嵌 data URI 图片") String richText,
-                                  @Schema(description = "不通过时关联的同源评审意见 ID") Long linkedOpinionId) {
+    record SubmitCheckItemRequest(@Schema(description = "检查结论：PASS 合格、FAIL 不合格、NC", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull CheckResult result,
+                                  @Schema(description = "用户填写的文字意见；FAIL 或 NC 时必填") String comment,
+                                  @Schema(description = "富文本补充说明；支持文字与内嵌 data URI 图片") String richText) {
     }
     @Schema(description = "整张互检单批量提交请求")
     record SubmitCheckItemsRequest(@Schema(description = "待提交的检查项结果列表，至少一项", requiredMode = Schema.RequiredMode.REQUIRED) @NotEmpty List<@Valid BatchCheckItemRequest> items) { }
     @Schema(description = "互检单中的单条检查项结果")
     record BatchCheckItemRequest(@Schema(description = "任务检查项实例 ID", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull Long itemId,
-                                 @Schema(description = "检查结果：PASS 合格、FAIL 不合格、NOT_APPLICABLE 不适用", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull CheckResult result,
-                                 @Schema(description = "检查说明。NOT_APPLICABLE 时必填") String comment,
-                                 @Schema(description = "富文本提取意见。FAIL 时必填，可包含文字和内嵌 data URI 图片；后端以字符串保存并回显") String richText,
-                                 @Schema(description = "可选的已登记附件文件 ID 列表；不作为富文本图片的必填参数") List<Long> attachmentFileIds) { }
+                                 @Schema(description = "检查结果：PASS 合格、FAIL 不合格、NC", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull CheckResult result,
+                                 @Schema(description = "用户填写的文字意见；FAIL 或 NC 时必填") String comment,
+                                 @Schema(description = "富文本补充说明，可包含文字和内嵌 data URI 图片；后端以字符串保存并回显") String richText) { }
 }

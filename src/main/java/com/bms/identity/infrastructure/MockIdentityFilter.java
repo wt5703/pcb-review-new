@@ -46,7 +46,7 @@ public class MockIdentityFilter implements Filter {
         if (roles.isEmpty()) {
             roles = Set.of(Role.HARDWARE_DEPARTMENT_MANAGER);
         }
-        CurrentUserHolder.set(new CurrentUser(userId, roles));
+        CurrentUserHolder.set(new CurrentUser(userId, mockUserDirectoryApplicationService.findDisplayName(userId), roles));
         try {
             chain.doFilter(request, response);
         } finally {

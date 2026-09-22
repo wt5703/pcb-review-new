@@ -16,6 +16,7 @@ public class ReviewOpinionRecord {
     private String content;
     private String richText;
     private Long raisedBy;
+    private String raisedByName;
     private String status;
     private LocalDateTime createdAt;
 
@@ -35,6 +36,8 @@ public class ReviewOpinionRecord {
     public void setRichText(String richText) { this.richText = richText; }
     public Long getRaisedBy() { return raisedBy; }
     public void setRaisedBy(Long raisedBy) { this.raisedBy = raisedBy; }
+    public String getRaisedByName() { return raisedByName; }
+    public void setRaisedByName(String raisedByName) { this.raisedByName = raisedByName; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
     public LocalDateTime getCreatedAt() { return createdAt; }

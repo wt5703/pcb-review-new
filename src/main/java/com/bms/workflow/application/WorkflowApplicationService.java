@@ -17,6 +17,7 @@ import com.bms.notification.infrastructure.OutboxEventMapper;
 import com.bms.notification.infrastructure.OutboxEventRecord;
 import com.bms.review.application.TaskCheckItemApplicationService;
 import com.bms.review.application.ReviewerAssignmentService;
+import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.OpinionStatus;
 import com.bms.review.domain.ReviewRole;
 import com.bms.review.domain.ReviewerProcessStatus;
@@ -31,6 +32,7 @@ import com.bms.workflow.domain.CompletionPolicy;
 import com.bms.workflow.domain.WorkflowAction;
 import com.bms.workflow.infrastructure.TaskFlowMapper;
 import com.bms.workflow.infrastructure.TaskFlowRecord;
+import io.swagger.v3.oas.annotations.media.Schema;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -53,6 +55,7 @@ public class WorkflowApplicationService {
     private final OutboxEventMapper outboxEventMapper;
     private final TaskArchiveApplicationService taskArchiveApplicationService;
     private final ReviewerAssignmentService reviewerAssignmentService;
+    private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService;
     private final FileApplicationService fileApplicationService;
     private final CompletionPolicy completionPolicy = new CompletionPolicy();
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
@@ -61,7 +64,9 @@ public class WorkflowApplicationService {
                                       ReviewFileMapper fileMapper, TaskCheckItemApplicationService checkItemApplicationService, TaskFlowMapper flowMapper,
                                       OperationAuditMapper auditMapper, OutboxEventMapper outboxEventMapper,
                                       TaskArchiveApplicationService taskArchiveApplicationService,
-                                      ReviewerAssignmentService reviewerAssignmentService, FileApplicationService fileApplicationService) {
+                                      ReviewerAssignmentService reviewerAssignmentService,
+                                      ReviewerWhitelistApplicationService reviewerWhitelistApplicationService,
+                                      FileApplicationService fileApplicationService) {
         this.taskMapper = taskMapper;
         this.reviewerMapper = reviewerMapper;
         this.opinionMapper = opinionMapper;
@@ -72,7 +77,27 @@ public class WorkflowApplicationService {
         this.outboxEventMapper = outboxEventMapper;
         this.taskArchiveApplicationService = taskArchiveApplicationService;
         this.reviewerAssignmentService = reviewerAssignmentService;
+        this.reviewerWhitelistApplicationService = reviewerWhitelistApplicationService;
         this.fileApplicationService = fileApplicationService;
+    }
+
+    /**
+     * 查询当前任务节点可分配的职责及人员。流程域只负责从状态决定“可分配什么职责”，
+     * 白名单域再依据职责把员工工号解析为可用于 reviewerIds 的用户账号。
+     */
+    public List<AssignableReviewerRoleView> listAssignableReviewers(long taskId, CurrentUser currentUser) {
+        ReviewTaskRecord task = requireTask(taskId);
+        List<AssignableRoleRule> rules = assignableRoleRules(task);
+        if (rules.isEmpty()) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "当前流程节点不需要分配人员");
+        }
+        for (AssignableRoleRule rule : rules) {
+            if (!permissionPolicy.has(currentUser.roles(), rule.assignmentRole().assignmentPermission())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "无当前流程节点的人员分配权限");
+            }
+        }
+        return rules.stream().map(rule -> new AssignableReviewerRoleView(rule.assignmentRole(),
+                reviewerWhitelistApplicationService.listAssignableUsers(rule.whitelistRoles()))).toList();
     }
 
     @Transactional
@@ -96,6 +121,9 @@ public class WorkflowApplicationService {
         }
         WorkflowAction action = command.action();
         validatePayload(action, command);
+        if (action == WorkflowAction.SUBMIT_NO_OPINION) {
+            return submitNoOpinion(task, command.comment(), currentUser);
+        }
         List<FileApplicationService.FileView> registeredFiles = registerStageFiles(taskId, command.stageFiles(), currentUser);
         List<ReviewerAssignmentService.ReviewerView> assignedReviewers = assignReviewers(taskId, command, currentUser);
         TaskStatus target = targetStatus(task, action, currentUser);
@@ -129,6 +157,15 @@ public class WorkflowApplicationService {
             taskArchiveApplicationService.archive(task);
         }
         return new WorkflowView(taskId, TaskStatus.valueOf(fromStatus), target, assignedReviewers, registeredFiles);
+    }
+
+    /** 当前评审人明确提交无意见：人员完成状态变化，但任务仍停留在当前流程节点。 */
+    private WorkflowView submitNoOpinion(ReviewTaskRecord task, String comment, CurrentUser currentUser) {
+        reviewerAssignmentService.submitNoOpinion(task.getId(), currentUser);
+        TaskStatus currentStatus = TaskStatus.valueOf(task.getStatus());
+        appendHistory(task.getId(), task.getStatus(), task.getStatus(), WorkflowAction.SUBMIT_NO_OPINION, currentUser.id(), comment);
+        auditMapper.insert(new OperationAuditRecord("REVIEW_TASK", task.getId(), "WORKFLOW_SUBMIT_NO_OPINION", currentUser.id(), "当前评审人提交无意见"));
+        return new WorkflowView(task.getId(), currentStatus, currentStatus, List.of(), List.of());
     }
 
     private List<ReviewerAssignmentService.ReviewerView> assignReviewers(long taskId, TransitionCommand command, CurrentUser currentUser) {
@@ -174,10 +211,34 @@ public class WorkflowApplicationService {
         };
     }
 
+    private List<AssignableRoleRule> assignableRoleRules(ReviewTaskRecord task) {
+        TaskStatus status = TaskStatus.valueOf(task.getStatus());
+        ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
+        if (reviewType == ReviewType.PCB && status == TaskStatus.PENDING_MUTUAL_ASSIGNMENT) {
+            // 互检属于 PCB 工作范畴，人员来源使用维护中的 PCB 评审白名单。
+            return List.of(new AssignableRoleRule(ReviewRole.PCB_MUTUAL_CHECK, List.of(ReviewRole.PCB_EXPERT)));
+        }
+        if (reviewType == ReviewType.SCHEMATIC
+                && (status == TaskStatus.SCHEMATIC_PENDING_LEADER_ASSIGNMENT || status == TaskStatus.SCHEMATIC_PENDING_MUTUAL_ASSIGNMENT)) {
+            // 原理图互检可由各专业白名单人员承担，最终任务职责统一记为原理图互检。
+            return List.of(new AssignableRoleRule(ReviewRole.SCHEMATIC_MUTUAL_CHECK, List.of(
+                    ReviewRole.HARDWARE_EXPERT, ReviewRole.EMC_EXPERT, ReviewRole.PCB_EXPERT,
+                    ReviewRole.PROCESS_EXPERT, ReviewRole.STRUCTURE_EXPERT)));
+        }
+        if (reviewType == ReviewType.SCHEMATIC && status == TaskStatus.SCHEMATIC_PENDING_REVIEW) {
+            return List.of(
+                    new AssignableRoleRule(ReviewRole.SCHEMATIC_HARDWARE_EXPERT, List.of(ReviewRole.HARDWARE_EXPERT)),
+                    new AssignableRoleRule(ReviewRole.SCHEMATIC_OTHER_EXPERT, List.of(
+                            ReviewRole.EMC_EXPERT, ReviewRole.PROCESS_EXPERT, ReviewRole.STRUCTURE_EXPERT)));
+        }
+        return List.of();
+    }
+
     private TaskStatus targetStatus(ReviewTaskRecord task, WorkflowAction action, CurrentUser currentUser) {
         TaskStatus current = TaskStatus.valueOf(task.getStatus());
         ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
         return switch (action) {
+            case SUBMIT_NO_OPINION -> throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "提交无意见不应执行任务状态迁移");
             case START_PCB_EXPERT_REVIEW -> requireTransition(reviewType == ReviewType.PCB && current == TaskStatus.PCB_PENDING_REVIEW,
                     TaskStatus.PCB_EXPERT_REVIEWING, currentUser, Permission.ASSIGN_PCB_EXPERT);
             case ENTER_PCB_DESIGNER_REPLY -> requireTransition(reviewType == ReviewType.PCB && current == TaskStatus.PCB_EXPERT_REVIEWING,
@@ -245,9 +306,11 @@ public class WorkflowApplicationService {
         }
         List<String> roles = task.getReviewRoles() == null || task.getReviewRoles().isBlank() ? List.of()
                 : List.of(task.getReviewRoles().split(","));
-        if ((roles.contains("PROCESS_EXPERT") || roles.contains("STRUCTURE_EXPERT"))
-                && fileMapper.findLatestByTaskIdAndCategory(task.getId(), FileCategory.PROCESS.name()).isEmpty()) {
-            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已选择工艺或结构评审，请先上传工艺/结构图文件");
+        if (roles.contains("PROCESS_EXPERT") && fileMapper.findLatestByTaskIdAndCategory(task.getId(), FileCategory.PROCESS_REVIEW.name()).isEmpty()) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已选择工艺评审，请先上传工艺图文件");
+        }
+        if (roles.contains("STRUCTURE_EXPERT") && fileMapper.findLatestByTaskIdAndCategory(task.getId(), FileCategory.STRUCTURE_REVIEW.name()).isEmpty()) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已选择结构评审，请先上传结构图文件");
         }
     }
 
@@ -323,4 +386,12 @@ public class WorkflowApplicationService {
             stageFiles = List.copyOf(stageFiles);
         }
     }
+
+    @Schema(description = "当前流程节点的一类可分配职责及对应候选人员")
+    public record AssignableReviewerRoleView(
+            @Schema(description = "提交流程时 assignedRole 应传的职责") ReviewRole reviewRole,
+            @Schema(description = "该职责下可分配人员；userId 可直接填入 transitions 的 reviewerIds")
+            List<ReviewerWhitelistApplicationService.AssignableReviewerView> reviewers) { }
+
+    private record AssignableRoleRule(ReviewRole assignmentRole, List<ReviewRole> whitelistRoles) { }
 }

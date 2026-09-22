@@ -20,8 +20,8 @@ mvn spring-boot:run
 
 服务启动后可访问：
 
-- Swagger UI：`http://localhost:8080/api/v1/swagger-ui.html`
-- OpenAPI JSON：`http://localhost:8080/api/v1/openapi.json`
+- Swagger UI：`http://localhost:8080/leapmotor/pcb_review/swagger-ui.html`
+- OpenAPI JSON：`http://localhost:8080/leapmotor/pcb_review/openapi.json`
 
 ## 前端启动
 
@@ -35,7 +35,7 @@ pnpm install
 pnpm dev
 ```
 
-浏览器访问 `http://localhost:5173`。Vite 已将 `/api/v1` 代理至 `http://localhost:8080`，前端页面右上角可设置本地 Mock 用户与角色。生产构建校验：
+浏览器访问 `http://localhost:5173`。Vite 已将 `/leapmotor/pcb_review` 代理至 `http://localhost:8080`，前端页面右上角可设置本地 Mock 用户与角色。生产构建校验：
 
 ```powershell
 cd frontend

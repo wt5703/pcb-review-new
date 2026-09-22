@@ -54,7 +54,7 @@ class TaskApplicationServiceTest {
 
         TaskApplicationService.TaskView result = service.submit(101L, List.of(3001L), designer);
 
-        assertThat(result.status()).isEqualTo(TaskStatus.PCB_PENDING_REVIEW.name());
+        assertThat(result.status()).isEqualTo(TaskStatus.PCB_EXPERT_REVIEWING.name());
         verify(auditMapper).insert(any());
         verify(outboxEventMapper).insert(any());
     }

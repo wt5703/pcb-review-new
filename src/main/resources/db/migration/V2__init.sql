@@ -1,35 +1,4 @@
-CREATE TABLE user_account (
-    id BIGINT PRIMARY KEY,
-    employee_no VARCHAR(64),
-    display_name VARCHAR(100) NOT NULL,
-    email VARCHAR(200) NOT NULL,
-    department_name VARCHAR(100) NOT NULL,
-    enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (employee_no),
-    UNIQUE (email)
-);
-
-CREATE TABLE role_definition (
-    role_code VARCHAR(64) PRIMARY KEY,
-    role_name VARCHAR(100) NOT NULL,
-    role_description VARCHAR(500) NOT NULL,
-    enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE user_role (
-    user_id BIGINT NOT NULL,
-    role_code VARCHAR(64) NOT NULL,
-    assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (user_id, role_code),
-    CONSTRAINT fk_user_role_account FOREIGN KEY (user_id) REFERENCES user_account (id),
-    CONSTRAINT fk_user_role_definition FOREIGN KEY (role_code) REFERENCES role_definition (role_code)
-);
-
-CREATE INDEX idx_user_account_department ON user_account (department_name, enabled);
-CREATE INDEX idx_user_role_role_code ON user_role (role_code, user_id);
+-- PCB / 原理图评审平台基础初始化数据（仅用于全新数据库）
 
 INSERT INTO role_definition (role_code, role_name, role_description, enabled) VALUES
     ('HARDWARE_DEPARTMENT_MANAGER', '研发部经理', '负责 BMS 硬件部门用户与全局评审管理。', TRUE),

@@ -8,7 +8,6 @@ import com.bms.identity.application.CurrentUser;
 import com.bms.identity.application.TaskNodeAuthorizationService;
 import com.bms.identity.domain.PermissionPolicy;
 import com.bms.identity.domain.Role;
-import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.notification.application.OutboxEventPublisher;
 import com.bms.review.domain.ReviewRole;
 import com.bms.review.domain.ReviewerProcessStatus;
@@ -33,18 +32,16 @@ public class ReviewerAssignmentService {
     private final TaskReviewerMapper reviewerMapper;
     private final ReviewTaskMapper taskMapper;
     private final TaskNodeAuthorizationService taskNodeAuthorizationService;
-    private final TaskAssignmentAccessMapper assignmentAccessMapper;
     private final OutboxEventPublisher outboxEventPublisher;
     private final OperationAuditMapper auditMapper;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public ReviewerAssignmentService(TaskReviewerMapper reviewerMapper, ReviewTaskMapper taskMapper,
-                                     TaskNodeAuthorizationService taskNodeAuthorizationService, TaskAssignmentAccessMapper assignmentAccessMapper,
+                                     TaskNodeAuthorizationService taskNodeAuthorizationService,
                                      OutboxEventPublisher outboxEventPublisher, OperationAuditMapper auditMapper) {
         this.reviewerMapper = reviewerMapper;
         this.taskMapper = taskMapper;
         this.taskNodeAuthorizationService = taskNodeAuthorizationService;
-        this.assignmentAccessMapper = assignmentAccessMapper;
         this.outboxEventPublisher = outboxEventPublisher;
         this.auditMapper = auditMapper;
     }
@@ -82,15 +79,6 @@ public class ReviewerAssignmentService {
         appendAudit(taskId, "REVIEWER_NO_OPINION_SUBMITTED", currentUser.id(), "提交无意见");
     }
 
-    public List<ReviewerView> listActive(long taskId, ReviewRole role, CurrentUser currentUser) {
-        requireTaskExists(taskId);
-        if (!permissionPolicy.canViewAllTasks(currentUser.roles())
-                && !assignmentAccessMapper.isAssignedToTask(taskId, currentUser.id())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看该任务的评审人员");
-        }
-        return reviewerMapper.findActiveByTaskAndRole(taskId, role.name()).stream().map(ReviewerView::from).toList();
-    }
-
     public boolean areAllReviewersSubmitted(long taskId, ReviewRole role) {
         List<TaskReviewerRecord> reviewers = reviewerMapper.findActiveByTaskAndRole(taskId, role.name());
         return !reviewers.isEmpty() && reviewers.stream().allMatch(record -> {
@@ -122,12 +110,6 @@ public class ReviewerAssignmentService {
     private void validateReviewerIds(List<Long> reviewerIds) {
         if (reviewerIds == null || reviewerIds.isEmpty() || reviewerIds.stream().anyMatch(id -> id == null)) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "至少需要指定一名评审人员");
-        }
-    }
-
-    private void requireTaskExists(long taskId) {
-        if (taskMapper.findById(taskId) == null) {
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "评审任务不存在");
         }
     }
 

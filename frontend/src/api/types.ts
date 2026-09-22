@@ -17,13 +17,8 @@ export interface Task {
   status: string
 }
 
-/** 公司资源服务上传完成后返回并随任务保存/提交请求传回 PCB 的初始文件引用。 */
-export interface InitialFileReference {
-  fileId: string
-  fileName: string
-  fileSize: number
-  md5?: string
-}
+/** 文件上传接口返回的 UUID；任务保存/提交时 files 仅传多个 UUID。 */
+export type TaskFileReference = string
 
 /** 公司资源服务文件引用；用于阶段文件登记等非任务创建场景。 */
 export interface CompanyFileReference {
@@ -35,8 +30,11 @@ export interface CompanyFileReference {
 
 /** 公司资源服务上传代理的返回值。 */
 export interface ResourceUploadResult {
-  resourceId: string
-  resourcePath: string
+  fileId: string
+  taskFileId?: number
+  fileName: string
+  fileSize: number
+  fileCategory: string
 }
 
 export interface TaskPage {
@@ -58,10 +56,27 @@ export interface Opinion {
   content: string
   richText?: string
   raisedBy: number
+  raisedByName: string
   severity: 'SERIOUS' | 'GENERAL' | 'MINOR'
   createdAt?: string
   status: 'PENDING_REPLY' | 'PENDING_CONFIRMATION' | 'CONFIRMED_PASS' | 'CONFIRMED_REJECTED' | 'WITHDRAWN'
   replies: OpinionReply[]
+}
+
+export interface OpinionPage {
+  total: number
+  pageNo: number
+  pageSize: number
+  items: Opinion[]
+}
+
+export interface OpinionSummary {
+  total: number
+  pendingReply: number
+  pendingConfirmation: number
+  confirmedPass: number
+  confirmedRejected: number
+  withdrawn: number
 }
 
 export interface OpinionReply {
@@ -84,17 +99,34 @@ export interface OpinionConfirmation {
 
 export interface CheckItem {
   id: number
-  templateItemKey: string
-  parentItemKey?: string
-  categoryName?: string
   itemName: string
   sortNo: number
-  result?: 'PASS' | 'FAIL' | 'NOT_APPLICABLE'
+  result?: 'PASS' | 'FAIL' | 'NC'
   comment?: string
   richText?: string
-  linkedOpinionId?: number
-  attachments: Array<{ fileId: number; sortNo: number; fileName: string; fileCategory: string; previewUrl?: string }>
+  opinion?: { id: number; content: string; richText?: string; raisedBy: number; raisedByName: string; severity: string; status: string; createdAt?: string } | null
   status: string
+}
+
+export interface CheckItemCategory {
+  category: {
+    id: number
+    reviewType: ReviewType
+    itemName: string
+    sortNo: number
+  }
+  items: CheckItemListItem[]
+}
+
+export interface CheckItemListItem {
+  id: number
+  itemName: string
+  sortNo: number
+  opinion?: {
+    result: 'PASS' | 'FAIL' | 'NC'
+    comment?: string
+    richText?: string
+  } | null
 }
 
 export interface Reviewer {
@@ -103,6 +135,20 @@ export interface Reviewer {
   role: string
   status: string
   noOpinion: boolean
+}
+
+/** 当前流程节点按职责归组的可分配人员；userId 可直接提交为 reviewerIds。 */
+export interface AssignableReviewer {
+  userId: number
+  employeeNo: string
+  displayName: string
+  departmentName: string
+  whitelistRole: string
+}
+
+export interface AssignableReviewerRole {
+  reviewRole: string
+  reviewers: AssignableReviewer[]
 }
 
 export interface ArchiveFile {
@@ -154,12 +200,8 @@ export interface MailRecord {
 }
 
 export interface Archive {
-  taskId: number
-  finalStatus: string
-  task: { taskId: number; taskName: string; status: string }
-  stageFiles: ArchiveFile[]
-  reviewers: Reviewer[]
   flowNodes: FlowNode[]
+  stageFiles: ArchiveFile[]
   mailRecords: MailRecord[]
 }
 
@@ -177,4 +219,15 @@ export interface TemplateItem {
 export interface TemplateCategory {
   category: TemplateItem
   items: TemplateItem[]
+}
+
+export interface TemplateListItem {
+  id: number
+  itemName: string
+  sortNo: number
+}
+
+export interface TemplateListCategory {
+  category: TemplateListItem
+  items: TemplateListItem[]
 }

@@ -1,6 +1,7 @@
 -- PCB / 原理图评审平台初始化数据脚本
 -- 前置条件：已在空数据库执行 ddl.sql。
--- 本文件只包含角色、账号及其关联关系；不包含业务评审任务数据。
+-- 本文件只包含角色、账号及其关联关系；不包含表结构、业务评审任务、流程记录或文件记录。
+-- 初始化数据源与 Flyway V14 保持一致；生产环境请按实际组织账号替换后再执行。
 
 INSERT INTO role_definition (role_code, role_name, role_description, enabled) VALUES
     ('HARDWARE_DEPARTMENT_MANAGER', '研发部经理', '负责 BMS 硬件部门用户与全局评审管理。', TRUE),

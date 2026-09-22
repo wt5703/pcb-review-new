@@ -56,6 +56,7 @@ class OpinionApplicationServiceTest {
 
         assertThat(view.id()).isEqualTo(31L);
         assertThat(view.status()).isEqualTo(OpinionStatus.PENDING_REPLY);
+        assertThat(view.raisedByName()).isEqualTo("用户#20");
         verify(opinionMapper).insert(any(ReviewOpinionRecord.class));
     }
 

@@ -9,8 +9,7 @@ public class TaskCheckItemRecord {
     private Long id;
     private Long taskId;
     private Long templateItemId;
-    private String templateItemKey;
-    private String parentItemKey;
+    private Long parentId;
     private String itemName;
     private Integer sortNo;
     private String checkResult;
@@ -26,10 +25,8 @@ public class TaskCheckItemRecord {
     public void setTaskId(Long taskId) { this.taskId = taskId; }
     public Long getTemplateItemId() { return templateItemId; }
     public void setTemplateItemId(Long templateItemId) { this.templateItemId = templateItemId; }
-    public String getTemplateItemKey() { return templateItemKey; }
-    public void setTemplateItemKey(String templateItemKey) { this.templateItemKey = templateItemKey; }
-    public String getParentItemKey() { return parentItemKey; }
-    public void setParentItemKey(String parentItemKey) { this.parentItemKey = parentItemKey; }
+    public Long getParentId() { return parentId; }
+    public void setParentId(Long parentId) { this.parentId = parentId; }
     public String getItemName() { return itemName; }
     public void setItemName(String itemName) { this.itemName = itemName; }
     public Integer getSortNo() { return sortNo; }

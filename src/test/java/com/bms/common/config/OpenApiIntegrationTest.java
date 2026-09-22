@@ -41,6 +41,13 @@ class OpenApiIntegrationTest {
                 .andExpect(jsonPath("$.data.pcbTypes[5]").value("储能板"))
                 .andExpect(jsonPath("$.data.pcbTypes[6]").value("其他"))
                 .andExpect(jsonPath("$.data.reviewRoles[*].code").value(org.hamcrest.Matchers.contains(
-                        "HARDWARE_EXPERT", "EMC_EXPERT", "PCB_EXPERT", "PROCESS_EXPERT", "STRUCTURE_EXPERT")));
+                        "HARDWARE_EXPERT", "EMC_EXPERT", "PCB_EXPERT", "PROCESS_EXPERT", "STRUCTURE_EXPERT")))
+                .andExpect(jsonPath("$.data.taskStatuses[*].code").value(org.hamcrest.Matchers.contains(
+                        "DRAFT", "PCB_PENDING_REVIEW", "PCB_EXPERT_REVIEWING", "PCB_DESIGNER_REPLYING",
+                        "PCB_OPTIONAL_REVIEWING", "PCB_OPTIONAL_DESIGNER_REPLYING", "PENDING_MUTUAL_ASSIGNMENT",
+                        "MUTUAL_REVIEWING", "PCB_MUTUAL_DESIGNER_REPLYING", "SCHEMATIC_PENDING_LEADER_ASSIGNMENT",
+                        "SCHEMATIC_PENDING_MUTUAL_ASSIGNMENT", "SCHEMATIC_MUTUAL_DESIGNER_REPLYING",
+                        "SCHEMATIC_PENDING_REVIEW", "HARDWARE_REVIEWING", "SCHEMATIC_DESIGNER_REPLYING",
+                        "PENDING_FINISH_CONFIRMATION", "FINISHED")));
     }
 }

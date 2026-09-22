@@ -27,7 +27,7 @@ class TaskLifecycleTest {
         task.addInitialFile(100L);
         task.submit();
 
-        assertThat(task.status()).isEqualTo(TaskStatus.PCB_PENDING_REVIEW);
+        assertThat(task.status()).isEqualTo(TaskStatus.PCB_EXPERT_REVIEWING);
     }
 
     @Test

@@ -11,8 +11,6 @@ import com.bms.review.infrastructure.CheckItemTemplateRecord;
 import com.bms.review.infrastructure.TaskCheckItemMapper;
 import com.bms.review.infrastructure.TaskCheckItemRecord;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
-import com.bms.file.infrastructure.ReviewFileMapper;
-import com.bms.review.infrastructure.CheckItemAttachmentMapper;
 import com.bms.audit.infrastructure.OperationAuditMapper;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
@@ -43,11 +41,9 @@ class TaskCheckItemApplicationServiceTest {
     private final TaskAssignmentAccessMapper assignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
     private final TaskNodeAuthorizationService taskNodeAuthorizationService = mock(TaskNodeAuthorizationService.class);
     private final ReviewOpinionMapper opinionMapper = mock(ReviewOpinionMapper.class);
-    private final ReviewFileMapper fileMapper = mock(ReviewFileMapper.class);
-    private final CheckItemAttachmentMapper attachmentMapper = mock(CheckItemAttachmentMapper.class);
     private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
     private final TaskCheckItemApplicationService service = new TaskCheckItemApplicationService(taskMapper, templateMapper,
-            taskCheckItemMapper, assignmentAccessMapper, taskNodeAuthorizationService, opinionMapper, fileMapper, attachmentMapper, auditMapper);
+            taskCheckItemMapper, assignmentAccessMapper, taskNodeAuthorizationService, opinionMapper, auditMapper);
     private final CurrentUser pcbLeader = new CurrentUser(1L, Set.of(Role.PCB_LEADER));
 
     @Test
@@ -55,19 +51,20 @@ class TaskCheckItemApplicationServiceTest {
         ReviewTaskRecord task = task(TaskStatus.MUTUAL_REVIEWING);
         CheckItemTemplateRecord template = template(31L, "spacing", "线距检查");
         TaskCheckItemRecord materialized = item(51L, 31L, "spacing", "线距检查");
+        materialized.setParentId(null);
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(templateMapper.findEnabledByReviewType(ReviewType.PCB.name())).thenReturn(List.of(template));
         when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of(), List.of(materialized));
         when(taskCheckItemMapper.nextId()).thenReturn(51L);
 
-        List<TaskCheckItemApplicationService.CheckItemView> items = service.list(1001L, pcbLeader);
+        List<TaskCheckItemApplicationService.CheckItemCategoryView> items = service.list(1001L, pcbLeader);
 
-        assertThat(items).extracting(TaskCheckItemApplicationService.CheckItemView::itemName).containsExactly("线距检查");
+        assertThat(items).extracting(item -> item.category().itemName()).containsExactly("线距检查");
         verify(taskCheckItemMapper).insert(any(TaskCheckItemRecord.class));
     }
 
     @Test
-    void shouldRejectFailedCheckItemWithoutLinkedOpinion() {
+    void shouldRejectFailedCheckItemWithoutComment() {
         ReviewTaskRecord task = task(TaskStatus.MUTUAL_REVIEWING);
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(templateMapper.findEnabledByReviewType(ReviewType.PCB.name())).thenReturn(List.of());
@@ -75,21 +72,24 @@ class TaskCheckItemApplicationServiceTest {
         when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(item(51L, 31L, "spacing", "线距检查"));
 
         assertThatThrownBy(() -> service.submit(1001L, 51L,
-                new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.FAIL, "线距不足", null), pcbLeader))
+                new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.FAIL, null, null), pcbLeader))
                 .isInstanceOf(BusinessException.class)
-                .hasMessage("不合格检查项必须关联评审意见");
+                .hasMessage("不合格或 NC 检查项必须填写意见");
     }
 
     @Test
     void shouldKeepExistingSnapshotWhenTaskIsFinished() {
         ReviewTaskRecord task = task(TaskStatus.FINISHED);
+        TaskCheckItemRecord category = item(41L, 30L, "category", "结束时的类别");
+        category.setParentId(null);
         TaskCheckItemRecord snapshot = item(51L, 31L, "spacing", "结束时的线距检查");
         when(taskMapper.findById(1001L)).thenReturn(task);
-        when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of(snapshot));
+        when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of(category, snapshot));
 
-        List<TaskCheckItemApplicationService.CheckItemView> items = service.list(1001L, pcbLeader);
+        List<TaskCheckItemApplicationService.CheckItemCategoryView> items = service.list(1001L, pcbLeader);
 
-        assertThat(items).extracting(TaskCheckItemApplicationService.CheckItemView::itemName).containsExactly("结束时的线距检查");
+        assertThat(items).extracting(item -> item.category().itemName()).containsExactly("结束时的类别");
+        assertThat(items.get(0).items()).extracting(TaskCheckItemApplicationService.CheckItemListItemView::itemName).containsExactly("结束时的线距检查");
         verify(templateMapper, never()).findEnabledByReviewType(ReviewType.PCB.name());
     }
 
@@ -114,7 +114,7 @@ class TaskCheckItemApplicationServiceTest {
         TaskCheckItemRecord record = new TaskCheckItemRecord();
         record.setId(id);
         record.setTemplateItemId(templateId);
-        record.setTemplateItemKey(key);
+        record.setParentId(41L);
         record.setItemName(name);
         record.setSortNo(1);
         record.setStatus("PENDING");

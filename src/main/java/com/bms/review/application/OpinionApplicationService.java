@@ -96,6 +96,7 @@ public class OpinionApplicationService {
         record.setContent(richText);
         record.setRichText(richText);
         record.setRaisedBy(currentUser.id());
+        record.setRaisedByName(currentUser.resolvedDisplayName());
         record.setStatus(OpinionStatus.PENDING_REPLY.name());
         opinionMapper.insert(record);
         appendAudit(record, "OPINION_RAISED", currentUser.id());
@@ -185,14 +186,32 @@ public class OpinionApplicationService {
                 .map(this::toView).toList();
     }
 
+    /**
+     * @author 王涛
+     * @date 2026-09-22
+     * @description 在既有筛选、场景权限和倒序规则之上分页返回意见，避免详情页一次加载全部意见及其答复历史。
+     */
+    public OpinionPage listPage(long taskId, String severity, OpinionStatus status, OpinionSourceType sourceType, String scene,
+                                Integer pageNo, Integer pageSize, CurrentUser currentUser) {
+        int normalizedPageNo = pageNo == null ? 1 : pageNo;
+        int normalizedPageSize = pageSize == null ? 20 : pageSize;
+        if (normalizedPageNo < 1 || normalizedPageSize < 1 || normalizedPageSize > 100) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "意见分页参数不合法");
+        }
+        List<OpinionView> all = list(taskId, severity, status, sourceType, scene, currentUser);
+        int fromIndex = Math.min((normalizedPageNo - 1) * normalizedPageSize, all.size());
+        int toIndex = Math.min(fromIndex + normalizedPageSize, all.size());
+        return new OpinionPage(all.size(), normalizedPageNo, normalizedPageSize, all.subList(fromIndex, toIndex));
+    }
+
     public List<OpinionView> list(long taskId, CurrentUser currentUser) { return list(taskId, null, null, null, "DESIGNER_REPLY", currentUser); }
 
     public OpinionSummary summary(long taskId, CurrentUser currentUser) {
         List<OpinionView> opinions = list(taskId, currentUser);
         return new OpinionSummary(opinions.size(), count(opinions, OpinionStatus.PENDING_REPLY), count(opinions, OpinionStatus.PENDING_CONFIRMATION),
-                count(opinions, OpinionStatus.CONFIRMED_PASS), count(opinions, OpinionStatus.WITHDRAWN),
+                count(opinions, OpinionStatus.CONFIRMED_PASS), count(opinions, OpinionStatus.CONFIRMED_REJECTED), count(opinions, OpinionStatus.WITHDRAWN),
                 opinions.stream().filter(item -> item.status() == OpinionStatus.PENDING_CONFIRMATION || item.status() == OpinionStatus.CONFIRMED_REJECTED)
-                        .map(item -> new OutstandingOpinionView(item.id(), item.content(), item.raisedBy(), "专家#" + item.raisedBy(), item.status())).toList(),
+                        .map(item -> new OutstandingOpinionView(item.id(), item.content(), item.raisedBy(), item.raisedByName(), item.status())).toList(),
                 (reviewerMapper == null ? List.<TaskReviewerRecord>of() : reviewerMapper.findActiveByTaskId(taskId)).stream()
                         .filter(item -> "PENDING".equals(item.getProcessStatus()) || "IN_PROGRESS".equals(item.getProcessStatus()))
                         .map(item -> new OutstandingReviewerView(item.getReviewerId(), "专家#" + item.getReviewerId(), item.getReviewRole(), item.getProcessStatus())).toList());
@@ -296,12 +315,19 @@ public class OpinionApplicationService {
     public record WithdrawOpinionCommand(String reason) {
     }
     public record OpinionView(Long id, Long taskId, OpinionSourceType sourceType, Long sourceItemId, String content, String richText,
-                              Long raisedBy, String severity, java.time.LocalDateTime createdAt,
+                              Long raisedBy, String raisedByName, String severity, java.time.LocalDateTime createdAt,
                               OpinionStatus status, List<ReplyView> replies) {
         static OpinionView from(ReviewOpinionRecord record, List<ReplyView> replies) {
             return new OpinionView(record.getId(), record.getTaskId(), OpinionSourceType.valueOf(record.getSourceType()), record.getSourceItemId(),
-                    record.getContent(), record.getRichText(), record.getRaisedBy(), record.getSeverity(), record.getCreatedAt(),
+                    record.getContent(), record.getRichText(), record.getRaisedBy(), record.getRaisedByName(), record.getSeverity(), record.getCreatedAt(),
                     OpinionStatus.valueOf(record.getStatus()), replies);
+        }
+    }
+
+    /** 意见列表分页结果，items 中每项均包含全部答复及其对应确认记录。 */
+    public record OpinionPage(long total, int pageNo, int pageSize, List<OpinionView> items) {
+        public OpinionPage {
+            items = List.copyOf(items);
         }
     }
 
@@ -323,7 +349,7 @@ public class OpinionApplicationService {
         }
     }
 
-    public record OpinionSummary(int total, int pendingReply, int pendingConfirmation, int confirmedPass, int withdrawn,
+    public record OpinionSummary(int total, int pendingReply, int pendingConfirmation, int confirmedPass, int confirmedRejected, int withdrawn,
                                  List<OutstandingOpinionView> unconfirmedOpinions, List<OutstandingReviewerView> unsubmittedReviewers) {
     }
     public record OutstandingOpinionView(Long opinionId, String content, Long expertId, String expertName, OpinionStatus status) { }

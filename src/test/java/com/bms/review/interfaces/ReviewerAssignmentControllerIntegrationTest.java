@@ -19,7 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 通过统一流程 REST 验证 PCB 互检多人分配、个人无意见提交和受限角色的人员关系查询授权。
+ * @description 通过统一流程 REST 验证 PCB 互检多人分配、个人无意见提交和当前节点可分配人员查询授权。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -34,6 +34,12 @@ class ReviewerAssignmentControllerIntegrationTest {
         long taskId = 8401L;
         taskMapper.insert(task(taskId));
 
+        mockMvc.perform(get("/tasks/{taskId}/workflow/assignable-reviewers", taskId)
+                        .header("X-Mock-User-Id", "1")
+                        .header("X-Mock-Roles", "PCB_LEADER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].reviewRole").value("PCB_MUTUAL_CHECK"));
+
         mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER")
@@ -44,28 +50,23 @@ class ReviewerAssignmentControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.assignedReviewers.length()").value(2))
                 .andExpect(jsonPath("$.data.assignedReviewers[0].status").value("PENDING"));
 
-        mockMvc.perform(post("/tasks/{taskId}/workflow/reviewers/me/submit-no-opinion", taskId)
-                        .header("X-Mock-User-Id", "20")
-                        .header("X-Mock-Roles", "HARDWARE_EXPERT"))
-                .andExpect(status().isOk());
-
-        mockMvc.perform(get("/tasks/{taskId}/workflow/reviewers", taskId)
+        mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-User-Id", "20")
                         .header("X-Mock-Roles", "HARDWARE_EXPERT")
-                        .param("role", "PCB_MUTUAL_CHECK"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].status").value("SUBMITTED"));
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"action\":\"SUBMIT_NO_OPINION\"}"))
+                .andExpect(status().isOk());
+
     }
 
     @Test
-    void shouldRejectUnassignedRestrictedExpertFromReviewersList() throws Exception {
+    void shouldRejectRoleWithoutCurrentNodeAssignmentPermission() throws Exception {
         long taskId = 8402L;
         taskMapper.insert(task(taskId));
 
-        mockMvc.perform(get("/tasks/{taskId}/workflow/reviewers", taskId)
+        mockMvc.perform(get("/tasks/{taskId}/workflow/assignable-reviewers", taskId)
                         .header("X-Mock-User-Id", "88")
-                        .header("X-Mock-Roles", "PROCESS_EXPERT")
-                        .param("role", "PCB_MUTUAL_CHECK"))
+                        .header("X-Mock-Roles", "PROCESS_EXPERT"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }

@@ -68,16 +68,16 @@ public class TaskArchiveApplicationService {
         if (snapshot == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务尚未结束归档");
         }
-        return new ArchiveView(snapshot.taskId(), snapshot.finalStatus(), read(snapshot.taskSnapshot(), TaskSnapshot.class),
-                readList(snapshot.fileSnapshot(), StageFileView.class), readList(snapshot.reviewerSnapshot(), ReviewerView.class),
-                readList(snapshot.flowSnapshot(), FlowNodeView.class),
+        return new ArchiveView(readList(snapshot.flowSnapshot(), FlowNodeView.class),
+                readList(snapshot.fileSnapshot(), StageFileView.class),
                 readList(snapshot.notificationSnapshot(), MailRecordView.class));
     }
 
     private StageFileView toStageFile(ReviewFileRecord file) {
         return new StageFileView(file.getId(), stageNameForFile(file), file.getFileCategory(), file.getBusinessFileKey(),
                 file.getFileName(), file.getUploadedBy(), displayName(file.getUploadedBy()), file.getUploadedAt(),
-                file.getCompanyFileId(), file.getFileFormat(), file.getFileSize(), file.getMd5(), "/api/v1/files/" + file.getId() + "/download");
+                file.getCompanyFileId(), file.getFileFormat(), file.getFileSize(), file.getMd5(),
+                "/leapmotor/pcb_review/files/download?taskId=" + file.getTaskId() + "&fileId=" + file.getId());
     }
 
     private ReviewerView toReviewer(TaskReviewerRecord reviewer) {
@@ -95,10 +95,12 @@ public class TaskArchiveApplicationService {
 
     private String stageNameForFileCategory(String category) {
         return switch (category) {
-            case "PCB_SCHEMATIC" -> "设计文件";
-            case "PROCESS" -> "工艺评审";
-            case "STRUCTURE" -> "结构评审";
-            case "MUTUAL_CHECK_ATTACHMENT" -> "互检单评审";
+            case "TASK_CREATION" -> "任务创建";
+            case "PCB_REVIEW" -> "PCB评审";
+            case "SCHEMATIC_REVIEW" -> "原理图评审";
+            case "PROCESS_REVIEW" -> "工艺评审";
+            case "STRUCTURE_REVIEW" -> "结构评审";
+            case "MUTUAL_CHECK_REVIEW" -> "互检单评审";
             default -> category;
         };
     }
@@ -173,8 +175,7 @@ public class TaskArchiveApplicationService {
         }
     }
 
-    public record ArchiveView(Long taskId, String finalStatus, TaskSnapshot task, List<StageFileView> stageFiles,
-                              List<ReviewerView> reviewers, List<FlowNodeView> flowNodes, List<MailRecordView> mailRecords) {
+    public record ArchiveView(List<FlowNodeView> flowNodes, List<StageFileView> stageFiles, List<MailRecordView> mailRecords) {
     }
 
     public record TaskSnapshot(long taskId, String taskName, String status) {

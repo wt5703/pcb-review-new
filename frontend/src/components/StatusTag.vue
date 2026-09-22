@@ -8,7 +8,7 @@ const label = computed(() => ({
   SCHEMATIC_PENDING_MUTUAL_ASSIGNMENT: '待分配互检', SCHEMATIC_PENDING_REVIEW: '待分配专家',
   HARDWARE_REVIEWING: '硬件评审', PENDING_FINISH_CONFIRMATION: '待结束确认', FINISHED: '已结束',
   PENDING_REPLY: '待答复', PENDING_CONFIRMATION: '待确认', CONFIRMED_PASS: '确认通过', CONFIRMED_REJECTED: '确认不通过', WITHDRAWN: '已撤回',
-  SUCCESS: '已发送', FAILED: '发送失败', PASS: '合格', FAIL: '不合格', NOT_APPLICABLE: '不适用'
+  SUCCESS: '已发送', FAILED: '发送失败', PASS: '合格', FAIL: '不合格', NC: 'NC'
 } as Record<string, string>)[props.value] ?? props.value)
 const tone = computed(() => {
   if (['FINISHED', 'CONFIRMED_PASS', 'SUCCESS', 'PASS'].includes(props.value)) return 'success'

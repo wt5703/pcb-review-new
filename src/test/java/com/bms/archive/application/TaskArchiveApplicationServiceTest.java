@@ -42,7 +42,7 @@ class TaskArchiveApplicationServiceTest {
         LocalDateTime time = LocalDateTime.of(2026, 9, 18, 10, 30);
         ReviewFileRecord file = new ReviewFileRecord();
         file.setId(101L);
-        file.setFileCategory("PCB_SCHEMATIC");
+        file.setFileCategory("TASK_CREATION");
         file.setBusinessFileKey("MAIN_PCB");
         file.setFileName("BMU_Control_V2.PCB");
         file.setUploadedBy(9L);
@@ -84,7 +84,7 @@ class TaskArchiveApplicationServiceTest {
         assertThat(view.stageFiles()).singleElement().satisfies(value -> {
             assertThat(value.stageName()).isEqualTo("专家评审");
             assertThat(value.fileName()).isEqualTo("BMU_Control_V2.PCB");
-            assertThat(value.downloadPath()).isEqualTo("/api/v1/files/101/download");
+            assertThat(value.downloadPath()).isEqualTo("/leapmotor/pcb_review/files/download?taskId=1001&fileId=101");
         });
         assertThat(view.mailRecords()).singleElement().satisfies(value -> {
             assertThat(value.sentAt()).isEqualTo(time);

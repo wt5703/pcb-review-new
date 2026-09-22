@@ -23,25 +23,25 @@ public class TaskFileReferenceApplicationService {
     }
 
     @Transactional
-    public TaskApplicationService.TaskView create(TaskApplicationService.CreateTaskCommand command, List<FileApplicationService.FileReferenceCommand> files,
+    public TaskApplicationService.TaskView create(TaskApplicationService.CreateTaskCommand command, List<String> fileIds,
                                                   boolean submit, CurrentUser currentUser) {
         TaskApplicationService.TaskView draft = taskApplicationService.create(command, currentUser);
-        List<Long> fileIds = fileApplicationService.registerInitialFileReferences(draft.id(), files, currentUser).stream()
+        List<Long> taskFileIds = fileApplicationService.bindPendingInitialFiles(draft.id(), fileIds, currentUser).stream()
                 .map(FileApplicationService.FileView::id).toList();
         if (submit) {
-            return taskApplicationService.submit(draft.id(), fileIds, currentUser);
+            return taskApplicationService.submit(draft.id(), taskFileIds, currentUser);
         }
-        return fileIds.isEmpty() ? draft : taskApplicationService.saveDraftFiles(draft.id(), fileIds, currentUser);
+        return taskFileIds.isEmpty() ? draft : taskApplicationService.saveDraftFiles(draft.id(), taskFileIds, currentUser);
     }
 
     @Transactional
     public TaskApplicationService.TaskView updateDraft(long taskId, TaskApplicationService.CreateTaskCommand command,
-                                                       List<FileApplicationService.FileReferenceCommand> files, boolean submit, CurrentUser currentUser) {
+                                                       List<String> fileIds, boolean submit, CurrentUser currentUser) {
         TaskApplicationService.TaskView draft = taskApplicationService.updateDraft(taskId, command, currentUser);
-        List<Long> fileIds = fileApplicationService.registerInitialFileReferences(taskId, files, currentUser).stream()
+        List<Long> taskFileIds = fileApplicationService.bindPendingInitialFiles(taskId, fileIds, currentUser).stream()
                 .map(FileApplicationService.FileView::id).toList();
-        TaskApplicationService.TaskView saved = fileIds.isEmpty() ? draft
-                : taskApplicationService.saveDraftFiles(taskId, fileIds, currentUser);
-        return submit ? taskApplicationService.submit(taskId, fileIds, currentUser) : saved;
+        TaskApplicationService.TaskView saved = taskFileIds.isEmpty() ? draft
+                : taskApplicationService.saveDraftFiles(taskId, taskFileIds, currentUser);
+        return submit ? taskApplicationService.submit(taskId, taskFileIds, currentUser) : saved;
     }
 }

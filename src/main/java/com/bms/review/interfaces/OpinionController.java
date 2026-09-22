@@ -13,17 +13,17 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * @author 王涛
@@ -31,6 +31,7 @@ import java.util.List;
  * @description 对外提供统一评审意见、设计者答复、提出人确认和撤回接口；设计版本重新上传后只需通过对应意见答复再次确认，不会重启完整评审。
  */
 @RestController
+@Validated
 @Tag(name = "评审意见", description = "管理专家意见、设计者答复和意见确认闭环；意见可按问题等级和状态筛选。")
 public class OpinionController {
     private final OpinionApplicationService opinionApplicationService;
@@ -48,24 +49,27 @@ public class OpinionController {
     }
 
     @GetMapping("/tasks/{taskId}/opinions")
-    @Operation(summary = "查询任务意见列表", description = "每条记录在同一个扁平模型中返回专家意见、最新设计者答复及该答复的确认结果，默认按意见提出时间倒序。severity 可按 SERIOUS、GENERAL、MINOR 筛选；sourceType 可按专家、工艺或结构来源筛选；scene=REVIEW_WORKSPACE 仅返回当前登录专家提出的意见，scene=DESIGNER_REPLY 返回任务所有意见。")
-    ApiResponse<List<OpinionApplicationService.OpinionView>> list(@PathVariable long taskId,
+    @Operation(summary = "分页查询任务意见列表", description = "每条记录在同一个扁平模型中返回专家意见、冗余的提出人姓名 raisedByName、全部设计者答复及各答复的确认结果，默认按意见提出时间倒序。severity 可按 SERIOUS、GENERAL、MINOR 筛选；sourceType 可按专家、工艺或结构来源筛选；scene=REVIEW_WORKSPACE 仅返回当前登录专家提出的意见，scene=DESIGNER_REPLY 返回任务所有意见。pageNo 从 1 开始，pageSize 最大为 100。")
+    ApiResponse<OpinionApplicationService.OpinionPage> list(@PathVariable long taskId,
             @RequestParam(required = false) @Parameter(description = "问题等级：SERIOUS 严重、GENERAL 一般、MINOR 轻微") String severity,
-            @RequestParam(required = false) @Parameter(description = "意见状态：PENDING_REPLY、PENDING_CONFIRMATION、CONFIRMED_PASS、CONFIRMED_REJECTED、WITHDRAWN") OpinionStatus status,
-            @RequestParam(required = false) @Parameter(description = "意见来源：EXPERT_REVIEW 专家评审、PROCESS_REVIEW 工艺评审、STRUCTURE_REVIEW 结构评审") OpinionSourceType sourceType,
+            @RequestParam(required = false) @Parameter(description = "意见状态：PENDING_REPLY  待答复、PENDING_CONFIRMATION 待确认、CONFIRMED_PASS 确认通过、CONFIRMED_REJECTED 确认不通过、WITHDRAWN 撤回") OpinionStatus status,
+            @RequestParam(required = false) @Parameter(description = "意见来源：EXPERT_REVIEW=专家评审、PROCESS_REVIEW=工艺评审、STRUCTURE_REVIEW=结构评审  PCB_MUTUAL_CHECK=PCB互检单 SCHEMATIC_MUTUAL_CHECK=原理图互检单") OpinionSourceType sourceType,
             @RequestParam(required = false, defaultValue = "DESIGNER_REPLY") @Parameter(description = "查询场景：REVIEW_WORKSPACE 仅当前登录专家提出的意见；DESIGNER_REPLY 展示任务全部意见") String scene,
+            @RequestParam(defaultValue = "1") @Parameter(description = "页码，从 1 开始") @Min(1) int pageNo,
+            @RequestParam(defaultValue = "20") @Parameter(description = "每页条数，最大 100") @Min(1) @Max(100) int pageSize,
             HttpServletRequest servletRequest) {
-        return ApiResponse.ok(opinionApplicationService.list(taskId, severity, status, sourceType, scene, CurrentUserHolder.require()), traceId(servletRequest));
+        return ApiResponse.ok(opinionApplicationService.listPage(taskId, severity, status, sourceType, scene, pageNo, pageSize,
+                CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @GetMapping("/tasks/{taskId}/opinions/summary")
-    @Operation(summary = "查询设计者答复页专家意见汇总", description = "除各状态数量外，返回尚未确认的意见及其专家，以及尚未提交处理结果的专家。")
+    @Operation(summary = "查询设计者答复页专家意见汇总", description = "设计者答复页面，专家意见汇总")
     ApiResponse<OpinionApplicationService.OpinionSummary> summary(@PathVariable long taskId, HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.summary(taskId, CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @PostMapping("/opinions/{opinionId}/reply")
-    @Operation(summary = "设计者答复专家意见", description = "设计者仅提交答复结论和文字整改说明；答复不接收文件版本、图片或富文本图片，返回 opinionId 便于前端与原意见一一对应。")
+    @Operation(summary = "设计者答复专家意见", description = "设计者答复专家提出的意见")
     ApiResponse<OpinionApplicationService.OpinionView> reply(@PathVariable long opinionId, @Valid @RequestBody ReplyOpinionRequest request,
                                                                HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.reply(opinionId, new OpinionApplicationService.ReplyOpinionCommand(
@@ -73,7 +77,7 @@ public class OpinionController {
     }
 
     @PostMapping("/opinions/{opinionId}/confirm")
-    @Operation(summary = "专家确认设计者答复", description = "推荐路径为 /opinions/{opinionId}/confirm；意见提出人确认答复通过或不通过，不通过后设计者可重新答复。旧 confirmations 路径暂时兼容。")
+    @Operation(summary = "专家确认设计者答复", description = "意见提出人确认答复通过或不通过，不通过后设计者可重新答复")
     ApiResponse<OpinionApplicationService.OpinionView> confirm(@PathVariable long opinionId,
                                                                  @Valid @RequestBody ConfirmOpinionRequest request,
                                                                  HttpServletRequest servletRequest) {
@@ -82,7 +86,7 @@ public class OpinionController {
     }
 
     @PostMapping("/opinions/{opinionId}/withdraw")
-    @Operation(summary = "撤回评审意见", description = "仅意见提出人可撤回未关闭意见，必须填写撤回原因。")
+    @Operation(summary = "撤回评审意见", description = "仅意见提出人可撤回未关闭意见，必须填写撤回原因")
     ApiResponse<OpinionApplicationService.OpinionView> withdraw(@PathVariable long opinionId,
                                                                   @Valid @RequestBody WithdrawOpinionRequest request,
                                                                   HttpServletRequest servletRequest) {
@@ -95,9 +99,9 @@ public class OpinionController {
     }
 
     @Schema(description = "提出评审意见请求")
-    record RaiseOpinionRequest(@Schema(description = "意见来源类型", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull OpinionSourceType sourceType,
+    record RaiseOpinionRequest(@Schema(description = "意见来源：EXPERT_REVIEW 专家评审、PROCESS_REVIEW 工艺评审、STRUCTURE_REVIEW 结构评审  PCB_MUTUAL_CHECK  PCB互检单 SCHEMATIC_MUTUAL_CHECK 原理图互检单", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull OpinionSourceType sourceType,
                                @Schema(description = "来源检查项 ID；固定互检检查项意见时必填") Long sourceItemId,
-                               @Schema(description = "具体、可执行的评审意见内容，支持富文本 HTML", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String content,
+                               @Schema(description = "具体、可执行的评审意见内容", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String content,
                                @Schema(description = "富文本提取意见，支持文字与内嵌 data URI 图片；为空时使用 content", requiredMode = Schema.RequiredMode.NOT_REQUIRED) String richText,
                                @Schema(description = "问题等级：SERIOUS 严重、GENERAL 一般、MINOR 轻微") String severity) {
     }

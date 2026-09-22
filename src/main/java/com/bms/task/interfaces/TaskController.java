@@ -6,7 +6,6 @@ import com.bms.identity.application.CurrentUserHolder;
 import com.bms.task.application.TaskApplicationService;
 import com.bms.task.application.MyTaskApplicationService;
 import com.bms.task.application.TaskFileReferenceApplicationService;
-import com.bms.file.application.FileApplicationService;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.review.domain.ReviewRole;
@@ -20,6 +19,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -52,7 +52,7 @@ public class TaskController {
     }
 
     @PostMapping("/save")
-    @Operation(summary = "保存评审任务", description = "唯一的任务保存入口。前端先调用公司资源服务上传文件，再将该服务返回的 fileId 与文件元数据放入 initialFiles；PCB 仅登记文件引用，不接收文件二进制。新建草稿不传 taskId，编辑已有草稿时通过 taskId 查询参数传入。")
+    @Operation(summary = "保存评审任务", description = "唯一的任务保存入口。前端先调用 POST /files/upload 上传文件，再将返回的多个 UUID 放入 files；PCB 根据 UUID 读取后端保存的文件元数据，不接收文件二进制或前端文件元数据。同一任务不可重复保存同一个 UUID。新建草稿不传 taskId，编辑已有草稿时通过 taskId 查询参数传入。")
     ApiResponse<TaskApplicationService.TaskView> save(@RequestParam(required = false) @Parameter(description = "编辑已有草稿时传任务 ID；新建草稿不传") Long taskId,
                                                        @Valid @RequestBody CreateTaskRequest request,
                                                        HttpServletRequest servletRequest) {
@@ -60,7 +60,7 @@ public class TaskController {
     }
 
     @PostMapping("/submit")
-    @Operation(summary = "提交评审任务", description = "唯一的任务提交入口。前端先调用公司资源服务上传文件，再将返回的 fileId 与文件元数据放入 initialFiles；PCB 在创建或更新草稿后登记文件信息并提交任务，不接收文件二进制。")
+    @Operation(summary = "提交评审任务", description = "唯一的任务提交入口。前端先调用 POST /files/upload 上传文件，再将返回的多个 UUID 放入 files；PCB 在创建或更新草稿后根据 UUID 登记文件信息并提交任务，不接收文件二进制或前端文件元数据。")
     ApiResponse<TaskApplicationService.TaskView> submit(@RequestParam(required = false) @Parameter(description = "提交已有草稿时传任务 ID；直接新建提交不传") Long taskId,
                                                          @Valid @RequestBody CreateTaskRequest request,
                                                          HttpServletRequest servletRequest) {
@@ -70,7 +70,6 @@ public class TaskController {
     @GetMapping
     @Operation(summary = "分页查询评审任务", description = "按任务名称、项目名称、设计者姓名（模糊匹配）、评审类型和状态过滤当前用户有权限查看的任务。")
     ApiResponse<TaskApplicationService.TaskPage> list(@RequestParam(required = false) String taskName,
-                                                      @RequestParam(required = false) @Parameter(description = "任务 ID；详情页按此参数从分页结果读取单条任务") Long taskId,
                                                       @RequestParam(required = false) String projectName,
                                                       @RequestParam(required = false) @Parameter(description = "设计者姓名，支持不区分大小写的模糊查询") String designerName,
                                                       @RequestParam(required = false) ReviewType reviewType,
@@ -79,7 +78,13 @@ public class TaskController {
                                                       @RequestParam(required = false) Integer pageSize,
                                                       HttpServletRequest servletRequest) {
         return ApiResponse.ok(taskService.list(new TaskApplicationService.TaskQuery(taskName, projectName, designerName,
-                reviewType, status, pageNo, pageSize, taskId), CurrentUserHolder.require()), traceId(servletRequest));
+                reviewType, status, pageNo, pageSize, null), CurrentUserHolder.require()), traceId(servletRequest));
+    }
+
+    @GetMapping("/{taskId}")
+    @Operation(summary = "查询评审任务详情", description = "按任务 ID 返回当前用户有权查看的一条任务基础信息；用于任务详情页加载，不再通过分页任务列表反查。")
+    ApiResponse<TaskApplicationService.TaskView> detail(@PathVariable long taskId, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(taskService.get(taskId, CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @GetMapping("/my")
@@ -90,16 +95,15 @@ public class TaskController {
 
     private String traceId(HttpServletRequest request) { return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString(); }
     private TaskApplicationService.TaskView saveOrSubmit(Long taskId, CreateTaskRequest request, boolean submit) {
-        List<FileApplicationService.FileReferenceCommand> files = toInitialFileReferences(request.initialFiles());
+        List<String> files = taskFileIds(request.files());
         if (taskId == null) {
             return taskFileReferenceApplicationService.create(toCreateCommand(request), files, submit, CurrentUserHolder.require());
         }
         return taskFileReferenceApplicationService.updateDraft(taskId, toCreateCommand(request), files, submit, CurrentUserHolder.require());
     }
-    private List<FileApplicationService.FileReferenceCommand> toInitialFileReferences(List<InitialFileReferenceRequest> files) {
+    private List<String> taskFileIds(List<String> files) {
         if (files == null) { return List.of(); }
-        return files.stream().map(file -> new FileApplicationService.FileReferenceCommand(file.fileId(), file.fileName(),
-                file.fileSize(), file.md5(), null)).toList();
+        return List.copyOf(files);
     }
     private TaskApplicationService.CreateTaskCommand toCreateCommand(CreateTaskRequest request) {
         return new TaskApplicationService.CreateTaskCommand(request.reviewType(), request.taskName(), request.projectName(), request.designerId(),
@@ -124,12 +128,5 @@ public class TaskController {
             @Schema(description = "专家/组长显示姓名，会冗余保存到任务表", requiredMode = Schema.RequiredMode.REQUIRED) String expertLeaderName,
             @Schema(description = "评审角色，可多选；使用字典接口返回的 ReviewRole 枚举值", requiredMode = Schema.RequiredMode.REQUIRED) List<ReviewRole> reviewRoles,
             @Schema(description = "评审描述，可不传") String reviewDescription,
-            @Schema(description = "前端上传至公司资源服务后返回的初始评审文件引用；PCB 仅存储 fileId 和元数据") List<@Valid InitialFileReferenceRequest> initialFiles) { }
-
-    @Schema(description = "公司资源服务文件引用")
-    record InitialFileReferenceRequest(
-            @Schema(description = "公司资源服务上传返回的唯一文件标识", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String fileId,
-            @Schema(description = "原始文件名", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String fileName,
-            @Schema(description = "文件大小（字节）", requiredMode = Schema.RequiredMode.REQUIRED) @jakarta.validation.constraints.PositiveOrZero long fileSize,
-            @Schema(description = "MD5，可选") String md5) { }
+            @Schema(description = "前端调用文件上传接口后返回的文件 UUID 列表；后端按 UUID 读取并保存文件元数据，同一任务不可重复传入相同 UUID") List<@NotBlank String> files) { }
 }

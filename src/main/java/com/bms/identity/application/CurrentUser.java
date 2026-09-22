@@ -11,5 +11,12 @@ import java.util.Set;
  */
 
 
-public record CurrentUser(Long id, Set<Role> roles) {
+public record CurrentUser(Long id, String displayName, Set<Role> roles) {
+    public CurrentUser(Long id, Set<Role> roles) {
+        this(id, "用户#" + id, roles);
+    }
+
+    public String resolvedDisplayName() {
+        return displayName == null || displayName.isBlank() ? "用户#" + id : displayName;
+    }
 }

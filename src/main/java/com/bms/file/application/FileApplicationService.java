@@ -6,7 +6,8 @@ import com.bms.audit.infrastructure.OperationAuditMapper;
 import com.bms.audit.infrastructure.OperationAuditRecord;
 import com.bms.file.domain.FileCategory;
 import com.bms.file.domain.FileUploadScene;
-import com.bms.file.infrastructure.MockFileStorage;
+import com.bms.file.infrastructure.PendingFileUploadMapper;
+import com.bms.file.infrastructure.PendingFileUploadRecord;
 import com.bms.file.infrastructure.ResourceServiceClient;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
@@ -40,47 +41,24 @@ public class FileApplicationService {
     private final ReviewFileMapper fileMapper;
     private final ReviewTaskMapper taskMapper;
     private final TaskAssignmentAccessMapper taskAssignmentAccessMapper;
-    private final MockFileStorage storage;
     private final ResourceServiceClient resourceServiceClient;
+    private final PendingFileUploadMapper pendingFileUploadMapper;
     private final OutboxEventPublisher outboxEventPublisher;
     private final OperationAuditMapper auditMapper;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     @Autowired
     public FileApplicationService(ReviewFileMapper fileMapper, ReviewTaskMapper taskMapper,
-                                  TaskAssignmentAccessMapper taskAssignmentAccessMapper, MockFileStorage storage,
-                                  ResourceServiceClient resourceServiceClient, OutboxEventPublisher outboxEventPublisher, OperationAuditMapper auditMapper) {
+                                  TaskAssignmentAccessMapper taskAssignmentAccessMapper,
+                                  ResourceServiceClient resourceServiceClient, PendingFileUploadMapper pendingFileUploadMapper,
+                                  OutboxEventPublisher outboxEventPublisher, OperationAuditMapper auditMapper) {
         this.fileMapper = fileMapper;
         this.taskMapper = taskMapper;
         this.taskAssignmentAccessMapper = taskAssignmentAccessMapper;
-        this.storage = storage;
         this.resourceServiceClient = resourceServiceClient;
+        this.pendingFileUploadMapper = pendingFileUploadMapper;
         this.outboxEventPublisher = outboxEventPublisher;
         this.auditMapper = auditMapper;
-    }
-
-    public FileApplicationService(ReviewFileMapper fileMapper, ReviewTaskMapper taskMapper,
-                                  TaskAssignmentAccessMapper taskAssignmentAccessMapper, MockFileStorage storage,
-                                  OutboxEventPublisher outboxEventPublisher, OperationAuditMapper auditMapper) {
-        this(fileMapper, taskMapper, taskAssignmentAccessMapper, storage, null, outboxEventPublisher, auditMapper);
-    }
-
-    public UploadSessionView createUploadSession(long taskId, FileCategory category, CurrentUser currentUser) {
-        requireTaskAccess(taskId, currentUser, category, true);
-        MockFileStorage.UploadSession session = storage.createSession(taskId, currentUser.id(), category);
-        return new UploadSessionView(session.sessionId(), session.uploadUrl());
-    }
-
-    @Transactional
-    public FileView register(RegisterFileCommand command, CurrentUser currentUser) {
-        ReviewTaskRecord task = requireTaskAccess(command.taskId(), currentUser, command.category(), true);
-        MockFileStorage.UploadSession session = storage.consumeSession(command.uploadSessionId(), command.taskId(), currentUser.id(), command.category());
-        ReviewFileRecord latest = fileMapper.findLatest(command.taskId(), command.category().name(), command.businessFileKey());
-        ReviewFileRecord record = toRecord(latest == null ? nextId() : latest.getId(), command, currentUser.id(), session.companyFileId(), task.getStatus());
-        persist(record, latest);
-        appendAudit(record, "FILE_REGISTERED", currentUser.id());
-        outboxEventPublisher.publishTaskEvent("FILE_REGISTERED", command.taskId(), currentUser.id());
-        return FileView.from(record);
     }
 
     /**
@@ -93,21 +71,88 @@ public class FileApplicationService {
         if (files == null || files.isEmpty()) {
             return List.of();
         }
-        requireTaskAccess(taskId, currentUser, FileCategory.PCB_SCHEMATIC, true);
+        requireTaskAccess(taskId, currentUser, FileCategory.TASK_CREATION, true);
         List<FileView> result = new ArrayList<>();
         for (int index = 0; index < files.size(); index++) {
             FileReferenceCommand file = files.get(index);
             if (file == null) { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "评审文件不能为空"); }
             String key = file.businessFileKey() == null || file.businessFileKey().isBlank()
                     ? "INITIAL_" + String.format("%03d", index + 1) : file.businessFileKey().trim();
-            ReviewFileRecord latest = fileMapper.findLatest(taskId, FileCategory.PCB_SCHEMATIC.name(), key);
-            ReviewFileRecord record = referenceRecord(latest == null ? nextId() : latest.getId(), taskId, FileCategory.PCB_SCHEMATIC,
+            ReviewFileRecord latest = fileMapper.findLatest(taskId, FileCategory.TASK_CREATION.name(), key);
+            ReviewFileRecord record = referenceRecord(latest == null ? nextId() : latest.getId(), taskId, FileCategory.TASK_CREATION,
                     key, file, currentUser.id(), TaskStatus.DRAFT.name());
             persist(record, latest);
             appendAudit(record, "INITIAL_FILE_REGISTERED", currentUser.id());
             result.add(FileView.from(record));
         }
         return List.copyOf(result);
+    }
+
+    /**
+     * @author 王涛
+     * @date 2026-09-22
+     * @description 将创建任务前上传的多个文件 UUID 绑定至任务；每个 UUID 在同一任务下仅允许保存一次，元数据只从后端临时上传记录读取。
+     */
+    @Transactional
+    public List<FileView> bindPendingInitialFiles(long taskId, List<String> fileIds, CurrentUser currentUser) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            return List.of();
+        }
+        requireTaskAccess(taskId, currentUser, FileCategory.TASK_CREATION, true);
+        if (pendingFileUploadMapper == null) {
+            throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_UNAVAILABLE, "临时文件记录服务不可用");
+        }
+        java.util.Set<String> requestFileIds = new java.util.LinkedHashSet<>();
+        List<FileView> result = new ArrayList<>();
+        for (String fileId : fileIds) {
+            String normalizedFileId = requireFileUuid(fileId);
+            if (!requestFileIds.add(normalizedFileId)) {
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "初始文件 UUID 不能为空且不能重复");
+            }
+            PendingFileUploadRecord pending = pendingFileUploadMapper.findByFileId(normalizedFileId);
+            if (pending == null || !FileCategory.TASK_CREATION.name().equals(pending.getFileCategory())) {
+                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "初始文件 UUID 不存在或不可用于创建任务");
+            }
+            if (!currentUser.id().equals(pending.getUploadedBy())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "仅文件上传人可以将该文件关联到任务");
+            }
+            if (fileMapper.findLatest(taskId, FileCategory.TASK_CREATION.name(), normalizedFileId) != null) {
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "该任务已保存对应文件，不能重复保存");
+            }
+            FileReferenceCommand reference = new FileReferenceCommand(pending.getResourcePath(), pending.getFileName(), pending.getFileSize(),
+                    pending.getMd5(), normalizedFileId);
+            ReviewFileRecord record = referenceRecord(nextId(), taskId, FileCategory.TASK_CREATION, normalizedFileId, reference,
+                    currentUser.id(), TaskStatus.DRAFT.name());
+            fileMapper.insert(record);
+            appendAudit(record, "INITIAL_FILE_BOUND", currentUser.id());
+            result.add(FileView.from(record));
+        }
+        return List.copyOf(result);
+    }
+
+    /** 上传尚未创建任务的初始文件，持久化元数据并返回前端后续保存任务唯一需要携带的 UUID。 */
+    @Transactional
+    public PendingUploadView uploadPendingInitialFile(MultipartFile file, FileCategory category, CurrentUser currentUser) {
+        if (category != FileCategory.TASK_CREATION) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "未关联任务的上传仅允许创建任务文件类型");
+        }
+        if (file == null || file.isEmpty() || file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "上传文件不能为空");
+        }
+        if (!permissionPolicy.has(currentUser.roles(), category.uploadPermission())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "无对应文件上传权限");
+        }
+        if (pendingFileUploadMapper == null) {
+            throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_UNAVAILABLE, "临时文件记录服务不可用");
+        }
+        String fileId = UUID.randomUUID().toString();
+        ResourceServiceClient.StoredResource resource = resourceServiceClient.uploadInUuidDirectory(file, fileId);
+        PendingFileUploadRecord record = new PendingFileUploadRecord();
+        record.setFileId(fileId); record.setFileCategory(category.name()); record.setFileName(file.getOriginalFilename());
+        record.setFileFormat(fileFormat(file.getOriginalFilename())); record.setFileSize(file.getSize()); record.setMd5(md5(file));
+        record.setResourcePath(resource.resourcePath()); record.setUploadedBy(currentUser.id());
+        pendingFileUploadMapper.insert(record);
+        return new PendingUploadView(fileId, record.getFileName(), record.getFileSize(), category);
     }
 
     @Transactional
@@ -127,13 +172,18 @@ public class FileApplicationService {
     }
 
     @Transactional
+    public FileView uploadAndRegister(long taskId, FileCategory category, MultipartFile file, CurrentUser currentUser) {
+        return uploadMultipartFile(taskId, category, category.name(), file, currentUser);
+    }
+
+    @Transactional
     public FileView registerStageFile(long taskId, FileUploadScene scene, FileReferenceCommand file, CurrentUser currentUser) {
         return registerStageFile(taskId, scene, file, null, currentUser);
     }
 
     @Transactional
     public FileView registerStageFile(long taskId, FileUploadScene scene, FileReferenceCommand file, String fileKind, CurrentUser currentUser) {
-        FileCategory category = scene.fileCategory();
+        FileCategory category = stageFileCategory(scene, fileKind);
         if (!scene.requiresTask()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "创建任务文件应通过任务保存或提交接口关联");
         }
@@ -157,6 +207,13 @@ public class FileApplicationService {
         return scene.name() + "_" + normalizedKind;
     }
 
+    private FileCategory stageFileCategory(FileUploadScene scene, String fileKind) {
+        if (scene != FileUploadScene.PROCESS_REVIEW) return scene.fileCategory();
+        if (fileKind == null || fileKind.isBlank() || "PROCESS".equalsIgnoreCase(fileKind)) return FileCategory.PROCESS_REVIEW;
+        if ("STRUCTURE".equalsIgnoreCase(fileKind)) return FileCategory.STRUCTURE_REVIEW;
+        throw new BusinessException(ErrorCode.VALIDATION_ERROR, "工艺/结构评审文件类型仅支持 PROCESS 或 STRUCTURE");
+    }
+
     public DownloadContent downloadTaskFile(long taskId, long fileId, CurrentUser currentUser) {
         ReviewFileRecord file = fileMapper.findById(fileId);
         if (file == null) {
@@ -166,7 +223,7 @@ public class FileApplicationService {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务文件不存在");
         }
         requireTaskAccess(file.getTaskId(), currentUser, FileCategory.valueOf(file.getFileCategory()), false);
-        byte[] content = resourceServiceClient == null ? new byte[0] : resourceServiceClient.download(file.getFileName(), file.getCompanyFileId());
+        byte[] content = resourceServiceClient.download(file.getFileName(), file.getCompanyFileId());
         return new DownloadContent(file.getFileName(), content);
     }
 
@@ -186,7 +243,7 @@ public class FileApplicationService {
         if (upload && TaskStatus.FINISHED.name().equals(task.getStatus())) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许上传新文件");
         }
-        if (upload && category == FileCategory.PCB_SCHEMATIC && currentUser.roles().contains(Role.DESIGNER)
+        if (upload && (category == FileCategory.TASK_CREATION || category == FileCategory.PCB_REVIEW || category == FileCategory.SCHEMATIC_REVIEW) && currentUser.roles().contains(Role.DESIGNER)
                 && !task.getDesignerId().equals(currentUser.id())
                 && !currentUser.roles().contains(Role.PCB_LEADER)
                 && !currentUser.roles().contains(Role.HARDWARE_DEPARTMENT_MANAGER)) {
@@ -222,25 +279,8 @@ public class FileApplicationService {
         fileMapper.updateCurrent(record);
     }
 
-    private ReviewFileRecord toRecord(long id, RegisterFileCommand command, long uploadedBy, String companyFileId, String uploadedStage) {
-        ReviewFileRecord record = new ReviewFileRecord();
-        record.setId(id);
-        record.setTaskId(command.taskId());
-        record.setFileCategory(command.category().name());
-        record.setBusinessFileKey(command.businessFileKey());
-        record.setFileName(command.fileName());
-        record.setFileFormat(fileFormat(command.fileName()));
-        record.setFileSize(command.fileSize());
-        record.setMd5(command.md5());
-        record.setCompanyFileId(companyFileId);
-        record.setLatest(true);
-        record.setUploadedBy(uploadedBy);
-        record.setUploadedStage(uploadedStage);
-        return record;
-    }
-
     private ReviewFileRecord directRecord(long id, long taskId, String businessFileKey, MultipartFile file, String md5, long uploadedBy) {
-        return directRecord(id, taskId, FileCategory.PCB_SCHEMATIC, businessFileKey, file, md5, uploadedBy, TaskStatus.DRAFT.name());
+        return directRecord(id, taskId, FileCategory.TASK_CREATION, businessFileKey, file, md5, uploadedBy, TaskStatus.DRAFT.name());
     }
 
     private ReviewFileRecord referenceRecord(long id, long taskId, FileCategory category, String businessFileKey,
@@ -255,9 +295,7 @@ public class FileApplicationService {
 
     private ReviewFileRecord directRecord(long id, long taskId, FileCategory category, String businessFileKey, MultipartFile file, String md5,
                                           long uploadedBy, String uploadedStage) {
-        ResourceServiceClient.StoredResource resource = resourceServiceClient == null
-                ? new ResourceServiceClient.StoredResource("mock-inline-" + UUID.randomUUID(), "/mock/bms/pcb/" + file.getOriginalFilename())
-                : resourceServiceClient.upload(file, taskId, category);
+        ResourceServiceClient.StoredResource resource = resourceServiceClient.upload(file, taskId, category);
         ReviewFileRecord record = new ReviewFileRecord();
         record.setId(id); record.setTaskId(taskId); record.setFileCategory(category.name()); record.setBusinessFileKey(businessFileKey);
         record.setFileName(file.getOriginalFilename()); record.setFileFormat(fileFormat(file.getOriginalFilename())); record.setFileSize(file.getSize()); record.setMd5(md5);
@@ -281,13 +319,14 @@ public class FileApplicationService {
         return separator < 0 || separator == fileName.length() - 1 ? "" : fileName.substring(separator + 1).toLowerCase(java.util.Locale.ROOT);
     }
 
-    public record RegisterFileCommand(long taskId, String uploadSessionId, FileCategory category, String businessFileKey,
-                                      String fileName, long fileSize, String md5) {
-        public RegisterFileCommand {
-            if (uploadSessionId == null || uploadSessionId.isBlank() || businessFileKey == null || businessFileKey.isBlank()
-                    || fileName == null || fileName.isBlank() || md5 == null || md5.isBlank() || fileSize < 0) {
-                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "文件登记参数不合法");
-            }
+    private String requireFileUuid(String fileId) {
+        if (fileId == null || fileId.isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "初始文件 UUID 不能为空");
+        }
+        try {
+            return UUID.fromString(fileId.trim()).toString();
+        } catch (IllegalArgumentException exception) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "初始文件标识必须是 UUID");
         }
     }
 
@@ -300,8 +339,8 @@ public class FileApplicationService {
         }
     }
 
-    public record UploadSessionView(String uploadSessionId, String uploadUrl) {
-    }
+    /** 创建任务前上传文件的最小返回模型；保存或提交任务仅回传 fileId UUID 数组。 */
+    public record PendingUploadView(String fileId, String fileName, long fileSize, FileCategory fileCategory) { }
 
     public record DownloadContent(String fileName, byte[] content) {
     }

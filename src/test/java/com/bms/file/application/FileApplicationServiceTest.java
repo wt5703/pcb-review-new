@@ -4,6 +4,9 @@ import com.bms.file.domain.FileCategory;
 import com.bms.file.domain.FileUploadScene;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
+import com.bms.file.infrastructure.PendingFileUploadMapper;
+import com.bms.file.infrastructure.PendingFileUploadRecord;
+import com.bms.file.infrastructure.ResourceServiceClient;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Role;
 import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
@@ -13,12 +16,15 @@ import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import com.bms.task.domain.TaskStatus;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -26,32 +32,33 @@ import static org.mockito.Mockito.when;
 /**
  * @author 王涛
  * @date 2026-09-16
- * @description 验证文件应用服务对上传会话、当前文件替换和下载授权的编排规则，使用 Mock 文件服务且不依赖真实文件或数据库。
+ * @description 验证文件应用服务对公司资源服务调用后的文件登记、当前文件替换和下载授权规则，不依赖真实文件或数据库。
  */
 class FileApplicationServiceTest {
     private final ReviewFileMapper fileMapper = mock(ReviewFileMapper.class);
     private final ReviewTaskMapper taskMapper = mock(ReviewTaskMapper.class);
     private final TaskAssignmentAccessMapper accessMapper = mock(TaskAssignmentAccessMapper.class);
+    private final PendingFileUploadMapper pendingFileUploadMapper = mock(PendingFileUploadMapper.class);
     private final OutboxEventPublisher outboxEventPublisher = mock(OutboxEventPublisher.class);
     private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
-    private final com.bms.file.infrastructure.MockFileStorage storage = new com.bms.file.infrastructure.MockFileStorage();
-    private final FileApplicationService service = new FileApplicationService(fileMapper, taskMapper, accessMapper, storage,
-            outboxEventPublisher, auditMapper);
+    private final ResourceServiceClient resourceServiceClient = mock(ResourceServiceClient.class);
+    private final FileApplicationService service = new FileApplicationService(fileMapper, taskMapper, accessMapper,
+            resourceServiceClient, pendingFileUploadMapper, outboxEventPublisher, auditMapper);
     private final CurrentUser designer = new CurrentUser(10L, Set.of(Role.DESIGNER));
 
     @Test
     void shouldReplaceCurrentFileWhenBusinessFileKeyIsUploadedAgain() {
         when(fileMapper.nextId()).thenReturn(101L, 102L);
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
-        FileApplicationService.UploadSessionView firstSession = service.createUploadSession(1L, FileCategory.PCB_SCHEMATIC, designer);
-        FileApplicationService.FileView first = service.register(new FileApplicationService.RegisterFileCommand(1L,
-                firstSession.uploadSessionId(), FileCategory.PCB_SCHEMATIC, "BMS-P1", "BMS.pcb", 100L, "md5-a"), designer);
+        when(resourceServiceClient.upload(any(MultipartFile.class), eq(1L), eq(FileCategory.TASK_CREATION)))
+                .thenReturn(new ResourceServiceClient.StoredResource("/company/BMS.pcb", "/company/BMS.pcb"));
+        FileApplicationService.FileView first = service.uploadMultipartFile(1L, FileCategory.TASK_CREATION,
+                "BMS-P1", multipart("BMS.pcb", "first"), designer);
 
         ReviewFileRecord latest = record(101L, "md5-a");
-        when(fileMapper.findLatest(1L, FileCategory.PCB_SCHEMATIC.name(), "BMS-P1")).thenReturn(latest);
-        FileApplicationService.UploadSessionView secondSession = service.createUploadSession(1L, FileCategory.PCB_SCHEMATIC, designer);
-        FileApplicationService.FileView second = service.register(new FileApplicationService.RegisterFileCommand(1L,
-                secondSession.uploadSessionId(), FileCategory.PCB_SCHEMATIC, "BMS-P1", "BMS-v2.pcb", 110L, "md5-b"), designer);
+        when(fileMapper.findLatest(1L, FileCategory.TASK_CREATION.name(), "BMS-P1")).thenReturn(latest);
+        FileApplicationService.FileView second = service.uploadMultipartFile(1L, FileCategory.TASK_CREATION,
+                "BMS-P1", multipart("BMS-v2.pcb", "second"), designer);
 
         assertThat(first.id()).isEqualTo(101L);
         assertThat(second.id()).isEqualTo(101L);
@@ -65,6 +72,7 @@ class FileApplicationServiceTest {
         ReviewFileRecord file = record(101L, "md5-a");
         when(fileMapper.findById(101L)).thenReturn(file);
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
+        when(resourceServiceClient.download("BMS.pcb", "mock-file-1")).thenReturn(new byte[] { 1 });
 
         FileApplicationService.DownloadContent download = service.downloadTaskFile(1L, 101L,
                 new CurrentUser(20L, Set.of(Role.EMC_EXPERT)));
@@ -81,7 +89,7 @@ class FileApplicationServiceTest {
         finished.setStatus(TaskStatus.FINISHED.name());
         when(taskMapper.findById(1L)).thenReturn(finished);
 
-        assertThatThrownBy(() -> service.createUploadSession(1L, FileCategory.PCB_SCHEMATIC, designer))
+        assertThatThrownBy(() -> service.uploadAndRegister(1L, FileCategory.TASK_CREATION, multipart("BMS.pcb", "content"), designer))
                 .isInstanceOf(com.bms.common.BusinessException.class)
                 .hasMessage("已结束任务不允许上传新文件");
     }
@@ -90,10 +98,25 @@ class FileApplicationServiceTest {
     void shouldRejectAnotherDesignerUploadingPcbFile() {
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
 
-        assertThatThrownBy(() -> service.createUploadSession(1L, FileCategory.PCB_SCHEMATIC,
-                new CurrentUser(11L, Set.of(Role.DESIGNER))))
+        assertThatThrownBy(() -> service.uploadAndRegister(1L, FileCategory.TASK_CREATION,
+                multipart("BMS.pcb", "content"), new CurrentUser(11L, Set.of(Role.DESIGNER))))
                 .isInstanceOf(com.bms.common.BusinessException.class)
                 .hasMessage("仅任务设计者可以上传该任务的 PCB 或原理图文件");
+    }
+
+    @Test
+    void shouldRejectSavingSamePendingFileUuidToTaskAgain() {
+        String fileId = "b4466fe0-2c68-44b5-92d2-100000000001";
+        PendingFileUploadRecord pending = new PendingFileUploadRecord();
+        pending.setFileId(fileId); pending.setFileCategory(FileCategory.TASK_CREATION.name()); pending.setFileName("BMS.pcb");
+        pending.setFileSize(100L); pending.setMd5("md5-a"); pending.setResourcePath("/company/BMS.pcb"); pending.setUploadedBy(10L);
+        when(taskMapper.findById(1L)).thenReturn(taskRecord());
+        when(pendingFileUploadMapper.findByFileId(fileId)).thenReturn(pending);
+        when(fileMapper.findLatest(1L, FileCategory.TASK_CREATION.name(), fileId)).thenReturn(record(101L, "md5-a"));
+
+        assertThatThrownBy(() -> service.bindPendingInitialFiles(1L, java.util.List.of(fileId), designer))
+                .isInstanceOf(com.bms.common.BusinessException.class)
+                .hasMessage("该任务已保存对应文件，不能重复保存");
     }
 
     @Test
@@ -104,7 +127,7 @@ class FileApplicationServiceTest {
         FileApplicationService.FileView uploaded = service.registerStageFile(1L, FileUploadScene.PROCESS_REVIEW,
                 new FileApplicationService.FileReferenceCommand("/bms/pcb/process.zip", "process.zip", 3L, "md5", null), designer);
 
-        assertThat(uploaded.category()).isEqualTo(FileCategory.PROCESS);
+        assertThat(uploaded.category()).isEqualTo(FileCategory.PROCESS_REVIEW);
         assertThat(uploaded.businessFileKey()).isEqualTo("PROCESS_REVIEW");
         verify(fileMapper).insert(any(ReviewFileRecord.class));
         verify(auditMapper).insert(any());
@@ -122,7 +145,7 @@ class FileApplicationServiceTest {
         ReviewFileRecord record = new ReviewFileRecord();
         record.setId(id);
         record.setTaskId(1L);
-        record.setFileCategory(FileCategory.PCB_SCHEMATIC.name());
+        record.setFileCategory(FileCategory.TASK_CREATION.name());
         record.setBusinessFileKey("BMS-P1");
         record.setFileName("BMS.pcb");
         record.setFileSize(100L);
@@ -138,5 +161,9 @@ class FileApplicationServiceTest {
         record.setId(1L);
         record.setDesignerId(10L);
         return record;
+    }
+
+    private MultipartFile multipart(String filename, String content) {
+        return new MockMultipartFile("file", filename, "application/octet-stream", content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 }

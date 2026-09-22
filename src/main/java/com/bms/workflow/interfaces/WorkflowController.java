@@ -1,10 +1,12 @@
 package com.bms.workflow.interfaces;
 
 import com.bms.common.ApiResponse;
+import com.bms.common.BusinessException;
+import com.bms.common.ErrorCode;
 import com.bms.common.TraceIdFilter;
 import com.bms.file.domain.FileUploadScene;
+import com.bms.identity.application.CurrentUser;
 import com.bms.identity.application.CurrentUserHolder;
-import com.bms.review.application.ReviewerAssignmentService;
 import com.bms.review.domain.ReviewRole;
 import com.bms.workflow.application.WorkflowApplicationService;
 import com.bms.workflow.domain.WorkflowAction;
@@ -21,7 +23,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -36,35 +37,63 @@ import java.util.List;
 @Tag(name = "任务流程", description = "推进 PCB 或原理图评审任务的当前流程节点；已结束任务绝不允许重新打开。")
 public class WorkflowController {
     private final WorkflowApplicationService workflowApplicationService;
-    private final ReviewerAssignmentService reviewerAssignmentService;
 
-    public WorkflowController(WorkflowApplicationService workflowApplicationService, ReviewerAssignmentService reviewerAssignmentService) {
+    public WorkflowController(WorkflowApplicationService workflowApplicationService) {
         this.workflowApplicationService = workflowApplicationService;
-        this.reviewerAssignmentService = reviewerAssignmentService;
     }
 
     @PostMapping("/transitions")
-    @Operation(summary = "编排并推进任务流程", description = "同一请求可按 action 一次完成阶段文件登记、人员分配和状态推进，不传版本号。二进制文件必须先调用 POST /files/upload 上传至公司资源服务，再将返回的文件标识放入 stageFiles。START_PCB_OPTIONAL_REVIEW 可附 PROCESS_REVIEW 文件并开启工艺/结构评审；START_PCB_MUTUAL_REVIEW 必须附 PCB_MUTUAL_CHECK 人员；START_SCHEMATIC_MUTUAL_REVIEW 必须附 SCHEMATIC_MUTUAL_CHECK 人员；START_SCHEMATIC_EXPERT_REVIEW 必须附 SCHEMATIC_HARDWARE_EXPERT 或 SCHEMATIC_OTHER_EXPERT 人员；FINISH 直接确认结束。PCB：PCB_PENDING_REVIEW→START_PCB_EXPERT_REVIEW→PCB_EXPERT_REVIEWING→ENTER_PCB_DESIGNER_REPLY→PCB_DESIGNER_REPLYING→START_PCB_OPTIONAL_REVIEW→PCB_OPTIONAL_REVIEWING→ENTER_PCB_OPTIONAL_DESIGNER_REPLY→PCB_OPTIONAL_DESIGNER_REPLYING→PREPARE_PCB_MUTUAL_ASSIGNMENT→PENDING_MUTUAL_ASSIGNMENT→START_PCB_MUTUAL_REVIEW→MUTUAL_REVIEWING→ENTER_PCB_MUTUAL_DESIGNER_REPLY→PCB_MUTUAL_DESIGNER_REPLYING→REQUEST_FINISH→PENDING_FINISH_CONFIRMATION→FINISH。原理图：SCHEMATIC_PENDING_LEADER_ASSIGNMENT→START_SCHEMATIC_MUTUAL_REVIEW→MUTUAL_REVIEWING→ENTER_SCHEMATIC_MUTUAL_DESIGNER_REPLY→SCHEMATIC_MUTUAL_DESIGNER_REPLYING→PREPARE_SCHEMATIC_EXPERT_ASSIGNMENT→SCHEMATIC_PENDING_REVIEW→START_SCHEMATIC_EXPERT_REVIEW→HARDWARE_REVIEWING→ENTER_SCHEMATIC_DESIGNER_REPLY→SCHEMATIC_DESIGNER_REPLYING→REQUEST_FINISH→PENDING_FINISH_CONFIRMATION→FINISH。")
+    @Operation(summary = "按业务动作推进任务流程", description = "创建任务使用 POST /tasks/save 或 /tasks/submit，不调用本接口；互检单/原理图文件二进制上传使用 POST /files/upload，也不调用本接口。本接口只负责已创建任务的状态推进：START_PCB_MUTUAL_REVIEW、START_SCHEMATIC_MUTUAL_REVIEW 用于分配互检组员并进入互检；START_SCHEMATIC_EXPERT_REVIEW 用于分配原理图专家并进入评审；START_PCB_OPTIONAL_REVIEW 用于设计者上传工艺或结构文件后开启对应评审；FINISH 用于管理员在结束确认节点手动结束。其余 action 仅推进当前无人员、无文件的常规节点。")
     ApiResponse<WorkflowApplicationService.WorkflowView> transition(@PathVariable long taskId,
                                                                       @Valid @RequestBody TransitionRequest request,
                                                                       HttpServletRequest servletRequest) {
-        return ApiResponse.ok(workflowApplicationService.transition(taskId, request.toCommand(),
-                CurrentUserHolder.require()), traceId(servletRequest));
+        CurrentUser currentUser = CurrentUserHolder.require();
+        return ApiResponse.ok(executeAction(taskId, request, currentUser), traceId(servletRequest));
     }
 
-    @PostMapping("/reviewers/me/submit-no-opinion")
-    @Operation(summary = "提交本人无评审意见", description = "当前流程节点的评审人员明确提交“无意见”，用于多人评审完成条件计算。人员分配及流程推进统一使用 POST /transitions。")
-    ApiResponse<Void> submitNoOpinion(@PathVariable long taskId, HttpServletRequest servletRequest) {
-        reviewerAssignmentService.submitNoOpinion(taskId, CurrentUserHolder.require());
-        return ApiResponse.ok(null, traceId(servletRequest));
+    /**
+     * 根据前端实际发起的业务动作选择对应参数组合。这里不计算目标状态，目标状态、权限和前置条件仍由应用服务统一校验。
+     */
+    private WorkflowApplicationService.WorkflowView executeAction(long taskId, TransitionRequest request, CurrentUser currentUser) {
+        return switch (request.action()) {
+            case SUBMIT_NO_OPINION -> submitNoOpinion(taskId, request, currentUser);
+            case START_PCB_MUTUAL_REVIEW, START_SCHEMATIC_MUTUAL_REVIEW -> assignMutualCheckReviewers(taskId, request, currentUser);
+            case START_SCHEMATIC_EXPERT_REVIEW -> assignSchematicExperts(taskId, request, currentUser);
+            case START_PCB_OPTIONAL_REVIEW -> startPcbProcessOrStructureReview(taskId, request, currentUser);
+            case FINISH -> finishTask(taskId, request, currentUser);
+            default -> advanceOrdinaryNode(taskId, request, currentUser);
+        };
     }
 
-    @GetMapping("/reviewers")
-    @Operation(summary = "查询当前阶段已分配人员", description = "按任务和评审职责查询仍有效的分配记录。分配人员请通过 POST /transitions 随对应流程动作提交。")
-    ApiResponse<List<ReviewerAssignmentService.ReviewerView>> listReviewers(@PathVariable long taskId,
-                                                                               @RequestParam @NotNull ReviewRole role,
-                                                                               HttpServletRequest servletRequest) {
-        return ApiResponse.ok(reviewerAssignmentService.listActive(taskId, role, CurrentUserHolder.require()), traceId(servletRequest));
+    private WorkflowApplicationService.WorkflowView assignMutualCheckReviewers(long taskId, TransitionRequest request, CurrentUser currentUser) {
+        return workflowApplicationService.transition(taskId, request.assignmentCommand(), currentUser);
+    }
+
+    private WorkflowApplicationService.WorkflowView submitNoOpinion(long taskId, TransitionRequest request, CurrentUser currentUser) {
+        return workflowApplicationService.transition(taskId, request.noOpinionCommand(), currentUser);
+    }
+
+    private WorkflowApplicationService.WorkflowView assignSchematicExperts(long taskId, TransitionRequest request, CurrentUser currentUser) {
+        return workflowApplicationService.transition(taskId, request.assignmentCommand(), currentUser);
+    }
+
+    private WorkflowApplicationService.WorkflowView startPcbProcessOrStructureReview(long taskId, TransitionRequest request, CurrentUser currentUser) {
+        return workflowApplicationService.transition(taskId, request.stageFileCommand(), currentUser);
+    }
+
+    private WorkflowApplicationService.WorkflowView finishTask(long taskId, TransitionRequest request, CurrentUser currentUser) {
+        return workflowApplicationService.transition(taskId, request.finishCommand(), currentUser);
+    }
+
+    private WorkflowApplicationService.WorkflowView advanceOrdinaryNode(long taskId, TransitionRequest request, CurrentUser currentUser) {
+        return workflowApplicationService.transition(taskId, request.ordinaryCommand(), currentUser);
+    }
+
+    @GetMapping("/assignable-reviewers")
+    @Operation(summary = "查询当前阶段可分配人员", description = "后端先按任务当前状态推导可分配的任务职责，再按白名单中该职责对应的员工工号查询启用用户账号。每组中的 reviewRole 直接作为 POST /transitions 的 assignedRole，人员的 userId 直接填入 reviewerIds。只有互检分配或原理图专家分配节点可调用。")
+    ApiResponse<List<WorkflowApplicationService.AssignableReviewerRoleView>> listAssignableReviewers(@PathVariable long taskId,
+                                                                                                         HttpServletRequest servletRequest) {
+        return ApiResponse.ok(workflowApplicationService.listAssignableReviewers(taskId, CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     private String traceId(HttpServletRequest request) {
@@ -72,15 +101,50 @@ public class WorkflowController {
     }
 
     @Schema(description = "任务流程推进请求")
-    record TransitionRequest(@Schema(description = "流程动作。PCB 可用 START_PCB_EXPERT_REVIEW、ENTER_PCB_DESIGNER_REPLY、START_PCB_OPTIONAL_REVIEW、ENTER_PCB_OPTIONAL_DESIGNER_REPLY、PREPARE_PCB_MUTUAL_ASSIGNMENT、START_PCB_MUTUAL_REVIEW、ENTER_PCB_MUTUAL_DESIGNER_REPLY、REQUEST_FINISH、FINISH；原理图可用 START_SCHEMATIC_MUTUAL_REVIEW、ENTER_SCHEMATIC_MUTUAL_DESIGNER_REPLY、PREPARE_SCHEMATIC_EXPERT_ASSIGNMENT、START_SCHEMATIC_EXPERT_REVIEW、ENTER_SCHEMATIC_DESIGNER_REPLY、REQUEST_FINISH、FINISH。每个动作仅可在说明中的前置状态调用。", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull WorkflowAction action,
+    record TransitionRequest(@Schema(description = "流程动作。评审人无意见提交：SUBMIT_NO_OPINION；分配互检组员：START_PCB_MUTUAL_REVIEW 或 START_SCHEMATIC_MUTUAL_REVIEW；分配原理图专家：START_SCHEMATIC_EXPERT_REVIEW；设计者上传工艺/结构文件后开启评审：START_PCB_OPTIONAL_REVIEW；管理员结束：FINISH。其他枚举仅用于无人员、无文件的常规节点推进。", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull WorkflowAction action,
                              @Schema(description = "流转意见或说明") String comment,
                              @Schema(description = "随本次动作分配的评审职责。仅 START_PCB_MUTUAL_REVIEW、START_SCHEMATIC_MUTUAL_REVIEW、START_SCHEMATIC_EXPERT_REVIEW 可传。") ReviewRole assignedRole,
                              @Schema(description = "随本次动作分配的评审人员用户 ID；需要分配人员的动作至少传一名，支持多人。") List<Long> reviewerIds,
                              @Schema(description = "已上传到公司资源服务的阶段文件。仅 START_PCB_OPTIONAL_REVIEW 可传 PROCESS_REVIEW 文件。") @Valid List<StageFileRequest> stageFiles) {
-        WorkflowApplicationService.TransitionCommand toCommand() {
+        WorkflowApplicationService.TransitionCommand assignmentCommand() {
+            if (stageFiles != null && !stageFiles.isEmpty()) {
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "分配评审人员时不能同时登记阶段文件");
+            }
+            return new WorkflowApplicationService.TransitionCommand(action, comment, assignedRole, reviewerIds, List.of());
+        }
+
+        WorkflowApplicationService.TransitionCommand stageFileCommand() {
+            if (assignedRole != null || (reviewerIds != null && !reviewerIds.isEmpty())) {
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "开启工艺或结构评审时不能同时分配评审人员");
+            }
+            return new WorkflowApplicationService.TransitionCommand(action, comment, null, List.of(), stageFileCommands());
+        }
+
+        WorkflowApplicationService.TransitionCommand finishCommand() {
+            requireNoExtraPayload("手动结束流程");
+            return new WorkflowApplicationService.TransitionCommand(action, comment, null, List.of(), List.of());
+        }
+
+        WorkflowApplicationService.TransitionCommand noOpinionCommand() {
+            requireNoExtraPayload("提交无意见");
+            return new WorkflowApplicationService.TransitionCommand(action, comment, null, List.of(), List.of());
+        }
+
+        WorkflowApplicationService.TransitionCommand ordinaryCommand() {
+            requireNoExtraPayload("常规节点推进");
+            return new WorkflowApplicationService.TransitionCommand(action, comment, null, List.of(), List.of());
+        }
+
+        private List<WorkflowApplicationService.StageFileCommand> stageFileCommands() {
             List<WorkflowApplicationService.StageFileCommand> files = stageFiles == null ? List.of() : stageFiles.stream()
                     .map(file -> new WorkflowApplicationService.StageFileCommand(file.scene(), file.companyFileId(), file.fileName(), file.fileSize(), file.md5(), file.fileKind())).toList();
-            return new WorkflowApplicationService.TransitionCommand(action, comment, assignedRole, reviewerIds, files);
+            return files;
+        }
+
+        private void requireNoExtraPayload(String actionName) {
+            if (assignedRole != null || (reviewerIds != null && !reviewerIds.isEmpty()) || (stageFiles != null && !stageFiles.isEmpty())) {
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, actionName + "不接收人员分配或阶段文件参数");
+            }
         }
     }
 

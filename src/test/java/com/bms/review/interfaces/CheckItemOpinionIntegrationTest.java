@@ -3,8 +3,6 @@ package com.bms.review.interfaces;
 import com.jayway.jsonpath.JsonPath;
 import com.bms.review.infrastructure.TaskReviewerMapper;
 import com.bms.review.infrastructure.TaskReviewerRecord;
-import com.bms.file.infrastructure.ReviewFileMapper;
-import com.bms.file.infrastructure.ReviewFileRecord;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
@@ -22,11 +20,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.nullValue;
 
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 验证互检固定检查项不合格时通过整单提交创建同源意见并关联附件，防止检查项问题与意见处理脱节。
+ * @description 验证互检固定检查项不合格时通过整单提交创建同源意见，防止检查项问题与意见处理脱节。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -37,15 +36,12 @@ class CheckItemOpinionIntegrationTest {
     private ReviewTaskMapper taskMapper;
     @Autowired
     private TaskReviewerMapper reviewerMapper;
-    @Autowired
-    private ReviewFileMapper fileMapper;
 
     @Test
-    void shouldCompleteFailedCheckItemWithOpinionAndAttachmentInOneBatchSubmission() throws Exception {
+    void shouldCompleteFailedCheckItemWithOpinionInOneBatchSubmission() throws Exception {
         long taskId = 8501L;
         taskMapper.insert(task(taskId));
         reviewerMapper.insert(reviewer(taskId));
-        fileMapper.insert(file(taskId));
 
         mockMvc.perform(post("/check-item-templates")
                         .header("X-Mock-User-Id", "1")
@@ -58,19 +54,30 @@ class CheckItemOpinionIntegrationTest {
                         .header("X-Mock-User-Id", "20")
                         .header("X-Mock-Roles", "HARDWARE_EXPERT"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].category.itemName").value("集成测试类别"))
+                .andExpect(jsonPath("$.data[0].items[0].opinion").value(nullValue()))
                 .andReturn().getResponse().getContentAsString();
-        long itemId = ((Number) JsonPath.read(itemsResponse, "$.data[0].id")).longValue();
+        long itemId = ((java.util.List<Number>) JsonPath.read(itemsResponse, "$.data[0].items[*].id")).get(0).longValue();
 
         mockMvc.perform(put("/tasks/{taskId}/check-items/batch", taskId)
                         .header("X-Mock-User-Id", "20")
                         .header("X-Mock-Roles", "HARDWARE_EXPERT")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"items\":[{\"itemId\":" + itemId + ",\"result\":\"FAIL\",\"comment\":\"线距不足\",\"richText\":\"线距不满足要求\",\"attachmentFileIds\":[8503]}]}"))
+                        .content("{\"items\":[{\"itemId\":" + itemId + ",\"result\":\"FAIL\",\"comment\":\"线距不足\",\"richText\":\"线距不满足要求\"}]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].result").value("FAIL"))
                 .andExpect(jsonPath("$.data[0].status").value("COMPLETED"))
-                .andExpect(jsonPath("$.data[0].linkedOpinionId").isNumber())
-                .andExpect(jsonPath("$.data[0].attachments[0].fileId").value(8503));
+                .andExpect(jsonPath("$.data[0].opinion.id").isNumber());
+
+        mockMvc.perform(get("/tasks/{taskId}/check-items", taskId)
+                        .header("X-Mock-User-Id", "20")
+                        .header("X-Mock-Roles", "HARDWARE_EXPERT"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].items[0].opinion.result").value("FAIL"))
+                .andExpect(jsonPath("$.data[0].items[0].opinion.comment").value("线距不足"))
+                .andExpect(jsonPath("$.data[0].items[0].opinion.richText").value("线距不满足要求"))
+                .andExpect(jsonPath("$.data[0].items[0].opinion.content").doesNotExist())
+                .andExpect(jsonPath("$.data[0].items[0].opinion.status").doesNotExist());
     }
 
     @Test
@@ -94,7 +101,23 @@ class CheckItemOpinionIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[?(@.category.id == " + categoryId + ")].items[0].itemName").value("模板树检查项"));
 
+        mockMvc.perform(put("/check-item-templates/items/{id}", itemId)
+                        .header("X-Mock-User-Id", "1")
+                        .header("X-Mock-Roles", "PCB_LEADER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"itemName\":\"已修改检查项\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(itemId))
+                .andExpect(jsonPath("$.data.itemName").value("已修改检查项"));
+
         mockMvc.perform(delete("/check-item-templates/{id}", itemId)
+                        .param("category", "CATEGORY")
+                        .header("X-Mock-User-Id", "1")
+                        .header("X-Mock-Roles", "PCB_LEADER"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(delete("/check-item-templates/{id}", itemId)
+                        .param("category", "ITEM")
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER"))
                 .andExpect(status().isOk());
@@ -104,9 +127,12 @@ class CheckItemOpinionIntegrationTest {
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[?(@.category.id == " + categoryId + ")].items[0].enabled").value(false));
+                .andExpect(jsonPath("$.data[?(@.category.id == " + categoryId + ")].items[0].enabled").doesNotExist())
+                .andExpect(jsonPath("$.data[?(@.category.id == " + categoryId + ")].items[0].reviewType").doesNotExist())
+                .andExpect(jsonPath("$.data[?(@.category.id == " + categoryId + ")].items[0].opinion").doesNotExist());
 
         mockMvc.perform(delete("/check-item-templates/{id}", categoryId)
+                        .param("category", "CATEGORY")
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER"))
                 .andExpect(status().isOk());
@@ -117,6 +143,18 @@ class CheckItemOpinionIntegrationTest {
                         .header("X-Mock-Roles", "PCB_LEADER"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[?(@.category.id == " + categoryId + ")].category.enabled").value(false));
+    }
+
+    @Test
+    void shouldCreateCategoryWithoutItems() throws Exception {
+        mockMvc.perform(post("/check-item-templates")
+                        .header("X-Mock-User-Id", "1")
+                        .header("X-Mock-Roles", "PCB_LEADER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reviewType\":\"PCB\",\"categoryName\":\"暂未配置子项的大类\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.category.itemName").value("暂未配置子项的大类"))
+                .andExpect(jsonPath("$.data.items").isEmpty());
     }
 
     private ReviewTaskRecord task(long taskId) {
@@ -147,18 +185,4 @@ class CheckItemOpinionIntegrationTest {
         return reviewer;
     }
 
-    private ReviewFileRecord file(long taskId) {
-        ReviewFileRecord file = new ReviewFileRecord();
-        file.setId(8503L);
-        file.setTaskId(taskId);
-        file.setFileCategory("PCB_SCHEMATIC");
-        file.setBusinessFileKey("check-image");
-        file.setFileName("check.png");
-        file.setFileSize(12L);
-        file.setMd5("check-attachment-md5");
-        file.setCompanyFileId("mock-check-file");
-        file.setLatest(true);
-        file.setUploadedBy(20L);
-        return file;
-    }
 }

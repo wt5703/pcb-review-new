@@ -11,6 +11,7 @@ import com.bms.identity.domain.Role;
 import com.bms.notification.infrastructure.OutboxEventMapper;
 import com.bms.review.application.TaskCheckItemApplicationService;
 import com.bms.review.application.ReviewerAssignmentService;
+import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.ReviewerProcessStatus;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.infrastructure.TaskReviewerMapper;
@@ -49,10 +50,11 @@ class WorkflowApplicationServiceTest {
     private final OutboxEventMapper outboxEventMapper = mock(OutboxEventMapper.class);
     private final TaskArchiveApplicationService taskArchiveApplicationService = mock(TaskArchiveApplicationService.class);
     private final ReviewerAssignmentService reviewerAssignmentService = mock(ReviewerAssignmentService.class);
+    private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService = mock(ReviewerWhitelistApplicationService.class);
     private final FileApplicationService fileApplicationService = mock(FileApplicationService.class);
     private final WorkflowApplicationService service = new WorkflowApplicationService(taskMapper, reviewerMapper, opinionMapper,
             fileMapper, checkItemApplicationService, flowMapper, auditMapper, outboxEventMapper, taskArchiveApplicationService,
-            reviewerAssignmentService, fileApplicationService);
+            reviewerAssignmentService, reviewerWhitelistApplicationService, fileApplicationService);
 
     @Test
     void shouldStartPcbExpertReviewForAuthorizedDesigner() {

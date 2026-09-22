@@ -6,6 +6,7 @@ package com.bms.workflow.domain;
  * @description 枚举任务流程域允许执行的状态推进动作；动作名称表达业务语义，避免在接口或应用服务中散落状态字符串。
  */
 public enum WorkflowAction {
+    SUBMIT_NO_OPINION,
     START_PCB_EXPERT_REVIEW,
     ENTER_PCB_DESIGNER_REPLY,
     START_PCB_OPTIONAL_REVIEW,

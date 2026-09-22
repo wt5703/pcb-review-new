@@ -1,6 +1,8 @@
 package com.bms.integration;
 
 import com.jayway.jsonpath.JsonPath;
+import com.bms.file.infrastructure.PendingFileUploadMapper;
+import com.bms.file.infrastructure.PendingFileUploadRecord;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -23,12 +25,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PcbHappyPathIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
+    @Autowired
+    private PendingFileUploadMapper pendingFileUploadMapper;
 
     @Test
     void shouldCompletePcbTaskFromCreationToImmutableArchive() throws Exception {
         long taskId = createAndSubmitTask();
 
-        transition(taskId, "START_PCB_EXPERT_REVIEW", 10L, "DESIGNER");
         submitNoOpinion(taskId, 10L, "DESIGNER");
 
         transition(taskId, "PREPARE_PCB_MUTUAL_ASSIGNMENT", 1L, "PCB_LEADER");
@@ -55,14 +58,19 @@ class PcbHappyPathIntegrationTest {
     }
 
     private long createAndSubmitTask() throws Exception {
+        String fileId = "c778c14e-6f1a-4f4f-9f11-100000000004";
+        PendingFileUploadRecord pending = new PendingFileUploadRecord();
+        pending.setFileId(fileId); pending.setFileCategory("TASK_CREATION"); pending.setFileName("BMS-P1.pcb"); pending.setFileFormat("pcb");
+        pending.setFileSize(8L); pending.setMd5("happy-path-md5"); pending.setResourcePath("company-pcb-p1"); pending.setUploadedBy(10L);
+        pendingFileUploadMapper.insert(pending);
         String taskRequest = """
-                {"reviewType":"PCB","taskName":"PCB 全链路验收","projectName":"BMS","designerId":10,"designName":"BMS-P1","pcbType":"BMU","initialFiles":[{"fileId":"company-pcb-p1","fileName":"BMS-P1.pcb","fileSize":8}]}
+                {"reviewType":"PCB","taskName":"PCB 全链路验收","projectName":"BMS","designerId":10,"designName":"BMS-P1","pcbType":"BMU","files":["c778c14e-6f1a-4f4f-9f11-100000000004"]}
                 """;
         MvcResult result = mockMvc.perform(post("/tasks/submit").contentType(MediaType.APPLICATION_JSON).content(taskRequest)
                         .header("X-Mock-User-Id", "10")
                         .header("X-Mock-Roles", "DESIGNER"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("PCB_PENDING_REVIEW"))
+                .andExpect(jsonPath("$.data.status").value("PCB_EXPERT_REVIEWING"))
                 .andReturn();
         return ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.data.id")).longValue();
     }
@@ -77,9 +85,11 @@ class PcbHappyPathIntegrationTest {
     }
 
     private void submitNoOpinion(long taskId, long userId, String role) throws Exception {
-        mockMvc.perform(post("/tasks/{taskId}/workflow/reviewers/me/submit-no-opinion", taskId)
+        mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-User-Id", String.valueOf(userId))
-                        .header("X-Mock-Roles", role))
+                        .header("X-Mock-Roles", role)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"action\":\"SUBMIT_NO_OPINION\"}"))
                 .andExpect(status().isOk());
     }
 

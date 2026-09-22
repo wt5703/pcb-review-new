@@ -121,7 +121,7 @@ class WorkflowControllerIntegrationTest {
         ReviewFileRecord file = new ReviewFileRecord();
         file.setId(8302L);
         file.setTaskId(taskId);
-        file.setFileCategory("PCB_SCHEMATIC");
+        file.setFileCategory("TASK_CREATION");
         file.setBusinessFileKey("pcb-design");
         file.setFileName("BMS.pcb");
         file.setFileSize(100L);
