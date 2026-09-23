@@ -14,6 +14,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -35,6 +36,12 @@ public class ReviewerWhitelistController {
 
     public ReviewerWhitelistController(ReviewerWhitelistApplicationService whitelistApplicationService) {
         this.whitelistApplicationService = whitelistApplicationService;
+    }
+
+    @GetMapping
+    @Operation(summary = "查询评审人员白名单", description = "返回当前启用白名单的姓名、工号、邮箱、手机号、评审角色、创建时间及主键。前端使用主键精确删除单一角色映射。")
+    ApiResponse<List<ReviewerWhitelistApplicationService.ReviewerWhitelistView>> list(HttpServletRequest servletRequest) {
+        return ApiResponse.ok(whitelistApplicationService.list(CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @PostMapping

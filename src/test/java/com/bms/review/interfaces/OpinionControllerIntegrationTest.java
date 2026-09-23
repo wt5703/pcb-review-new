@@ -94,7 +94,7 @@ class OpinionControllerIntegrationTest {
         task.setDesignerId(10L);
         task.setDesignName("BMS-P1");
         task.setPcbType("BMU");
-        task.setStatus(TaskStatus.MUTUAL_REVIEWING.name());
+        task.setStatus(TaskStatus.MUTUAL_CHECK_REVIEWING.name());
         task.setInitialFileIds("8602");
         task.setVersion(0L);
         return task;

@@ -10,20 +10,20 @@ INSERT INTO role_definition (role_code, role_name, role_description, enabled) VA
     ('PROCESS_EXPERT', '工艺专家', '负责工艺评审意见提出与确认。', TRUE),
     ('STRUCTURE_EXPERT', '结构专家', '负责结构评审意见提出与确认。', TRUE);
 
-INSERT INTO user_account (id, employee_no, display_name, email, department_name, enabled) VALUES
-    (1, 'BMS001', '王鹏飞', 'wang.pengfei@bms.example.com', 'BMS硬件部', TRUE),
-    (2, 'BMS002', '刘满红', 'liu.manhong@bms.example.com', 'BMS硬件部', TRUE),
-    (3, 'BMS003', '王腾飞', 'wang.tengfei@bms.example.com', 'BMS硬件部', TRUE),
-    (4, 'BMS004', '章俊', 'zhang.jun@bms.example.com', 'BMS硬件部', TRUE),
-    (5, 'BMS005', '陈远杰', 'chen.yuanjie@bms.example.com', 'BMS硬件部', TRUE),
-    (6, 'BMS006', '李少才', 'li.shaocai@bms.example.com', 'BMS硬件部', TRUE),
-    (7, 'BMS007', '李阳', 'li.yang@bms.example.com', 'BMS硬件部', TRUE),
-    (8, 'BMS008', '赵帅', 'zhao.shuai@bms.example.com', 'BMS硬件部', TRUE),
-    (9, 'BMS009', '张腾瑜', 'zhang.tengyu@bms.example.com', 'BMS硬件部', TRUE),
-    (10, 'BMS010', '王世科', 'wang.shike@bms.example.com', 'BMS硬件部', TRUE),
-    (11, 'BMS011', '郭哲', 'guo.zhe@bms.example.com', 'BMS硬件部', TRUE),
-    (12, 'BMS012', 'A设计师', 'designer.a@bms.example.com', 'BMS硬件部', TRUE),
-    (13, 'BMS013', 'B设计师', 'designer.b@bms.example.com', 'BMS硬件部', TRUE);
+INSERT INTO user_account (id, employee_no, display_name, email, mobile, department_name, enabled) VALUES
+    (1, 'BMS001', '王鹏飞', 'wang.pengfei@bms.example.com', '13800000001', 'BMS硬件部', TRUE),
+    (2, 'BMS002', '刘满红', 'liu.manhong@bms.example.com', '13800000002', 'BMS硬件部', TRUE),
+    (3, 'BMS003', '王腾飞', 'wang.tengfei@bms.example.com', '13800000003', 'BMS硬件部', TRUE),
+    (4, 'BMS004', '章俊', 'zhang.jun@bms.example.com', '13800000004', 'BMS硬件部', TRUE),
+    (5, 'BMS005', '陈远杰', 'chen.yuanjie@bms.example.com', '13800000005', 'BMS硬件部', TRUE),
+    (6, 'BMS006', '李少才', 'li.shaocai@bms.example.com', '13800000006', 'BMS硬件部', TRUE),
+    (7, 'BMS007', '李阳', 'li.yang@bms.example.com', '13800000007', 'BMS硬件部', TRUE),
+    (8, 'BMS008', '赵帅', 'zhao.shuai@bms.example.com', '13800000008', 'BMS硬件部', TRUE),
+    (9, 'BMS009', '张腾瑜', 'zhang.tengyu@bms.example.com', '13800000009', 'BMS硬件部', TRUE),
+    (10, 'BMS010', '王世科', 'wang.shike@bms.example.com', '13800000010', 'BMS硬件部', TRUE),
+    (11, 'BMS011', '郭哲', 'guo.zhe@bms.example.com', '13800000011', 'BMS硬件部', TRUE),
+    (12, 'BMS012', 'A设计师', 'designer.a@bms.example.com', '13800000012', 'BMS硬件部', TRUE),
+    (13, 'BMS013', 'B设计师', 'designer.b@bms.example.com', '13800000013', 'BMS硬件部', TRUE);
 
 INSERT INTO user_role (user_id, role_code) VALUES
     (1, 'HARDWARE_DEPARTMENT_MANAGER'),

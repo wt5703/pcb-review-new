@@ -48,7 +48,7 @@ class WorkflowControllerIntegrationTest {
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"action\":\"FINISH\",\"comment\":\"完成\"}"))
+                        .content("{\"actions\":[\"FINISH\"],\"comment\":\"完成\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.toStatus").value("FINISHED"));
 
@@ -62,16 +62,16 @@ class WorkflowControllerIntegrationTest {
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"action\":\"FINISH\"}"))
+                        .content("{\"actions\":[\"FINISH\"]}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TASK_STATUS_CONFLICT"));
     }
 
     @Test
-    void shouldRegisterCompanyProcessFileAndStartOptionalReviewInOneTransition() throws Exception {
+    void shouldRegisterCompanyFilesAndStartProcessAndStructureReviewInOneTransition() throws Exception {
         long taskId = 8303L;
         ReviewTaskRecord task = task(taskId);
-        task.setStatus(TaskStatus.PCB_DESIGNER_REPLYING.name());
+        task.setStatus(TaskStatus.PCB_EXPERT_REVIEWING.name());
         task.setReviewRoles("PROCESS_EXPERT");
         taskMapper.insert(task);
 
@@ -80,13 +80,15 @@ class WorkflowControllerIntegrationTest {
                         .header("X-Mock-Roles", "DESIGNER")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"action":"START_PCB_OPTIONAL_REVIEW","comment":"上传工艺图并开启评审",
-                                 "stageFiles":[{"scene":"PROCESS_REVIEW","companyFileId":"/bms/pcb/8303/process.zip","fileName":"工艺结构图.zip","fileSize":128}]}
+                                {"actions":["START_PCB_STRUCTURE_REVIEW","START_PCB_PROCESS_REVIEW"],"comment":"上传工艺图和结构图并开启评审",
+                                 "stageFiles":[
+                                   {"scene":"PROCESS_REVIEW","fileId":"/bms/pcb/8303/structure.zip","fileName":"结构图.zip","fileSize":128,"fileKind":"STRUCTURE"},
+                                   {"scene":"PROCESS_REVIEW","fileId":"/bms/pcb/8303/process.zip","fileName":"工艺图.zip","fileSize":256,"fileKind":"PROCESS"}
+                                 ]}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.toStatus").value("PCB_OPTIONAL_REVIEWING"))
-                .andExpect(jsonPath("$.data.stageFiles.length()").value(1))
-                .andExpect(jsonPath("$.data.stageFiles[0].category").value("PROCESS"));
+                .andExpect(jsonPath("$.data.toStatus").value("PCB_PROCESS_STRUCTURE_REVIEWING"))
+                .andExpect(jsonPath("$.data.stageFiles.length()").value(2));
     }
 
     private ReviewTaskRecord task(long taskId) {
@@ -98,7 +100,7 @@ class WorkflowControllerIntegrationTest {
         task.setDesignerId(10L);
         task.setDesignName("BMS-P1");
         task.setPcbType("BMU");
-        task.setStatus(TaskStatus.PENDING_FINISH_CONFIRMATION.name());
+        task.setStatus(TaskStatus.MUTUAL_CHECK_REVIEWING.name());
         task.setInitialFileIds("8302");
         task.setVersion(0L);
         return task;
@@ -126,7 +128,8 @@ class WorkflowControllerIntegrationTest {
         file.setFileName("BMS.pcb");
         file.setFileSize(100L);
         file.setMd5("workflow-md5");
-        file.setCompanyFileId("mock-8302");
+        file.setFileId("mock-file-8302");
+        file.setResourcePath("mock-8302");
         file.setLatest(true);
         file.setUploadedBy(10L);
         return file;

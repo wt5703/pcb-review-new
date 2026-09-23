@@ -174,12 +174,24 @@ public class OpinionApplicationService {
     }
 
     public List<OpinionView> list(long taskId, String severity, OpinionStatus status, OpinionSourceType sourceType, String scene, CurrentUser currentUser) {
+        return list(taskId, severity, status, sourceType, List.of(), scene, currentUser);
+    }
+
+    /**
+     * 支持一个阶段同时读取多个意见来源，例如 PCB 第二次设计者答复同时读取工艺、结构评审意见。
+     * sourceTypes 有值时优先于兼容参数 sourceType。
+     */
+    public List<OpinionView> list(long taskId, String severity, OpinionStatus status, OpinionSourceType sourceType,
+                                  List<OpinionSourceType> sourceTypes, String scene, CurrentUser currentUser) {
         requireOpenOrFinishedTaskVisible(taskId, currentUser);
         boolean reviewWorkspace = "REVIEW_WORKSPACE".equalsIgnoreCase(scene);
+        List<OpinionSourceType> normalizedSourceTypes = sourceTypes == null ? List.of() : sourceTypes.stream().distinct().toList();
         return opinionMapper.findByTaskId(taskId).stream()
                 .filter(item -> severity == null || severity.isBlank() || severity.trim().equalsIgnoreCase(item.getSeverity()))
                 .filter(item -> status == null || status.name().equals(item.getStatus()))
-                .filter(item -> sourceType == null || sourceType.name().equals(item.getSourceType()))
+                .filter(item -> normalizedSourceTypes.isEmpty()
+                        ? sourceType == null || sourceType.name().equals(item.getSourceType())
+                        : normalizedSourceTypes.stream().anyMatch(source -> source.name().equals(item.getSourceType())))
                 .filter(item -> !reviewWorkspace || currentUser.id().equals(item.getRaisedBy()))
                 .sorted(java.util.Comparator.comparing(ReviewOpinionRecord::getCreatedAt, java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder()))
                         .thenComparing(ReviewOpinionRecord::getId, java.util.Comparator.reverseOrder()))
@@ -193,12 +205,18 @@ public class OpinionApplicationService {
      */
     public OpinionPage listPage(long taskId, String severity, OpinionStatus status, OpinionSourceType sourceType, String scene,
                                 Integer pageNo, Integer pageSize, CurrentUser currentUser) {
+        return listPage(taskId, severity, status, sourceType, List.of(), scene, pageNo, pageSize, currentUser);
+    }
+
+    public OpinionPage listPage(long taskId, String severity, OpinionStatus status, OpinionSourceType sourceType,
+                                List<OpinionSourceType> sourceTypes, String scene, Integer pageNo, Integer pageSize,
+                                CurrentUser currentUser) {
         int normalizedPageNo = pageNo == null ? 1 : pageNo;
         int normalizedPageSize = pageSize == null ? 20 : pageSize;
         if (normalizedPageNo < 1 || normalizedPageSize < 1 || normalizedPageSize > 100) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "意见分页参数不合法");
         }
-        List<OpinionView> all = list(taskId, severity, status, sourceType, scene, currentUser);
+        List<OpinionView> all = list(taskId, severity, status, sourceType, sourceTypes, scene, currentUser);
         int fromIndex = Math.min((normalizedPageNo - 1) * normalizedPageSize, all.size());
         int toIndex = Math.min(fromIndex + normalizedPageSize, all.size());
         return new OpinionPage(all.size(), normalizedPageNo, normalizedPageSize, all.subList(fromIndex, toIndex));
@@ -207,7 +225,11 @@ public class OpinionApplicationService {
     public List<OpinionView> list(long taskId, CurrentUser currentUser) { return list(taskId, null, null, null, "DESIGNER_REPLY", currentUser); }
 
     public OpinionSummary summary(long taskId, CurrentUser currentUser) {
-        List<OpinionView> opinions = list(taskId, currentUser);
+        return summary(taskId, List.of(), currentUser);
+    }
+
+    public OpinionSummary summary(long taskId, List<OpinionSourceType> sourceTypes, CurrentUser currentUser) {
+        List<OpinionView> opinions = list(taskId, null, null, null, sourceTypes, "DESIGNER_REPLY", currentUser);
         return new OpinionSummary(opinions.size(), count(opinions, OpinionStatus.PENDING_REPLY), count(opinions, OpinionStatus.PENDING_CONFIRMATION),
                 count(opinions, OpinionStatus.CONFIRMED_PASS), count(opinions, OpinionStatus.CONFIRMED_REJECTED), count(opinions, OpinionStatus.WITHDRAWN),
                 opinions.stream().filter(item -> item.status() == OpinionStatus.PENDING_CONFIRMATION || item.status() == OpinionStatus.CONFIRMED_REJECTED)

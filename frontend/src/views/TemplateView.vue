@@ -76,10 +76,10 @@ async function save(): Promise<void> {
       await reviewApi.createTemplate({ reviewType: reviewType.value, categoryName, items: items.map(({ itemName }) => ({ itemName })) })
       message.value = '互检类别已创建。'
     } else if (editorMode.value === 'edit-item' && activeItem.value?.id) {
-      await reviewApi.updateTemplateItem(activeItem.value.id, activeItem.value.itemName.trim())
+      await reviewApi.updateTemplate({ itemId: activeItem.value.id, itemName: activeItem.value.itemName.trim() })
       message.value = '检查项已保存。'
     } else if (editingId.value) {
-      await reviewApi.updateTemplate({ categoryId: editingId.value, categoryName, items: items.map(({ id, itemName }) => ({ itemId: id, itemName })) })
+      await reviewApi.updateTemplate({ itemId: editingId.value, itemName: categoryName, items: items.map(({ id, itemName }) => ({ itemId: id, itemName })) })
       message.value = editorMode.value === 'edit-item' ? '检查项已保存。' : '类别及检查项已更新。'
     }
     await load()
@@ -89,12 +89,13 @@ async function save(): Promise<void> {
   } finally { saving.value = false }
 }
 
-async function removeTemplate(id: number, name: string, category = false): Promise<void> {
-  const target = category ? `“${name}”及其检查项` : `检查项“${name}”`
+async function removeTemplate(id: number, name: string, category: 'CATEGORY' | 'ITEM'): Promise<void> {
+  const isCategory = category === 'CATEGORY'
+  const target = isCategory ? `“${name}”及其检查项` : `检查项“${name}”`
   if (!window.confirm(`确认删除${target}吗？已创建任务不会被删除。`)) return
   try {
-    await reviewApi.deleteTemplate(id, category ? 'CATEGORY' : 'ITEM')
-    message.value = category ? '类别已删除。' : '检查项已删除。'
+    await reviewApi.disableCheckItemTemplate(id, category)
+    message.value = isCategory ? '类别已删除。' : '检查项已删除。'
     if (editingGroupId.value === id || activeItem.value?.id === id) closeEditor()
     await load()
   } catch (cause) { error.value = cause instanceof Error ? cause.message : '删除失败' }
@@ -148,7 +149,7 @@ onMounted(load)
         <article v-for="group in categories" :key="group.category.id" class="template-group">
           <header class="group-header">
             <div><span class="category-badge">类别</span><b>{{ group.category.itemName }}</b><small>{{ group.items.length }} 个检查项</small></div>
-            <div class="group-actions"><button class="btn compact" @click="openCategoryEditor(group)">编辑类别</button><button class="btn compact danger" @click="removeTemplate(group.category.id, group.category.itemName, true)">删除</button></div>
+            <div class="group-actions"><button class="btn compact" @click="openCategoryEditor(group)">编辑类别</button><button class="btn compact danger" @click="removeTemplate(group.category.id, group.category.itemName, 'CATEGORY')">删除</button></div>
           </header>
 
           <form v-if="editorMode === 'edit-category' && editingGroupId === group.category.id" class="category-editor inner-editor" @submit.prevent="save">
@@ -161,7 +162,7 @@ onMounted(load)
             <div class="template-item"><span>{{ index + 1 }}</span><b>{{ item.itemName }}</b><button class="text-link" @click="openItemEditor(group, item.id)">编辑检查项</button></div>
             <form v-if="editorMode === 'edit-item' && editingGroupId === group.category.id && activeItem?.id === item.id" class="item-editor" @submit.prevent="save">
               <div class="editor-title"><h3>编辑检查项</h3><button class="btn compact" type="button" @click="closeEditor">取消</button></div>
-              <label>检查项 *<div class="item-input-row"><input v-model="activeItem.itemName" required /><button class="btn compact danger" type="button" @click="removeTemplate(item.id, item.itemName)">删除</button></div></label>
+              <label>检查项 *<div class="item-input-row"><input v-model="activeItem.itemName" required /><button class="btn compact danger" type="button" @click="removeTemplate(item.id, item.itemName, 'ITEM')">删除</button></div></label>
               <footer><button class="btn primary compact" :disabled="saving" type="submit">{{ saving ? '保存中…' : '保存检查项' }}</button></footer>
             </form>
           </template>

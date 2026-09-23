@@ -18,33 +18,37 @@ public interface CheckItemTemplateMapper {
     @Select("SELECT COALESCE(MAX(id), 0) + 1 FROM check_item_template")
     long nextId();
 
-    @Insert("INSERT INTO check_item_template (id, review_type, item_key, parent_item_key, item_name, sort_no, enabled, version) "
-            + "VALUES (#{id}, #{reviewType}, #{itemKey}, #{parentItemKey}, #{itemName}, #{sortNo}, #{enabled}, #{version})")
+    @Insert("INSERT INTO check_item_template (id, review_type, parent_id, item_name, sort_no, enabled, version) "
+            + "VALUES (#{id}, #{reviewType}, #{parentId}, #{itemName}, #{sortNo}, #{enabled}, #{version})")
     int insert(CheckItemTemplateRecord record);
 
-    @Select("SELECT id, review_type AS reviewType, item_key AS itemKey, parent_item_key AS parentItemKey, item_name AS itemName, "
+    @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, "
             + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE review_type=#{reviewType} AND enabled=TRUE ORDER BY sort_no, id")
     List<CheckItemTemplateRecord> findEnabledByReviewType(String reviewType);
 
-    @Select("SELECT id, review_type AS reviewType, item_key AS itemKey, parent_item_key AS parentItemKey, item_name AS itemName, "
+    @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, "
             + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE (#{reviewType} IS NULL OR review_type=#{reviewType}) ORDER BY review_type, sort_no, id")
     List<CheckItemTemplateRecord> findAll(String reviewType);
 
-    @Select("SELECT id, review_type AS reviewType, item_key AS itemKey, parent_item_key AS parentItemKey, item_name AS itemName, "
+    @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, "
             + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE id=#{id}")
     CheckItemTemplateRecord findById(long id);
 
-    @Select("SELECT id, review_type AS reviewType, item_key AS itemKey, parent_item_key AS parentItemKey, item_name AS itemName, "
-            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE review_type=#{reviewType} AND item_key=#{itemKey}")
-    CheckItemTemplateRecord findByReviewTypeAndItemKey(String reviewType, String itemKey);
+    @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, "
+            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE review_type=#{reviewType} AND parent_id IS NULL AND item_name=#{itemName} LIMIT 1")
+    CheckItemTemplateRecord findCategoryByReviewTypeAndName(String reviewType, String itemName);
 
-    @Update("UPDATE check_item_template SET item_key=#{itemKey}, parent_item_key=#{parentItemKey}, item_name=#{itemName}, sort_no=#{sortNo}, "
-            + "enabled=#{enabled}, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=#{id} AND version=#{version}")
+    @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, "
+            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE parent_id=#{parentId} AND item_name=#{itemName} LIMIT 1")
+    CheckItemTemplateRecord findChildByParentIdAndName(long parentId, String itemName);
+
+    @Update("UPDATE check_item_template SET parent_id=#{parentId}, item_name=#{itemName}, sort_no=#{sortNo}, "
+            + "enabled=#{enabled}, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=#{id}")
     int update(CheckItemTemplateRecord record);
 
     @Update("UPDATE check_item_template SET enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 "
-            + "WHERE review_type=#{reviewType} AND parent_item_key=#{parentItemKey}")
-    int disableChildrenByParentItemKey(@Param("reviewType") String reviewType, @Param("parentItemKey") String parentItemKey);
+            + "WHERE parent_id=#{parentId}")
+    int disableChildrenByParentId(@Param("parentId") long parentId);
 
     @Update("UPDATE check_item_template SET enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=#{id}")
     int disableById(long id);

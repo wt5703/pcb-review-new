@@ -35,8 +35,9 @@ public interface ReviewerWhitelistMapper {
     @Update("UPDATE reviewer_whitelist SET deleted=TRUE, deleted_by=#{operatorId}, deleted_at=CURRENT_TIMESTAMP WHERE employee_no=#{employeeNo} AND deleted=FALSE")
     int logicDeleteByEmployeeNo(@Param("employeeNo") String employeeNo, @Param("operatorId") long operatorId);
 
-    @Select("SELECT id, review_role AS reviewRole, employee_no AS employeeNo, created_by AS createdBy, created_at AS createdAt, deleted, deleted_by AS deletedBy, deleted_at AS deletedAt "
-            + "FROM reviewer_whitelist WHERE deleted=FALSE ORDER BY review_role, employee_no")
+    @Select("SELECT rw.id, rw.review_role AS reviewRole, rw.employee_no AS employeeNo, rw.created_by AS createdBy, rw.created_at AS createdAt, rw.deleted, rw.deleted_by AS deletedBy, rw.deleted_at AS deletedAt, "
+            + "ua.display_name AS displayName, ua.email, ua.mobile FROM reviewer_whitelist rw "
+            + "LEFT JOIN user_account ua ON ua.employee_no=rw.employee_no WHERE rw.deleted=FALSE ORDER BY rw.review_role, rw.employee_no")
     List<ReviewerWhitelistRecord> findAll();
 
     /**

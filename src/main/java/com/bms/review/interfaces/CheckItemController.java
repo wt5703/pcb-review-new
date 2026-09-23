@@ -37,7 +37,7 @@ public class CheckItemController {
     }
 
     @GetMapping
-    @Operation(summary = "查询任务互检检查项", description = "返回 [{ category, items }] 分组结构：category 是检查大类，items 是其子检查项。items 仅返回 id、itemName、sortNo 和可空 opinion；检查结论、文字意见和富文本只在 opinion.result、opinion.comment、opinion.richText 中返回。opinion 不返回 content、status；接口不返回 parentItemKey、version 等模板字段。")
+    @Operation(summary = "查询任务互检检查项", description = "返回 [{ category, items }] 分组结构：category 是检查大类，items 是其子检查项。items 仅返回 id、itemName、sortNo 和可空 opinion；检查结论、文字意见和富文本只在 opinion.result、opinion.comment、opinion.richText 中返回。opinion 不返回 content、status；接口不返回模板内部编码、version 等字段。")
     ApiResponse<List<TaskCheckItemApplicationService.CheckItemCategoryView>> list(@PathVariable long taskId,
                                                                                     HttpServletRequest servletRequest) {
         return ApiResponse.ok(taskCheckItemApplicationService.list(taskId, CurrentUserHolder.require()), traceId(servletRequest));

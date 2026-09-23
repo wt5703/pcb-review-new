@@ -67,21 +67,17 @@ public class MyTaskApplicationService {
     private void addManagementAction(ReviewTaskRecord task, CurrentUser currentUser, EnumSet<MyTaskAction> actions) {
         TaskStatus status = TaskStatus.valueOf(task.getStatus());
         ReviewType type = ReviewType.valueOf(task.getReviewType());
-        boolean isDesigner = task.getDesignerId().equals(currentUser.id());
-        if (isDesigner && type == ReviewType.PCB && status == TaskStatus.PCB_PENDING_REVIEW
-                && permissionPolicy.has(currentUser.roles(), Permission.ASSIGN_PCB_EXPERT)) {
-            actions.add(MyTaskAction.ASSIGN_REVIEWERS);
-        }
-        if (type == ReviewType.PCB && status == TaskStatus.PENDING_MUTUAL_ASSIGNMENT
+        if (type == ReviewType.PCB && status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT
                 && permissionPolicy.has(currentUser.roles(), Permission.ASSIGN_PCB_MUTUAL_CHECK)) {
             actions.add(MyTaskAction.ASSIGN_REVIEWERS);
         }
-        if (type == ReviewType.SCHEMATIC && (status == TaskStatus.SCHEMATIC_PENDING_MUTUAL_ASSIGNMENT || status == TaskStatus.SCHEMATIC_PENDING_REVIEW)
+        if (type == ReviewType.SCHEMATIC && (status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT || status == TaskStatus.SCHEMATIC_PENDING_HARDWARE_EXPERT_ASSIGNMENT)
                 && (permissionPolicy.has(currentUser.roles(), Permission.ASSIGN_SCHEMATIC_MUTUAL_CHECK)
                 || permissionPolicy.has(currentUser.roles(), Permission.ASSIGN_SCHEMATIC_HARDWARE_EXPERT))) {
             actions.add(MyTaskAction.ASSIGN_REVIEWERS);
         }
-        if (status == TaskStatus.PENDING_FINISH_CONFIRMATION
+        if (((type == ReviewType.PCB && status == TaskStatus.MUTUAL_CHECK_REVIEWING)
+                || (type == ReviewType.SCHEMATIC && status == TaskStatus.SCHEMATIC_REVIEWING))
                 && permissionPolicy.has(currentUser.roles(), type == ReviewType.PCB ? Permission.FINISH_PCB_TASK : Permission.FINISH_SCHEMATIC_TASK)) {
             actions.add(MyTaskAction.FINISH_TASK);
         }

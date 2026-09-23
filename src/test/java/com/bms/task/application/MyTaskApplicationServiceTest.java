@@ -31,7 +31,7 @@ class MyTaskApplicationServiceTest {
 
     @Test
     void shouldOnlyReturnTaskRequiringCurrentReviewerAction() {
-        when(taskMapper.findAll()).thenReturn(List.of(task(1L, 10L, TaskStatus.PCB_PENDING_REVIEW), task(2L, 10L, TaskStatus.MUTUAL_REVIEWING)));
+        when(taskMapper.findAll()).thenReturn(List.of(task(1L, 10L, TaskStatus.PCB_EXPERT_REVIEWING), task(2L, 10L, TaskStatus.MUTUAL_CHECK_REVIEWING)));
         when(assignmentAccessMapper.isCurrentTaskProcessor(1L, 88L)).thenReturn(false);
         when(assignmentAccessMapper.isCurrentTaskProcessor(2L, 88L)).thenReturn(true);
 
@@ -44,7 +44,7 @@ class MyTaskApplicationServiceTest {
 
     @Test
     void shouldIncludeDesignerReplyAndLeaderFinishActions() {
-        when(taskMapper.findAll()).thenReturn(List.of(task(1L, 10L, TaskStatus.MUTUAL_REVIEWING), task(2L, 99L, TaskStatus.PENDING_FINISH_CONFIRMATION)));
+        when(taskMapper.findAll()).thenReturn(List.of(task(1L, 10L, TaskStatus.MUTUAL_CHECK_REVIEWING), task(2L, 99L, TaskStatus.MUTUAL_CHECK_REVIEWING)));
         when(opinionMapper.findPendingReplyTaskIdsForDesigner(10L)).thenReturn(List.of(1L));
 
         List<MyTaskApplicationService.MyTaskView> designerTasks = service.list(new CurrentUser(10L, Set.of(Role.DESIGNER)));

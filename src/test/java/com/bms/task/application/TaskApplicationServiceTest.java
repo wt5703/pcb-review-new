@@ -72,8 +72,8 @@ class TaskApplicationServiceTest {
     void shouldFilterAndPageVisibleTasks() {
         when(taskMapper.findAll()).thenReturn(List.of(
                 record(1L, "BMS PCB评审", TaskStatus.DRAFT, 0L),
-                record(2L, "VCU原理图评审", TaskStatus.SCHEMATIC_PENDING_MUTUAL_ASSIGNMENT, 0L),
-                record(3L, "BMS第二轮评审", TaskStatus.PCB_PENDING_REVIEW, 0L)));
+                record(2L, "VCU原理图评审", TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT, 0L),
+                record(3L, "BMS第二轮评审", TaskStatus.PCB_EXPERT_REVIEWING, 0L)));
 
         TaskApplicationService.TaskPage page = service.list(new TaskApplicationService.TaskQuery(
                 "BMS", null, null, null, 1, 1), new CurrentUser(1L, Set.of(Role.HARDWARE_DEPARTMENT_MANAGER)));
@@ -86,7 +86,7 @@ class TaskApplicationServiceTest {
     void shouldOnlyReturnAssignedTasksToProcessExpert() {
         when(taskMapper.findAll()).thenReturn(List.of(
                 record(1L, "BMS PCB评审", TaskStatus.DRAFT, 0L),
-                record(2L, "VCU原理图评审", TaskStatus.SCHEMATIC_PENDING_MUTUAL_ASSIGNMENT, 0L)));
+                record(2L, "VCU原理图评审", TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT, 0L)));
         when(taskAssignmentAccessMapper.isAssignedToTask(1L, 88L)).thenReturn(false);
         when(taskAssignmentAccessMapper.isAssignedToTask(2L, 88L)).thenReturn(true);
 

@@ -77,7 +77,7 @@ class ReviewerAssignmentServiceTest {
         task.setId(1001L);
         task.setReviewType(ReviewType.PCB.name());
         task.setDesignerId(10L);
-        task.setStatus(TaskStatus.PENDING_MUTUAL_ASSIGNMENT.name());
+        task.setStatus(TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT.name());
         return task;
     }
 }

@@ -5,7 +5,7 @@ import TaskCreateView from '@/views/TaskCreateView.vue'
 import TaskDetailView from '@/views/TaskDetailView.vue'
 import TaskListView from '@/views/TaskListView.vue'
 import TemplateView from '@/views/TemplateView.vue'
-import UnsupportedView from '@/views/UnsupportedView.vue'
+import ReviewerWhitelistView from '@/views/ReviewerWhitelistView.vue'
 
 export default createRouter({
   history: createWebHistory(),
@@ -17,8 +17,7 @@ export default createRouter({
     { path: '/tasks/:taskId', name: 'task-detail', component: TaskDetailView, props: true, meta: { title: '任务详情' } },
     { path: '/my-tasks', name: 'my-tasks', component: MyTasksView, meta: { title: '我的任务' } },
     { path: '/templates', name: 'templates', component: TemplateView, meta: { title: '互检管理' } },
-    { path: '/emails', name: 'emails', component: UnsupportedView, props: { title: '邮件记录', capability: '全局邮件记录查询' } },
-    { path: '/users', name: 'users', component: UnsupportedView, props: { title: '用户管理', capability: '用户目录管理' } },
+    { path: '/reviewer-whitelists', name: 'reviewer-whitelists', component: ReviewerWhitelistView, meta: { title: '评审白名单管理' } },
     { path: '/:pathMatch(.*)*', redirect: '/' }
   ]
 })

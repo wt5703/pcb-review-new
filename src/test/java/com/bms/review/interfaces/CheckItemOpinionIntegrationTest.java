@@ -101,14 +101,14 @@ class CheckItemOpinionIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[?(@.category.id == " + categoryId + ")].items[0].itemName").value("模板树检查项"));
 
-        mockMvc.perform(put("/check-item-templates/items/{id}", itemId)
+        mockMvc.perform(put("/check-item-templates")
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"itemName\":\"已修改检查项\"}"))
+                        .content("{\"itemId\":" + itemId + ",\"itemName\":\"已修改检查项\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.id").value(itemId))
-                .andExpect(jsonPath("$.data.itemName").value("已修改检查项"));
+                .andExpect(jsonPath("$.data.item.id").value(itemId))
+                .andExpect(jsonPath("$.data.item.itemName").value("已修改检查项"));
 
         mockMvc.perform(delete("/check-item-templates/{id}", itemId)
                         .param("category", "CATEGORY")
@@ -166,7 +166,7 @@ class CheckItemOpinionIntegrationTest {
         task.setDesignerId(10L);
         task.setDesignName("BMS-P1");
         task.setPcbType("BMU");
-        task.setStatus(TaskStatus.MUTUAL_REVIEWING.name());
+        task.setStatus(TaskStatus.MUTUAL_CHECK_REVIEWING.name());
         task.setInitialFileIds("8503");
         task.setVersion(0L);
         return task;

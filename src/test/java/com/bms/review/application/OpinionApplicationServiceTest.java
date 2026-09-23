@@ -152,7 +152,7 @@ class OpinionApplicationServiceTest {
         task.setId(1001L);
         task.setReviewType(ReviewType.PCB.name());
         task.setDesignerId(designerId);
-        task.setStatus(TaskStatus.MUTUAL_REVIEWING.name());
+        task.setStatus(TaskStatus.MUTUAL_CHECK_REVIEWING.name());
         return task;
     }
 

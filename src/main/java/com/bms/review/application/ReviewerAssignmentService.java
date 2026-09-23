@@ -139,17 +139,15 @@ public class ReviewerAssignmentService {
         TaskStatus status = TaskStatus.valueOf(task.getStatus());
         ReviewType type = ReviewType.valueOf(task.getReviewType());
         return switch (role) {
-            case HARDWARE_EXPERT, EMC_EXPERT, PCB_EXPERT -> type == ReviewType.PCB && (status == TaskStatus.PCB_PENDING_REVIEW
-                    || reassign && status == TaskStatus.PCB_EXPERT_REVIEWING);
+            case HARDWARE_EXPERT, EMC_EXPERT, PCB_EXPERT -> type == ReviewType.PCB && status == TaskStatus.PCB_EXPERT_REVIEWING;
             case PROCESS_EXPERT, STRUCTURE_EXPERT -> type == ReviewType.PCB && (status == TaskStatus.PCB_EXPERT_REVIEWING
-                    || reassign && status == TaskStatus.PCB_OPTIONAL_REVIEWING);
-            case PCB_MUTUAL_CHECK -> type == ReviewType.PCB && (status == TaskStatus.PENDING_MUTUAL_ASSIGNMENT
-                    || reassign && status == TaskStatus.MUTUAL_REVIEWING);
-            case SCHEMATIC_MUTUAL_CHECK -> type == ReviewType.SCHEMATIC && (status == TaskStatus.SCHEMATIC_PENDING_LEADER_ASSIGNMENT
-                    || status == TaskStatus.SCHEMATIC_PENDING_MUTUAL_ASSIGNMENT
-                    || reassign && status == TaskStatus.MUTUAL_REVIEWING);
+                    || reassign && status == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
+            case PCB_MUTUAL_CHECK -> type == ReviewType.PCB && (status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT
+                    || reassign && status == TaskStatus.MUTUAL_CHECK_REVIEWING);
+            case SCHEMATIC_MUTUAL_CHECK -> type == ReviewType.SCHEMATIC && (status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT
+                    || reassign && status == TaskStatus.MUTUAL_CHECK_REVIEWING);
             case SCHEMATIC_HARDWARE_EXPERT, SCHEMATIC_OTHER_EXPERT -> type == ReviewType.SCHEMATIC
-                    && (status == TaskStatus.SCHEMATIC_PENDING_REVIEW || reassign && status == TaskStatus.HARDWARE_REVIEWING);
+                    && (status == TaskStatus.SCHEMATIC_PENDING_HARDWARE_EXPERT_ASSIGNMENT || reassign && status == TaskStatus.SCHEMATIC_REVIEWING);
             case SCHEMATIC_LEADER -> false;
         };
     }

@@ -16,6 +16,9 @@ public class ReviewerWhitelistRecord {
     private Boolean deleted;
     private Long deletedBy;
     private LocalDateTime deletedAt;
+    private String displayName;
+    private String email;
+    private String mobile;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -33,4 +36,10 @@ public class ReviewerWhitelistRecord {
     public void setDeletedBy(Long deletedBy) { this.deletedBy = deletedBy; }
     public LocalDateTime getDeletedAt() { return deletedAt; }
     public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
+    public String getDisplayName() { return displayName; }
+    public void setDisplayName(String displayName) { this.displayName = displayName; }
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+    public String getMobile() { return mobile; }
+    public void setMobile(String mobile) { this.mobile = mobile; }
 }

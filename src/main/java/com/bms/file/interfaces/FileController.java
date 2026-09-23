@@ -35,18 +35,18 @@ public class FileController {
     }
 
     @PostMapping(value = "/files/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "上传文件", description = "前端仅传 file、可选 taskId 和必填 fileCategory。后端从环境配置读取基础目录并追加 UUID，调用公司资源服务 /upload。没有 taskId 时仅允许 TASK_CREATION，后端保存临时文件元数据并返回 UUID；创建或保存任务时将多个 UUID 放入 files。")
+    @Operation(summary = "上传文件", description = "前端仅传 file、可选 taskId 和必填 fileCategory。后端从环境配置读取基础目录并追加 UUID，调用公司资源服务 /upload。没有 taskId 时仅允许 TASK_CREATION；上传记录统一写入 review_file，taskId 为空表示待任务保存或提交时绑定。")
     ApiResponse<UploadFileView> upload(@RequestPart("file") MultipartFile multipartFile,
                                        @RequestParam(required = false) Long taskId,
                                        @RequestParam @NotNull @Schema(description = "任务创建=TASK_CREATION PCB评审=PCB_REVIEW 原理图评审=SCHEMATIC_REVIEW 互检单评审=MUTUAL_CHECK_REVIEW 工艺评审=PROCESS_REVIEW 结构评审=STRUCTURE_REVIEW", requiredMode = Schema.RequiredMode.REQUIRED) FileCategory fileCategory,
                                        HttpServletRequest servletRequest) {
         if (taskId == null) {
-            FileApplicationService.PendingUploadView uploaded = fileApplicationService.uploadPendingInitialFile(multipartFile, fileCategory,
+            FileApplicationService.UploadedFileView uploaded = fileApplicationService.uploadPendingInitialFile(multipartFile, fileCategory,
                     CurrentUserHolder.require());
-            return ApiResponse.ok(new UploadFileView(uploaded.fileId(), null, uploaded.fileName(), uploaded.fileSize(), uploaded.fileCategory()), traceId(servletRequest));
+            return ApiResponse.ok(new UploadFileView(uploaded.fileId(), uploaded.taskFileId(), uploaded.fileName(), uploaded.fileSize(), uploaded.fileCategory()), traceId(servletRequest));
         }
         FileApplicationService.FileView storedFile = fileApplicationService.uploadAndRegister(taskId, fileCategory, multipartFile, CurrentUserHolder.require());
-        return ApiResponse.ok(new UploadFileView(String.valueOf(storedFile.id()), storedFile.id(), storedFile.fileName(), storedFile.fileSize(), storedFile.category()), traceId(servletRequest));
+        return ApiResponse.ok(new UploadFileView(storedFile.fileId(), storedFile.id(), storedFile.fileName(), storedFile.fileSize(), storedFile.category()), traceId(servletRequest));
     }
 
     @GetMapping("/files/latest")

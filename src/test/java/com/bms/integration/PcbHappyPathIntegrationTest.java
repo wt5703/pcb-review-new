@@ -1,8 +1,8 @@
 package com.bms.integration;
 
 import com.jayway.jsonpath.JsonPath;
-import com.bms.file.infrastructure.PendingFileUploadMapper;
-import com.bms.file.infrastructure.PendingFileUploadRecord;
+import com.bms.file.infrastructure.ReviewFileMapper;
+import com.bms.file.infrastructure.ReviewFileRecord;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -26,19 +26,17 @@ class PcbHappyPathIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
     @Autowired
-    private PendingFileUploadMapper pendingFileUploadMapper;
+    private ReviewFileMapper reviewFileMapper;
 
     @Test
     void shouldCompletePcbTaskFromCreationToImmutableArchive() throws Exception {
         long taskId = createAndSubmitTask();
+        registerLatestPcbFile(taskId);
 
-        submitNoOpinion(taskId, 10L, "DESIGNER");
+        transition(taskId, "START_PCB_MATUAL_ASSIGNMENT", 10L, "DESIGNER");
+        assignAndTransition(taskId, "START_PCB_MATUAL_REVIEW", "PCB_MUTUAL_CHECK", 21L, 1L, "PCB_LEADER");
 
-        transition(taskId, "PREPARE_PCB_MUTUAL_ASSIGNMENT", 1L, "PCB_LEADER");
-        assignAndTransition(taskId, "START_PCB_MUTUAL_REVIEW", "PCB_MUTUAL_CHECK", 21L, 1L, "PCB_LEADER");
-        submitNoOpinion(taskId, 21L, "HARDWARE_EXPERT");
-
-        transition(taskId, "REQUEST_FINISH", 1L, "PCB_LEADER");
+        transition(taskId, "PREPARE_FINISH", 10L, "DESIGNER");
         transition(taskId, "FINISH", 1L, "PCB_LEADER");
 
         mockMvc.perform(get("/tasks/{taskId}/archive", taskId)
@@ -52,17 +50,18 @@ class PcbHappyPathIntegrationTest {
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"action\":\"FINISH\"}"))
+                        .content("{\"actions\":[\"FINISH\"]}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TASK_STATUS_CONFLICT"));
     }
 
     private long createAndSubmitTask() throws Exception {
         String fileId = "c778c14e-6f1a-4f4f-9f11-100000000004";
-        PendingFileUploadRecord pending = new PendingFileUploadRecord();
-        pending.setFileId(fileId); pending.setFileCategory("TASK_CREATION"); pending.setFileName("BMS-P1.pcb"); pending.setFileFormat("pcb");
+        ReviewFileRecord pending = new ReviewFileRecord();
+        pending.setId(reviewFileMapper.nextId()); pending.setFileId(fileId); pending.setTaskId(null); pending.setFileCategory("TASK_CREATION");
+        pending.setBusinessFileKey(null); pending.setFileName("BMS-P1.pcb"); pending.setFileFormat("pcb"); pending.setLatest(true);
         pending.setFileSize(8L); pending.setMd5("happy-path-md5"); pending.setResourcePath("company-pcb-p1"); pending.setUploadedBy(10L);
-        pendingFileUploadMapper.insert(pending);
+        reviewFileMapper.insert(pending);
         String taskRequest = """
                 {"reviewType":"PCB","taskName":"PCB 全链路验收","projectName":"BMS","designerId":10,"designName":"BMS-P1","pcbType":"BMU","files":["c778c14e-6f1a-4f4f-9f11-100000000004"]}
                 """;
@@ -80,16 +79,7 @@ class PcbHappyPathIntegrationTest {
                         .header("X-Mock-User-Id", String.valueOf(operatorId))
                         .header("X-Mock-Roles", operatorRole)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"action\":\"" + action + "\",\"assignedRole\":\"" + reviewRole + "\",\"reviewerIds\":[" + reviewerId + "]}"))
-                .andExpect(status().isOk());
-    }
-
-    private void submitNoOpinion(long taskId, long userId, String role) throws Exception {
-        mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
-                        .header("X-Mock-User-Id", String.valueOf(userId))
-                        .header("X-Mock-Roles", role)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"action\":\"SUBMIT_NO_OPINION\"}"))
+                        .content("{\"actions\":[\"" + action + "\"],\"assignedRole\":\"" + reviewRole + "\",\"reviewerIds\":[" + reviewerId + "]}"))
                 .andExpect(status().isOk());
     }
 
@@ -98,7 +88,16 @@ class PcbHappyPathIntegrationTest {
                         .header("X-Mock-User-Id", String.valueOf(userId))
                         .header("X-Mock-Roles", role)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"action\":\"" + action + "\"}"))
+                        .content("{\"actions\":[\"" + action + "\"]}"))
                 .andExpect(status().isOk());
+    }
+
+    private void registerLatestPcbFile(long taskId) {
+        ReviewFileRecord file = new ReviewFileRecord();
+        file.setId(reviewFileMapper.nextId()); file.setTaskId(taskId); file.setFileCategory("PCB_REVIEW");
+        file.setBusinessFileKey("PCB_REVIEW"); file.setFileName("BMS-P1-最新版本.pcb"); file.setFileFormat("pcb");
+        file.setFileSize(12L); file.setMd5("latest-pcb-md5"); file.setFileId("pcb-file-latest"); file.setResourcePath("company-pcb-latest");
+        file.setLatest(true); file.setUploadedBy(10L); file.setUploadedStage("PCB_EXPERT_REVIEWING");
+        reviewFileMapper.insert(file);
     }
 }

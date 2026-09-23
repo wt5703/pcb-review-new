@@ -48,8 +48,8 @@ class TaskCheckItemApplicationServiceTest {
 
     @Test
     void shouldMaterializeCurrentTemplateForActiveTask() {
-        ReviewTaskRecord task = task(TaskStatus.MUTUAL_REVIEWING);
-        CheckItemTemplateRecord template = template(31L, "spacing", "线距检查");
+        ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
+        CheckItemTemplateRecord template = template(31L, "线距检查");
         TaskCheckItemRecord materialized = item(51L, 31L, "spacing", "线距检查");
         materialized.setParentId(null);
         when(taskMapper.findById(1001L)).thenReturn(task);
@@ -65,7 +65,7 @@ class TaskCheckItemApplicationServiceTest {
 
     @Test
     void shouldRejectFailedCheckItemWithoutComment() {
-        ReviewTaskRecord task = task(TaskStatus.MUTUAL_REVIEWING);
+        ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(templateMapper.findEnabledByReviewType(ReviewType.PCB.name())).thenReturn(List.of());
         when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of());
@@ -101,10 +101,9 @@ class TaskCheckItemApplicationServiceTest {
         return task;
     }
 
-    private CheckItemTemplateRecord template(long id, String key, String name) {
+    private CheckItemTemplateRecord template(long id, String name) {
         CheckItemTemplateRecord record = new CheckItemTemplateRecord();
         record.setId(id);
-        record.setItemKey(key);
         record.setItemName(name);
         record.setSortNo(1);
         return record;

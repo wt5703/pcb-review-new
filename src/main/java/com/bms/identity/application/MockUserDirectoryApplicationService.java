@@ -39,14 +39,16 @@ public class MockUserDirectoryApplicationService {
     }
 
     private MockUserView toView(MockUserAccountRecord account) {
-        return new MockUserView(account.getId(), account.getDisplayName(), account.getEmail(), account.getDepartmentName(),
+        return new MockUserView(account.getId(), account.getEmployeeNo(), account.getDisplayName(), account.getEmail(), account.getMobile(), account.getDepartmentName(),
                 userAccountMapper.findRoleCodesByUserId(account.getId()));
     }
 
     @Schema(description = "本地 Mock 初始化账号信息")
     public record MockUserView(@Schema(description = "本地 Mock 用户唯一 ID，也是 X-Mock-User-Id 请求头值") Long id,
+                               @Schema(description = "初始化账号员工工号，可用于评审白名单映射") String employeeNo,
                                @Schema(description = "人员中文显示名称") String displayName,
                                @Schema(description = "仅用于开发联调的测试邮箱地址") String email,
+                               @Schema(description = "初始化人员手机号") String mobile,
                                @Schema(description = "所属部门名称") String departmentName,
                                @Schema(description = "该人员预设的系统角色编码集合，例如 EMC_EXPERT") List<String> roles) { }
 }

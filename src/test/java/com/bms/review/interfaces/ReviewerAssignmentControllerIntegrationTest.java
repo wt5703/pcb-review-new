@@ -19,7 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 通过统一流程 REST 验证 PCB 互检多人分配、个人无意见提交和当前节点可分配人员查询授权。
+ * @description 通过统一流程 REST 验证 PCB 互检多人分配和当前节点可分配人员查询授权。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -30,7 +30,7 @@ class ReviewerAssignmentControllerIntegrationTest {
     private ReviewTaskMapper taskMapper;
 
     @Test
-    void shouldAssignMultipleReviewersAndAllowAssignedReviewerToSubmitNoOpinion() throws Exception {
+    void shouldAssignMultipleReviewersThroughUnifiedWorkflowTransition() throws Exception {
         long taskId = 8401L;
         taskMapper.insert(task(taskId));
 
@@ -44,18 +44,11 @@ class ReviewerAssignmentControllerIntegrationTest {
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"action\":\"START_PCB_MUTUAL_REVIEW\",\"assignedRole\":\"PCB_MUTUAL_CHECK\",\"reviewerIds\":[20,21]}"))
+                        .content("{\"actions\":[\"START_PCB_MATUAL_REVIEW\"],\"assignedRole\":\"PCB_MUTUAL_CHECK\",\"reviewerIds\":[20,21]}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.toStatus").value("MUTUAL_REVIEWING"))
+                .andExpect(jsonPath("$.data.toStatus").value("MUTUAL_CHECK_REVIEWING"))
                 .andExpect(jsonPath("$.data.assignedReviewers.length()").value(2))
                 .andExpect(jsonPath("$.data.assignedReviewers[0].status").value("PENDING"));
-
-        mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
-                        .header("X-Mock-User-Id", "20")
-                        .header("X-Mock-Roles", "HARDWARE_EXPERT")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"action\":\"SUBMIT_NO_OPINION\"}"))
-                .andExpect(status().isOk());
 
     }
 
@@ -72,7 +65,7 @@ class ReviewerAssignmentControllerIntegrationTest {
     }
 
     private ReviewTaskRecord task(long taskId) {
-        return task(taskId, TaskStatus.PENDING_MUTUAL_ASSIGNMENT);
+        return task(taskId, TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT);
     }
 
     private ReviewTaskRecord task(long taskId, TaskStatus status) {

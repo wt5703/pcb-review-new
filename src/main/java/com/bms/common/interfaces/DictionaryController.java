@@ -30,24 +30,9 @@ public class DictionaryController {
             new DictionaryItem(ReviewRole.PROCESS_EXPERT.name(), "工艺评审"),
             new DictionaryItem(ReviewRole.PCB_EXPERT.name(), "PCB评审"));
 
-    private static final List<DictionaryItem> TASK_STATUSES = List.of(
-            new DictionaryItem(TaskStatus.DRAFT.name(), "草稿"),
-            new DictionaryItem(TaskStatus.PCB_PENDING_REVIEW.name(), "待专家评审"),
-            new DictionaryItem(TaskStatus.PCB_EXPERT_REVIEWING.name(), "专家评审中"),
-            new DictionaryItem(TaskStatus.PCB_DESIGNER_REPLYING.name(), "设计者答复中"),
-            new DictionaryItem(TaskStatus.PCB_OPTIONAL_REVIEWING.name(), "工艺/结构评审中"),
-            new DictionaryItem(TaskStatus.PCB_OPTIONAL_DESIGNER_REPLYING.name(), "设计者答复中"),
-            new DictionaryItem(TaskStatus.PENDING_MUTUAL_ASSIGNMENT.name(), "待互检单分配"),
-            new DictionaryItem(TaskStatus.MUTUAL_REVIEWING.name(), "互检中"),
-            new DictionaryItem(TaskStatus.PCB_MUTUAL_DESIGNER_REPLYING.name(), "设计者答复中"),
-            new DictionaryItem(TaskStatus.SCHEMATIC_PENDING_LEADER_ASSIGNMENT.name(), "待组长分配"),
-            new DictionaryItem(TaskStatus.SCHEMATIC_PENDING_MUTUAL_ASSIGNMENT.name(), "待互检单分配"),
-            new DictionaryItem(TaskStatus.SCHEMATIC_MUTUAL_DESIGNER_REPLYING.name(), "设计者答复中"),
-            new DictionaryItem(TaskStatus.SCHEMATIC_PENDING_REVIEW.name(), "待原理图专家分配"),
-            new DictionaryItem(TaskStatus.HARDWARE_REVIEWING.name(), "原理图评审中"),
-            new DictionaryItem(TaskStatus.SCHEMATIC_DESIGNER_REPLYING.name(), "设计者答复中"),
-            new DictionaryItem(TaskStatus.PENDING_FINISH_CONFIRMATION.name(), "待结束确认"),
-            new DictionaryItem(TaskStatus.FINISHED.name(), "已结束"));
+    private static final List<DictionaryItem> TASK_STATUSES = java.util.Arrays.stream(TaskStatus.values())
+            .map(status -> new DictionaryItem(status.name(), status.displayName()))
+            .toList();
 
     @GetMapping("/task-options")
     @Operation(summary = "查询任务字典", description = "返回 PCB 板类型、创建任务可选的评审角色、白名单可配置角色和全部任务状态。code 是接口传参值，name 是前端显示中文名称；互检职责和原理图流程内部职责不在创建页选择。")

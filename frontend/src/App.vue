@@ -47,8 +47,7 @@ onMounted(async () => {
         <RouterLink to="/tasks" class="nav-item"><span>▤</span>任务列表</RouterLink>
         <RouterLink to="/my-tasks" class="nav-item"><span>◷</span>我的任务</RouterLink>
         <RouterLink to="/templates" class="nav-item"><span>☷</span>互检管理</RouterLink>
-        <RouterLink to="/emails" class="nav-item"><span>✉</span>邮件记录</RouterLink>
-        <RouterLink to="/users" class="nav-item"><span>♙</span>用户管理</RouterLink>
+        <RouterLink to="/reviewer-whitelists" class="nav-item"><span>♙</span>评审白名单管理</RouterLink>
       </nav>
       <div class="sidebar-foot">Local Mock<br><b>API 已连接</b></div>
     </aside>

@@ -8,21 +8,22 @@ package com.bms.task.domain;
 
 
 public enum TaskStatus {
-    DRAFT,
-    PCB_PENDING_REVIEW,
-    PCB_EXPERT_REVIEWING,
-    PCB_DESIGNER_REPLYING,
-    PCB_OPTIONAL_REVIEWING,
-    PCB_OPTIONAL_DESIGNER_REPLYING,
-    PENDING_MUTUAL_ASSIGNMENT,
-    MUTUAL_REVIEWING,
-    PCB_MUTUAL_DESIGNER_REPLYING,
-    SCHEMATIC_PENDING_LEADER_ASSIGNMENT,
-    SCHEMATIC_PENDING_MUTUAL_ASSIGNMENT,
-    SCHEMATIC_MUTUAL_DESIGNER_REPLYING,
-    SCHEMATIC_PENDING_REVIEW,
-    HARDWARE_REVIEWING,
-    SCHEMATIC_DESIGNER_REPLYING,
-    PENDING_FINISH_CONFIRMATION,
-    FINISHED
+    DRAFT("草稿"),
+    PCB_EXPERT_REVIEWING("专家评审"),
+    PCB_PROCESS_STRUCTURE_REVIEWING("工艺/结构评审"),
+    MUTUAL_CHECK_PENDING_ASSIGNMENT("互检单待分配"),
+    MUTUAL_CHECK_REVIEWING("互检单评审"),
+    SCHEMATIC_PENDING_HARDWARE_EXPERT_ASSIGNMENT("待分配硬件专家"),
+    SCHEMATIC_REVIEWING("原理图评审"),
+    FINISHED("结束");
+
+    private final String displayName;
+
+    TaskStatus(String displayName) {
+        this.displayName = displayName;
+    }
+
+    public String displayName() {
+        return displayName;
+    }
 }

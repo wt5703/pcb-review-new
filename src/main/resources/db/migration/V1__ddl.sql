@@ -56,14 +56,15 @@ CREATE INDEX idx_review_opinion_task_status ON review_opinion (task_id, status, 
 
 CREATE TABLE review_file (
     id BIGINT PRIMARY KEY,
-    task_id BIGINT NOT NULL,
+    file_id VARCHAR(64) NOT NULL UNIQUE,
+    task_id BIGINT,
     file_category VARCHAR(32) NOT NULL,
-    business_file_key VARCHAR(128) NOT NULL,
+    business_file_key VARCHAR(128),
     file_name VARCHAR(512) NOT NULL,
     file_format VARCHAR(32) NOT NULL,
     file_size BIGINT NOT NULL,
     md5 VARCHAR(64) NOT NULL,
-    company_file_id VARCHAR(128) NOT NULL,
+    resource_path VARCHAR(1024) NOT NULL,
     is_latest BOOLEAN NOT NULL,
     uploaded_stage VARCHAR(64),
     uploaded_by BIGINT NOT NULL,
@@ -71,19 +72,7 @@ CREATE TABLE review_file (
     UNIQUE (task_id, file_category, business_file_key, is_latest)
 );
 CREATE INDEX idx_review_file_latest ON review_file (task_id, file_category, business_file_key, is_latest);
-
-CREATE TABLE pending_file_upload (
-    file_id VARCHAR(64) PRIMARY KEY,
-    file_category VARCHAR(32) NOT NULL,
-    file_name VARCHAR(512) NOT NULL,
-    file_format VARCHAR(32),
-    file_size BIGINT NOT NULL,
-    md5 VARCHAR(64) NOT NULL,
-    resource_path VARCHAR(1024) NOT NULL,
-    uploaded_by BIGINT NOT NULL,
-    uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX idx_pending_file_upload_owner ON pending_file_upload (uploaded_by, uploaded_at);
+CREATE INDEX idx_review_file_owner ON review_file (uploaded_by, uploaded_at);
 
 CREATE TABLE opinion_reply (
     id BIGINT PRIMARY KEY,
@@ -108,30 +97,19 @@ CREATE TABLE opinion_confirmation (
 );
 CREATE INDEX idx_opinion_confirmation_opinion ON opinion_confirmation (opinion_id, created_at);
 
-CREATE TABLE opinion_attachment (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    opinion_id BIGINT NOT NULL,
-    file_id BIGINT NOT NULL,
-    sort_no INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (opinion_id, file_id)
-);
-CREATE INDEX idx_opinion_attachment_opinion ON opinion_attachment (opinion_id, sort_no);
-
 CREATE TABLE check_item_template (
     id BIGINT PRIMARY KEY,
     review_type VARCHAR(32) NOT NULL,
-    item_key VARCHAR(128) NOT NULL,
-    parent_item_key VARCHAR(128),
+    parent_id BIGINT,
     item_name VARCHAR(500) NOT NULL,
-    sort_no INTEGER NOT NULL DEFAULT 0,
+    sort_no INTEGER NOT NULL DEFAULT 1,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     version BIGINT NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (review_type, item_key)
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_check_template_type_enabled ON check_item_template (review_type, enabled, sort_no);
+CREATE INDEX idx_check_template_parent ON check_item_template (parent_id, sort_no);
 
 CREATE TABLE task_check_item (
     id BIGINT PRIMARY KEY,
@@ -152,16 +130,6 @@ CREATE TABLE task_check_item (
 );
 CREATE INDEX idx_task_check_item_task ON task_check_item (task_id, sort_no);
 CREATE INDEX idx_task_check_item_parent ON task_check_item (task_id, parent_id, sort_no);
-
-CREATE TABLE check_item_attachment (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    check_item_id BIGINT NOT NULL,
-    file_id BIGINT NOT NULL,
-    sort_no INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (check_item_id, file_id)
-);
-CREATE INDEX idx_check_item_attachment_item ON check_item_attachment (check_item_id, sort_no);
 
 CREATE TABLE task_flow_record (
     id BIGINT PRIMARY KEY,
@@ -229,6 +197,7 @@ CREATE TABLE user_account (
     employee_no VARCHAR(64),
     display_name VARCHAR(100) NOT NULL,
     email VARCHAR(200) NOT NULL,
+    mobile VARCHAR(32),
     department_name VARCHAR(100) NOT NULL,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

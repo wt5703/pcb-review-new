@@ -25,6 +25,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.validation.annotation.Validated;
 
+import java.util.List;
+
 /**
  * @author 王涛
  * @date 2026-09-15
@@ -49,23 +51,26 @@ public class OpinionController {
     }
 
     @GetMapping("/tasks/{taskId}/opinions")
-    @Operation(summary = "分页查询任务意见列表", description = "每条记录在同一个扁平模型中返回专家意见、冗余的提出人姓名 raisedByName、全部设计者答复及各答复的确认结果，默认按意见提出时间倒序。severity 可按 SERIOUS、GENERAL、MINOR 筛选；sourceType 可按专家、工艺或结构来源筛选；scene=REVIEW_WORKSPACE 仅返回当前登录专家提出的意见，scene=DESIGNER_REPLY 返回任务所有意见。pageNo 从 1 开始，pageSize 最大为 100。")
+    @Operation(summary = "分页查询任务意见列表", description = "每条记录在同一个扁平模型中返回专家意见、冗余的提出人姓名 raisedByName、全部设计者答复及各答复的确认结果，默认按意见提出时间倒序。severity 可按 SERIOUS、GENERAL、MINOR 筛选；sourceType 可筛选单一来源，sourceTypes 可传多个逗号分隔的来源（如 PROCESS_REVIEW,STRUCTURE_REVIEW）；scene=REVIEW_WORKSPACE 仅返回当前登录专家提出的意见，scene=DESIGNER_REPLY 返回任务所有意见。pageNo 从 1 开始，pageSize 最大为 100。")
     ApiResponse<OpinionApplicationService.OpinionPage> list(@PathVariable long taskId,
             @RequestParam(required = false) @Parameter(description = "问题等级：SERIOUS 严重、GENERAL 一般、MINOR 轻微") String severity,
             @RequestParam(required = false) @Parameter(description = "意见状态：PENDING_REPLY  待答复、PENDING_CONFIRMATION 待确认、CONFIRMED_PASS 确认通过、CONFIRMED_REJECTED 确认不通过、WITHDRAWN 撤回") OpinionStatus status,
             @RequestParam(required = false) @Parameter(description = "意见来源：EXPERT_REVIEW=专家评审、PROCESS_REVIEW=工艺评审、STRUCTURE_REVIEW=结构评审  PCB_MUTUAL_CHECK=PCB互检单 SCHEMATIC_MUTUAL_CHECK=原理图互检单") OpinionSourceType sourceType,
+            @RequestParam(required = false) @Parameter(description = "多个意见来源，使用逗号分隔：PROCESS_REVIEW,STRUCTURE_REVIEW") List<OpinionSourceType> sourceTypes,
             @RequestParam(required = false, defaultValue = "DESIGNER_REPLY") @Parameter(description = "查询场景：REVIEW_WORKSPACE 仅当前登录专家提出的意见；DESIGNER_REPLY 展示任务全部意见") String scene,
             @RequestParam(defaultValue = "1") @Parameter(description = "页码，从 1 开始") @Min(1) int pageNo,
             @RequestParam(defaultValue = "20") @Parameter(description = "每页条数，最大 100") @Min(1) @Max(100) int pageSize,
             HttpServletRequest servletRequest) {
-        return ApiResponse.ok(opinionApplicationService.listPage(taskId, severity, status, sourceType, scene, pageNo, pageSize,
+        return ApiResponse.ok(opinionApplicationService.listPage(taskId, severity, status, sourceType, sourceTypes, scene, pageNo, pageSize,
                 CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @GetMapping("/tasks/{taskId}/opinions/summary")
-    @Operation(summary = "查询设计者答复页专家意见汇总", description = "设计者答复页面，专家意见汇总")
-    ApiResponse<OpinionApplicationService.OpinionSummary> summary(@PathVariable long taskId, HttpServletRequest servletRequest) {
-        return ApiResponse.ok(opinionApplicationService.summary(taskId, CurrentUserHolder.require()), traceId(servletRequest));
+    @Operation(summary = "查询设计者答复页意见汇总", description = "设计者答复页面的意见汇总；sourceTypes 可使用逗号分隔多个来源，以与意见列表保持相同的阶段范围。")
+    ApiResponse<OpinionApplicationService.OpinionSummary> summary(@PathVariable long taskId,
+            @RequestParam(required = false) @Parameter(description = "多个意见来源，使用逗号分隔：PROCESS_REVIEW,STRUCTURE_REVIEW") List<OpinionSourceType> sourceTypes,
+            HttpServletRequest servletRequest) {
+        return ApiResponse.ok(opinionApplicationService.summary(taskId, sourceTypes, CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @PostMapping("/opinions/{opinionId}/reply")

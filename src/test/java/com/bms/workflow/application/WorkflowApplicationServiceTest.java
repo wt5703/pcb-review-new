@@ -12,10 +12,8 @@ import com.bms.notification.infrastructure.OutboxEventMapper;
 import com.bms.review.application.TaskCheckItemApplicationService;
 import com.bms.review.application.ReviewerAssignmentService;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
-import com.bms.review.domain.ReviewerProcessStatus;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
-import com.bms.review.infrastructure.TaskReviewerMapper;
-import com.bms.review.infrastructure.TaskReviewerRecord;
+import com.bms.review.infrastructure.ReviewOpinionRecord;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
@@ -41,7 +39,6 @@ import static org.mockito.Mockito.when;
  */
 class WorkflowApplicationServiceTest {
     private final ReviewTaskMapper taskMapper = mock(ReviewTaskMapper.class);
-    private final TaskReviewerMapper reviewerMapper = mock(TaskReviewerMapper.class);
     private final ReviewOpinionMapper opinionMapper = mock(ReviewOpinionMapper.class);
     private final ReviewFileMapper fileMapper = mock(ReviewFileMapper.class);
     private final TaskCheckItemApplicationService checkItemApplicationService = mock(TaskCheckItemApplicationService.class);
@@ -52,30 +49,30 @@ class WorkflowApplicationServiceTest {
     private final ReviewerAssignmentService reviewerAssignmentService = mock(ReviewerAssignmentService.class);
     private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService = mock(ReviewerWhitelistApplicationService.class);
     private final FileApplicationService fileApplicationService = mock(FileApplicationService.class);
-    private final WorkflowApplicationService service = new WorkflowApplicationService(taskMapper, reviewerMapper, opinionMapper,
+    private final WorkflowApplicationService service = new WorkflowApplicationService(taskMapper, opinionMapper,
             fileMapper, checkItemApplicationService, flowMapper, auditMapper, outboxEventMapper, taskArchiveApplicationService,
             reviewerAssignmentService, reviewerWhitelistApplicationService, fileApplicationService);
 
     @Test
-    void shouldStartPcbExpertReviewForAuthorizedDesigner() {
-        when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PCB_PENDING_REVIEW));
+    void shouldStartPcbProcessReviewForAuthorizedDesignerAfterExpertOpinionsPassed() {
+        when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PCB_EXPERT_REVIEWING));
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
+        when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PROCESS_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
         when(taskMapper.update(any())).thenReturn(1);
         when(flowMapper.nextId()).thenReturn(1L);
 
-        WorkflowApplicationService.WorkflowView view = service.transition(1001L, WorkflowAction.START_PCB_EXPERT_REVIEW, null,
+        WorkflowApplicationService.WorkflowView view = service.transition(1001L, WorkflowAction.START_PCB_PROCESS_REVIEW, null,
                 new CurrentUser(10L, Set.of(Role.DESIGNER)));
 
-        assertThat(view.toStatus()).isEqualTo(TaskStatus.PCB_EXPERT_REVIEWING);
+        assertThat(view.toStatus()).isEqualTo(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
         verify(auditMapper).insert(any());
         verify(outboxEventMapper).insert(any());
     }
 
     @Test
-    void shouldFinishOnlyAfterEveryReviewerSubmittedAndLatestFileExists() {
-        when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PENDING_FINISH_CONFIRMATION));
-        when(reviewerMapper.findActiveByTaskId(1001L)).thenReturn(List.of(reviewer(20L)));
-        when(opinionMapper.findStatusesByTaskAndRaisedBy(1001L, 20L)).thenReturn(List.of());
-        when(fileMapper.findLatestByTaskId(1001L)).thenReturn(List.of(new ReviewFileRecord()));
+    void shouldFinishWhenAllOpinionsHaveBeenConfirmed() {
+        when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.MUTUAL_CHECK_REVIEWING));
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
         when(taskMapper.update(any())).thenReturn(1);
         when(flowMapper.nextId()).thenReturn(2L);
 
@@ -98,25 +95,37 @@ class WorkflowApplicationServiceTest {
     }
 
     @Test
-    void shouldPrepareSchematicExpertAssignmentOnlyAfterMutualReviewersCompleted() {
-        when(taskMapper.findById(1001L)).thenReturn(task(ReviewType.SCHEMATIC, TaskStatus.MUTUAL_REVIEWING));
-        when(reviewerMapper.findActiveByTaskId(1001L)).thenReturn(List.of(reviewer(20L)));
-        when(opinionMapper.findStatusesByTaskAndRaisedBy(1001L, 20L)).thenReturn(List.of());
+    void shouldStartSchematicExpertAssignmentAfterMutualOpinionsPassed() {
+        when(taskMapper.findById(1001L)).thenReturn(task(ReviewType.SCHEMATIC, TaskStatus.MUTUAL_CHECK_REVIEWING));
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
+        when(fileMapper.findLatestByTaskIdAndCategory(1001L, "SCHEMATIC_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
         when(taskMapper.update(any())).thenReturn(1);
         when(flowMapper.nextId()).thenReturn(3L);
 
-        WorkflowApplicationService.WorkflowView view = service.transition(1001L, WorkflowAction.PREPARE_SCHEMATIC_EXPERT_ASSIGNMENT,
-                null, new CurrentUser(1L, Set.of(Role.HARDWARE_DEPARTMENT_MANAGER)));
+        WorkflowApplicationService.WorkflowView view = service.transition(1001L, WorkflowAction.START_SCHEMATIC_EXPERT_ASSIGNMENT,
+                null, new CurrentUser(10L, Set.of(Role.DESIGNER)));
 
-        assertThat(view.toStatus()).isEqualTo(TaskStatus.SCHEMATIC_PENDING_REVIEW);
+        assertThat(view.toStatus()).isEqualTo(TaskStatus.SCHEMATIC_PENDING_HARDWARE_EXPERT_ASSIGNMENT);
+    }
+
+    @Test
+    void shouldRejectPcbMutualAssignmentWhenAProcessOpinionIsNotConfirmed() {
+        when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING));
+        ReviewOpinionRecord opinion = new ReviewOpinionRecord();
+        opinion.setSourceType("PROCESS_REVIEW");
+        opinion.setStatus("PENDING_CONFIRMATION");
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(opinion));
+
+        assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.START_PCB_MATUAL_ASSIGNMENT, null,
+                new CurrentUser(10L, Set.of(Role.DESIGNER))))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("专家、工艺或结构评审意见尚未全部确认通过，不能开启互检单分配");
     }
 
     @Test
     void shouldReportMissingTaskWhenStatusUpdateDoesNotPersist() {
-        when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PENDING_FINISH_CONFIRMATION));
-        when(reviewerMapper.findActiveByTaskId(1001L)).thenReturn(List.of(reviewer(20L)));
-        when(opinionMapper.findStatusesByTaskAndRaisedBy(1001L, 20L)).thenReturn(List.of());
-        when(fileMapper.findLatestByTaskId(1001L)).thenReturn(List.of(new ReviewFileRecord()));
+        when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.MUTUAL_CHECK_REVIEWING));
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
         when(taskMapper.update(any())).thenReturn(0);
 
         assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.FINISH, null,
@@ -141,12 +150,5 @@ class WorkflowApplicationServiceTest {
         task.setInitialFileIds("");
         task.setVersion(0L);
         return task;
-    }
-
-    private TaskReviewerRecord reviewer(long reviewerId) {
-        TaskReviewerRecord reviewer = new TaskReviewerRecord();
-        reviewer.setReviewerId(reviewerId);
-        reviewer.setProcessStatus(ReviewerProcessStatus.SUBMITTED.name());
-        return reviewer;
     }
 }

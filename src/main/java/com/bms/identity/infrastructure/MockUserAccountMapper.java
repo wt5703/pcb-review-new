@@ -12,10 +12,10 @@ import java.util.List;
  */
 @Mapper
 public interface MockUserAccountMapper {
-    @Select("SELECT id, display_name AS displayName, email, department_name AS departmentName, enabled FROM user_account WHERE enabled=TRUE ORDER BY id")
+    @Select("SELECT id, employee_no AS employeeNo, display_name AS displayName, email, mobile, department_name AS departmentName, enabled FROM user_account WHERE enabled=TRUE ORDER BY id")
     List<MockUserAccountRecord> findEnabled();
 
-    @Select("SELECT id, display_name AS displayName, email, department_name AS departmentName, enabled FROM user_account WHERE id=#{userId} AND enabled=TRUE")
+    @Select("SELECT id, employee_no AS employeeNo, display_name AS displayName, email, mobile, department_name AS departmentName, enabled FROM user_account WHERE id=#{userId} AND enabled=TRUE")
     MockUserAccountRecord findEnabledById(long userId);
 
     @Select("SELECT ur.role_code FROM user_role ur JOIN role_definition rd ON rd.role_code=ur.role_code " +

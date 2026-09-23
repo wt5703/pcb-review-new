@@ -3,13 +3,12 @@ package com.bms.review.infrastructure;
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 映射互检检查项模板的一条定义，包括任务类型、层级键、显示名称和排序信息；不承载具体任务处理结果。
+ * @description 映射互检检查项模板的一条定义，包括评审类型、父级 ID、显示名称和排序信息；不承载具体任务处理结果。
  */
 public class CheckItemTemplateRecord {
     private Long id;
     private String reviewType;
-    private String itemKey;
-    private String parentItemKey;
+    private Long parentId;
     private String itemName;
     private Integer sortNo;
     private Boolean enabled;
@@ -19,10 +18,8 @@ public class CheckItemTemplateRecord {
     public void setId(Long id) { this.id = id; }
     public String getReviewType() { return reviewType; }
     public void setReviewType(String reviewType) { this.reviewType = reviewType; }
-    public String getItemKey() { return itemKey; }
-    public void setItemKey(String itemKey) { this.itemKey = itemKey; }
-    public String getParentItemKey() { return parentItemKey; }
-    public void setParentItemKey(String parentItemKey) { this.parentItemKey = parentItemKey; }
+    public Long getParentId() { return parentId; }
+    public void setParentId(Long parentId) { this.parentId = parentId; }
     public String getItemName() { return itemName; }
     public void setItemName(String itemName) { this.itemName = itemName; }
     public Integer getSortNo() { return sortNo; }

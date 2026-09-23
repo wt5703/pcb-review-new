@@ -159,13 +159,13 @@ public class TaskCheckItemApplicationService {
         for (TaskCheckItemRecord item : taskCheckItemMapper.findByTaskId(task.getId())) {
             existing.put(item.getTemplateItemId(), item);
         }
-        Map<String, CheckItemTemplateRecord> templateByKey = allTemplates.stream()
-                .collect(java.util.stream.Collectors.toMap(CheckItemTemplateRecord::getItemKey, template -> template, (left, right) -> left));
-        for (CheckItemTemplateRecord template : templates.stream().filter(item -> item.getParentItemKey() == null).toList()) {
+        Map<Long, CheckItemTemplateRecord> templateById = allTemplates.stream()
+                .collect(java.util.stream.Collectors.toMap(CheckItemTemplateRecord::getId, template -> template, (left, right) -> left));
+        for (CheckItemTemplateRecord template : templates.stream().filter(item -> item.getParentId() == null).toList()) {
             materializeSnapshot(task.getId(), template, null, existing);
         }
-        for (CheckItemTemplateRecord template : templates.stream().filter(item -> item.getParentItemKey() != null).toList()) {
-            CheckItemTemplateRecord parentTemplate = templateByKey.get(template.getParentItemKey());
+        for (CheckItemTemplateRecord template : templates.stream().filter(item -> item.getParentId() != null).toList()) {
+            CheckItemTemplateRecord parentTemplate = templateById.get(template.getParentId());
             TaskCheckItemRecord parent = parentTemplate == null ? null : existing.get(parentTemplate.getId());
             materializeSnapshot(task.getId(), template, parent == null ? null : parent.getId(), existing);
         }

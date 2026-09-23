@@ -98,7 +98,7 @@ public final class ReviewTask {
         if (reviewType == ReviewType.PCB && (pcbType == null || pcbType.isBlank())) {
             throw new IllegalStateException("PCB评审任务必须填写PCB类型");
         }
-        status = reviewType == ReviewType.PCB ? TaskStatus.PCB_EXPERT_REVIEWING : TaskStatus.SCHEMATIC_PENDING_LEADER_ASSIGNMENT;
+        status = reviewType == ReviewType.PCB ? TaskStatus.PCB_EXPERT_REVIEWING : TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT;
     }
 
     public void moveTo(TaskStatus targetStatus) {
@@ -107,7 +107,7 @@ public final class ReviewTask {
     }
 
     public void finish() {
-        if (status != TaskStatus.PENDING_FINISH_CONFIRMATION) {
+        if (status == TaskStatus.DRAFT || status == TaskStatus.FINISHED) {
             throw new IllegalStateException("当前任务不允许结束");
         }
         status = TaskStatus.FINISHED;

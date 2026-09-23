@@ -35,7 +35,7 @@ class TaskLifecycleTest {
         ReviewTask task = ReviewTask.draft(1L, ReviewType.SCHEMATIC, "任务", "项目", 20L, "SCH-A", null);
         task.addInitialFile(100L);
         task.submit();
-        task.moveTo(TaskStatus.PENDING_FINISH_CONFIRMATION);
+        task.moveTo(TaskStatus.SCHEMATIC_REVIEWING);
         task.finish();
 
         assertThatThrownBy(() -> task.addInitialFile(101L)).isInstanceOf(IllegalStateException.class);

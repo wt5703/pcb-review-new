@@ -62,38 +62,28 @@ public class CheckItemTemplateController {
     }
 
     @PostMapping(value = "/import", consumes = "multipart/form-data")
-    @Operation(summary = "Excel 批量导入互检检查项模板", description = "导入首个工作表。兼容旧表头“评审类型、检查项编码、父级检查项编码、检查项名称、排序号、是否启用”，也支持类别/检查项中文列名。任一行错误则整体回滚。")
+    @Operation(summary = "Excel 批量导入互检检查项模板", description = "导入首个工作表，支持“类别、检查项”列和可选“评审类型”列。检查项单元格可按行首 1)、2) 编号拆分为多个子项；不读取或保存检查项编码。任一行错误则整体回滚。")
     ApiResponse<CheckItemTemplateApplicationService.ImportResult> importWorkbook(@RequestPart("file") MultipartFile file,
                                                                                   HttpServletRequest servletRequest) throws IOException {
         return ApiResponse.ok(templateApplicationService.importWorkbook(file.getBytes(), CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @PutMapping
-    @Operation(summary = "修改检查项大类及子检查项", description = "请求体须传 categoryId、categoryName、items；子项仅接收已有项 itemId（新增项不传）和 itemName")
-    ApiResponse<CheckItemTemplateApplicationService.TemplateCategoryView> update(@Valid @RequestBody UpdateTemplateRequest request,
+    @Operation(summary = "修改检查项", description = "唯一修改入口。itemId 指向大类时可同时传 items 维护其子项；指向小类时仅传 itemId、itemName，不能传 items。")
+    ApiResponse<CheckItemTemplateApplicationService.TemplateUpdateView> update(@Valid @RequestBody UpdateTemplateRequest request,
                                                                            HttpServletRequest servletRequest) {
-        return ApiResponse.ok(templateApplicationService.update(new CheckItemTemplateApplicationService.UpdateCategoryCommand(
-                request.categoryId(), request.categoryName(), (request.items() == null ? List.<UpdateTemplateItemRequest>of() : request.items()).stream()
+        return ApiResponse.ok(templateApplicationService.update(new CheckItemTemplateApplicationService.UpdateTemplateCommand(
+                request.itemId(), request.itemName(), (request.items() == null ? List.<UpdateTemplateItemRequest>of() : request.items()).stream()
                         .map(item -> new CheckItemTemplateApplicationService.UpdateItemCommand(item.itemId(), item.itemName())).toList()),
                 CurrentUserHolder.require()), traceId(servletRequest));
-    }
-
-    @PutMapping("/items/{checkItemId}")
-    @Operation(summary = "修改检查项小类名称", description = "只修改一个检查项小类。路径传 checkItemId，请求体仅传 itemName表示小类名称")
-    ApiResponse<CheckItemTemplateApplicationService.TemplateView> updateItemName(
-            @Parameter(description = "检查项小类记录 ID", required = true) @PathVariable long checkItemId,
-            @Valid @RequestBody UpdateItemNameRequest request,
-            HttpServletRequest servletRequest) {
-        return ApiResponse.ok(templateApplicationService.updateItemName(checkItemId, request.itemName(), CurrentUserHolder.require()),
-                traceId(servletRequest));
     }
 
     @DeleteMapping("/{checkItemId}")
     @Operation(summary = "删除检查项大类或小类", description = "必须同时传检查项 ID 与 category。category=CATEGORY 时传大类ID，并逻辑停用该大类及本评审类型下全部子项；category=ITEM 时仅接受小类 ID，只逻辑停用该小类。不会物理删除历史定义。")
     ApiResponse<Void> disable(
-            @Parameter(description = "待删除检查项记录 ID", required = true) @PathVariable long checkItemId,
+            @Parameter(description = "待删除检查项记录 ID", required = true) @PathVariable("checkItemId") long checkItemId,
             @Parameter(description = "删除目标类别：CATEGORY=大类，ITEM=小类", required = true)
-            @RequestParam CheckItemTemplateApplicationService.DeleteTargetCategory category,
+            @RequestParam("category") CheckItemTemplateApplicationService.DeleteTargetCategory category,
             HttpServletRequest servletRequest) {
         templateApplicationService.disable(checkItemId, category, CurrentUserHolder.require());
         return ApiResponse.ok(null, traceId(servletRequest));
@@ -109,16 +99,14 @@ public class CheckItemTemplateController {
                                  @Schema(description = "该大类包含的检查项子类；可不传或传空数组，提交顺序即展示顺序") List<@Valid TemplateItemRequest> items) {
     }
 
-    @Schema(description = "修改检查项类别请求")
-    record UpdateTemplateRequest(@Schema(description = "检查项大类 ID", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull Long categoryId,
-                                 @Schema(description = "检查项大类名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String categoryName,
-                                 @Schema(description = "修改后的检查项子类列表；可不传或传空数组") List<@Valid UpdateTemplateItemRequest> items) {
+    @Schema(description = "统一修改检查项请求")
+    record UpdateTemplateRequest(@Schema(description = "待修改的大类或小类 ID", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull Long itemId,
+                                 @Schema(description = "修改后的名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String itemName,
+                                 @Schema(description = "仅修改大类时可传：完整子项列表；已有子项传 itemId，新增子项不传") List<@Valid UpdateTemplateItemRequest> items) {
     }
     @Schema(description = "检查项子类内容")
     record TemplateItemRequest(@Schema(description = "检查项名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String itemName) { }
     @Schema(description = "修改检查项子类内容")
     record UpdateTemplateItemRequest(@Schema(description = "已有子检查项 ID；新增子检查项不传") Long itemId,
                                      @Schema(description = "检查项名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String itemName) { }
-    @Schema(description = "修改检查项小类名称请求")
-    record UpdateItemNameRequest(@Schema(description = "修改后的检查项名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String itemName) { }
 }

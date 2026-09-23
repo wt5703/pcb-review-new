@@ -121,6 +121,15 @@ public class ReviewerWhitelistApplicationService {
                 .toList();
     }
 
+    /** 返回当前启用的白名单映射，供白名单管理页面按主键精确删除。 */
+    public List<ReviewerWhitelistView> list(CurrentUser currentUser) {
+        requireManagePermission(currentUser);
+        return whitelistMapper.findAll().stream()
+                .map(record -> new ReviewerWhitelistView(record.getId(), ReviewRole.valueOf(record.getReviewRole()), record.getEmployeeNo(),
+                        record.getDisplayName(), record.getEmail(), record.getMobile(), record.getCreatedAt()))
+                .toList();
+    }
+
     /**
      * 返回指定白名单职责下可被实际分配的用户。白名单工号必须能解析到启用的用户账号，
      * 否则不会出现在人员选择器中，避免前端拿到无法用于 reviewerIds 的数据。
@@ -143,6 +152,8 @@ public class ReviewerWhitelistApplicationService {
 
     public record RoleEmployeeNos(ReviewRole reviewRole, List<String> employeeNos) { }
     public record RoleEmployeeNosView(ReviewRole reviewRole, List<String> employeeNos) { }
+    public record ReviewerWhitelistView(Long id, ReviewRole reviewRole, String employeeNo, String displayName,
+                                        String email, String mobile, java.time.LocalDateTime createdAt) { }
     public record AssignableReviewerView(Long userId, String employeeNo, String displayName, String departmentName,
                                          ReviewRole whitelistRole) {
         static AssignableReviewerView from(AssignableReviewerRecord record) {

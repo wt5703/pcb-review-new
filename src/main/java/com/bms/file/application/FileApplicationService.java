@@ -6,8 +6,6 @@ import com.bms.audit.infrastructure.OperationAuditMapper;
 import com.bms.audit.infrastructure.OperationAuditRecord;
 import com.bms.file.domain.FileCategory;
 import com.bms.file.domain.FileUploadScene;
-import com.bms.file.infrastructure.PendingFileUploadMapper;
-import com.bms.file.infrastructure.PendingFileUploadRecord;
 import com.bms.file.infrastructure.ResourceServiceClient;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
@@ -42,7 +40,6 @@ public class FileApplicationService {
     private final ReviewTaskMapper taskMapper;
     private final TaskAssignmentAccessMapper taskAssignmentAccessMapper;
     private final ResourceServiceClient resourceServiceClient;
-    private final PendingFileUploadMapper pendingFileUploadMapper;
     private final OutboxEventPublisher outboxEventPublisher;
     private final OperationAuditMapper auditMapper;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
@@ -50,13 +47,12 @@ public class FileApplicationService {
     @Autowired
     public FileApplicationService(ReviewFileMapper fileMapper, ReviewTaskMapper taskMapper,
                                   TaskAssignmentAccessMapper taskAssignmentAccessMapper,
-                                  ResourceServiceClient resourceServiceClient, PendingFileUploadMapper pendingFileUploadMapper,
+                                  ResourceServiceClient resourceServiceClient,
                                   OutboxEventPublisher outboxEventPublisher, OperationAuditMapper auditMapper) {
         this.fileMapper = fileMapper;
         this.taskMapper = taskMapper;
         this.taskAssignmentAccessMapper = taskAssignmentAccessMapper;
         this.resourceServiceClient = resourceServiceClient;
-        this.pendingFileUploadMapper = pendingFileUploadMapper;
         this.outboxEventPublisher = outboxEventPublisher;
         this.auditMapper = auditMapper;
     }
@@ -91,7 +87,7 @@ public class FileApplicationService {
     /**
      * @author 王涛
      * @date 2026-09-22
-     * @description 将创建任务前上传的多个文件 UUID 绑定至任务；每个 UUID 在同一任务下仅允许保存一次，元数据只从后端临时上传记录读取。
+     * @description 将创建任务前上传的多个文件 UUID 绑定至任务；未绑定文件同样保存于 review_file，taskId 为空表示尚未关联任务。
      */
     @Transactional
     public List<FileView> bindPendingInitialFiles(long taskId, List<String> fileIds, CurrentUser currentUser) {
@@ -99,9 +95,6 @@ public class FileApplicationService {
             return List.of();
         }
         requireTaskAccess(taskId, currentUser, FileCategory.TASK_CREATION, true);
-        if (pendingFileUploadMapper == null) {
-            throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_UNAVAILABLE, "临时文件记录服务不可用");
-        }
         java.util.Set<String> requestFileIds = new java.util.LinkedHashSet<>();
         List<FileView> result = new ArrayList<>();
         for (String fileId : fileIds) {
@@ -109,30 +102,32 @@ public class FileApplicationService {
             if (!requestFileIds.add(normalizedFileId)) {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "初始文件 UUID 不能为空且不能重复");
             }
-            PendingFileUploadRecord pending = pendingFileUploadMapper.findByFileId(normalizedFileId);
+            ReviewFileRecord pending = fileMapper.findByFileId(normalizedFileId);
             if (pending == null || !FileCategory.TASK_CREATION.name().equals(pending.getFileCategory())) {
                 throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "初始文件 UUID 不存在或不可用于创建任务");
+            }
+            if (pending.getTaskId() != null) {
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "该任务已保存对应文件，不能重复保存");
             }
             if (!currentUser.id().equals(pending.getUploadedBy())) {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "仅文件上传人可以将该文件关联到任务");
             }
-            if (fileMapper.findLatest(taskId, FileCategory.TASK_CREATION.name(), normalizedFileId) != null) {
+            pending.setTaskId(taskId);
+            pending.setBusinessFileKey(normalizedFileId);
+            pending.setLatest(true);
+            pending.setUploadedStage(TaskStatus.DRAFT.name());
+            if (fileMapper.bindToTask(pending) != 1) {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "该任务已保存对应文件，不能重复保存");
             }
-            FileReferenceCommand reference = new FileReferenceCommand(pending.getResourcePath(), pending.getFileName(), pending.getFileSize(),
-                    pending.getMd5(), normalizedFileId);
-            ReviewFileRecord record = referenceRecord(nextId(), taskId, FileCategory.TASK_CREATION, normalizedFileId, reference,
-                    currentUser.id(), TaskStatus.DRAFT.name());
-            fileMapper.insert(record);
-            appendAudit(record, "INITIAL_FILE_BOUND", currentUser.id());
-            result.add(FileView.from(record));
+            appendAudit(pending, "INITIAL_FILE_BOUND", currentUser.id());
+            result.add(FileView.from(pending));
         }
         return List.copyOf(result);
     }
 
     /** 上传尚未创建任务的初始文件，持久化元数据并返回前端后续保存任务唯一需要携带的 UUID。 */
     @Transactional
-    public PendingUploadView uploadPendingInitialFile(MultipartFile file, FileCategory category, CurrentUser currentUser) {
+    public UploadedFileView uploadPendingInitialFile(MultipartFile file, FileCategory category, CurrentUser currentUser) {
         if (category != FileCategory.TASK_CREATION) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "未关联任务的上传仅允许创建任务文件类型");
         }
@@ -142,17 +137,15 @@ public class FileApplicationService {
         if (!permissionPolicy.has(currentUser.roles(), category.uploadPermission())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "无对应文件上传权限");
         }
-        if (pendingFileUploadMapper == null) {
-            throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_UNAVAILABLE, "临时文件记录服务不可用");
-        }
         String fileId = UUID.randomUUID().toString();
         ResourceServiceClient.StoredResource resource = resourceServiceClient.uploadInUuidDirectory(file, fileId);
-        PendingFileUploadRecord record = new PendingFileUploadRecord();
-        record.setFileId(fileId); record.setFileCategory(category.name()); record.setFileName(file.getOriginalFilename());
+        ReviewFileRecord record = new ReviewFileRecord();
+        record.setId(nextId()); record.setFileId(resource.resourceId()); record.setTaskId(null); record.setFileCategory(category.name());
+        record.setBusinessFileKey(null); record.setFileName(file.getOriginalFilename());
         record.setFileFormat(fileFormat(file.getOriginalFilename())); record.setFileSize(file.getSize()); record.setMd5(md5(file));
-        record.setResourcePath(resource.resourcePath()); record.setUploadedBy(currentUser.id());
-        pendingFileUploadMapper.insert(record);
-        return new PendingUploadView(fileId, record.getFileName(), record.getFileSize(), category);
+        record.setResourcePath(resource.resourcePath()); record.setLatest(true); record.setUploadedBy(currentUser.id()); record.setUploadedStage(null);
+        fileMapper.insert(record);
+        return new UploadedFileView(record.getFileId(), record.getId(), record.getFileName(), record.getFileSize(), category);
     }
 
     @Transactional
@@ -223,7 +216,7 @@ public class FileApplicationService {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务文件不存在");
         }
         requireTaskAccess(file.getTaskId(), currentUser, FileCategory.valueOf(file.getFileCategory()), false);
-        byte[] content = resourceServiceClient.download(file.getFileName(), file.getCompanyFileId());
+        byte[] content = resourceServiceClient.download(file.getFileName(), file.getResourcePath());
         return new DownloadContent(file.getFileName(), content);
     }
 
@@ -289,7 +282,7 @@ public class FileApplicationService {
         record.setId(id); record.setTaskId(taskId); record.setFileCategory(category.name()); record.setBusinessFileKey(businessFileKey);
         record.setFileName(file.fileName().trim()); record.setFileFormat(fileFormat(file.fileName())); record.setFileSize(file.fileSize());
         record.setMd5(file.md5() == null ? "" : file.md5());
-        record.setCompanyFileId(file.companyFileId().trim()); record.setLatest(true); record.setUploadedBy(uploadedBy); record.setUploadedStage(uploadedStage);
+        record.setFileId(file.fileId().trim()); record.setResourcePath(file.fileId().trim()); record.setLatest(true); record.setUploadedBy(uploadedBy); record.setUploadedStage(uploadedStage);
         return record;
     }
 
@@ -299,7 +292,7 @@ public class FileApplicationService {
         ReviewFileRecord record = new ReviewFileRecord();
         record.setId(id); record.setTaskId(taskId); record.setFileCategory(category.name()); record.setBusinessFileKey(businessFileKey);
         record.setFileName(file.getOriginalFilename()); record.setFileFormat(fileFormat(file.getOriginalFilename())); record.setFileSize(file.getSize()); record.setMd5(md5);
-        record.setCompanyFileId(resource.resourcePath()); record.setLatest(true); record.setUploadedBy(uploadedBy); record.setUploadedStage(uploadedStage);
+        record.setFileId(resource.resourceId()); record.setResourcePath(resource.resourcePath()); record.setLatest(true); record.setUploadedBy(uploadedBy); record.setUploadedStage(uploadedStage);
         return record;
     }
 
@@ -331,26 +324,26 @@ public class FileApplicationService {
     }
 
     /** 公司资源服务上传完成后，由前端随任务保存或提交请求带回的文件引用。 */
-    public record FileReferenceCommand(String companyFileId, String fileName, long fileSize, String md5, String businessFileKey) {
+    public record FileReferenceCommand(String fileId, String fileName, long fileSize, String md5, String businessFileKey) {
         public FileReferenceCommand {
-            if (companyFileId == null || companyFileId.isBlank() || fileName == null || fileName.isBlank() || fileSize < 0) {
-                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "公司文件标识、文件名和文件大小不能为空");
+            if (fileId == null || fileId.isBlank() || fileName == null || fileName.isBlank() || fileSize < 0) {
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "文件标识、文件名和文件大小不能为空");
             }
         }
     }
 
     /** 创建任务前上传文件的最小返回模型；保存或提交任务仅回传 fileId UUID 数组。 */
-    public record PendingUploadView(String fileId, String fileName, long fileSize, FileCategory fileCategory) { }
+    public record UploadedFileView(String fileId, Long taskFileId, String fileName, long fileSize, FileCategory fileCategory) { }
 
     public record DownloadContent(String fileName, byte[] content) {
     }
 
     public record FileView(Long id, Long taskId, FileCategory category, String businessFileKey, String fileName, String fileFormat,
-                           Long fileSize, String md5, String resourcePath, Long uploadedBy, java.time.LocalDateTime uploadedAt,
+                           Long fileSize, String md5, String fileId, String resourcePath, Long uploadedBy, java.time.LocalDateTime uploadedAt,
                            String uploadedStage, boolean latest) {
         static FileView from(ReviewFileRecord record) {
             return new FileView(record.getId(), record.getTaskId(), FileCategory.valueOf(record.getFileCategory()), record.getBusinessFileKey(),
-                    record.getFileName(), record.getFileFormat(), record.getFileSize(), record.getMd5(), record.getCompanyFileId(), record.getUploadedBy(),
+                    record.getFileName(), record.getFileFormat(), record.getFileSize(), record.getMd5(), record.getFileId(), record.getResourcePath(), record.getUploadedBy(),
                     record.getUploadedAt(), record.getUploadedStage(), record.getLatest());
         }
     }

@@ -20,9 +20,9 @@ export interface Task {
 /** 文件上传接口返回的 UUID；任务保存/提交时 files 仅传多个 UUID。 */
 export type TaskFileReference = string
 
-/** 公司资源服务文件引用；用于阶段文件登记等非任务创建场景。 */
-export interface CompanyFileReference {
-  companyFileId: string
+/** 文件上传接口返回的文件引用；用于阶段文件登记等非任务创建场景。 */
+export interface FileReference {
+  fileId: string
   fileName: string
   fileSize: number
   md5?: string
@@ -190,26 +190,15 @@ export interface FlowNode {
   content: string
 }
 
-export interface MailRecord {
-  sentAt?: string
-  scenario: string
-  recipient: string
-  status: string
-  deliveryStatus: string
-  failureReason?: string
-}
-
 export interface Archive {
   flowNodes: FlowNode[]
   stageFiles: ArchiveFile[]
-  mailRecords: MailRecord[]
 }
 
 export interface TemplateItem {
   id: number
   reviewType: ReviewType
-  itemKey: string
-  parentItemKey?: string
+  parentId?: number
   itemName: string
   sortNo: number
   enabled: boolean

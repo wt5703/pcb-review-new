@@ -4,8 +4,6 @@ import com.bms.file.domain.FileCategory;
 import com.bms.file.domain.FileUploadScene;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
-import com.bms.file.infrastructure.PendingFileUploadMapper;
-import com.bms.file.infrastructure.PendingFileUploadRecord;
 import com.bms.file.infrastructure.ResourceServiceClient;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Role;
@@ -38,12 +36,11 @@ class FileApplicationServiceTest {
     private final ReviewFileMapper fileMapper = mock(ReviewFileMapper.class);
     private final ReviewTaskMapper taskMapper = mock(ReviewTaskMapper.class);
     private final TaskAssignmentAccessMapper accessMapper = mock(TaskAssignmentAccessMapper.class);
-    private final PendingFileUploadMapper pendingFileUploadMapper = mock(PendingFileUploadMapper.class);
     private final OutboxEventPublisher outboxEventPublisher = mock(OutboxEventPublisher.class);
     private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
     private final ResourceServiceClient resourceServiceClient = mock(ResourceServiceClient.class);
     private final FileApplicationService service = new FileApplicationService(fileMapper, taskMapper, accessMapper,
-            resourceServiceClient, pendingFileUploadMapper, outboxEventPublisher, auditMapper);
+            resourceServiceClient, outboxEventPublisher, auditMapper);
     private final CurrentUser designer = new CurrentUser(10L, Set.of(Role.DESIGNER));
 
     @Test
@@ -107,12 +104,12 @@ class FileApplicationServiceTest {
     @Test
     void shouldRejectSavingSamePendingFileUuidToTaskAgain() {
         String fileId = "b4466fe0-2c68-44b5-92d2-100000000001";
-        PendingFileUploadRecord pending = new PendingFileUploadRecord();
+        ReviewFileRecord pending = new ReviewFileRecord();
         pending.setFileId(fileId); pending.setFileCategory(FileCategory.TASK_CREATION.name()); pending.setFileName("BMS.pcb");
         pending.setFileSize(100L); pending.setMd5("md5-a"); pending.setResourcePath("/company/BMS.pcb"); pending.setUploadedBy(10L);
+        pending.setTaskId(1L);
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
-        when(pendingFileUploadMapper.findByFileId(fileId)).thenReturn(pending);
-        when(fileMapper.findLatest(1L, FileCategory.TASK_CREATION.name(), fileId)).thenReturn(record(101L, "md5-a"));
+        when(fileMapper.findByFileId(fileId)).thenReturn(pending);
 
         assertThatThrownBy(() -> service.bindPendingInitialFiles(1L, java.util.List.of(fileId), designer))
                 .isInstanceOf(com.bms.common.BusinessException.class)
@@ -150,7 +147,8 @@ class FileApplicationServiceTest {
         record.setFileName("BMS.pcb");
         record.setFileSize(100L);
         record.setMd5(md5);
-        record.setCompanyFileId("mock-file-1");
+        record.setFileId("mock-file-1");
+        record.setResourcePath("mock-file-1");
         record.setLatest(true);
         record.setUploadedBy(10L);
         return record;

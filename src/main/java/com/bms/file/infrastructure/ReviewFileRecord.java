@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 /**
  * @author 王涛
  * @date 2026-09-16
- * @description 与 review_file 表对应的文件持久化记录，保存文件元数据、当前文件标记和公司文件服务标识，不保存文件二进制内容。
+ * @description 与 review_file 表对应的文件持久化记录，保存 PCB 文件标识、资源路径和文件元数据，不保存文件二进制内容。
  */
 public class ReviewFileRecord {
     private Long id;
@@ -16,7 +16,8 @@ public class ReviewFileRecord {
     private String fileFormat;
     private Long fileSize;
     private String md5;
-    private String companyFileId;
+    private String fileId;
+    private String resourcePath;
     private Boolean latest;
     private Long uploadedBy;
     private LocalDateTime uploadedAt;
@@ -38,8 +39,10 @@ public class ReviewFileRecord {
     public void setFileSize(Long fileSize) { this.fileSize = fileSize; }
     public String getMd5() { return md5; }
     public void setMd5(String md5) { this.md5 = md5; }
-    public String getCompanyFileId() { return companyFileId; }
-    public void setCompanyFileId(String companyFileId) { this.companyFileId = companyFileId; }
+    public String getFileId() { return fileId; }
+    public void setFileId(String fileId) { this.fileId = fileId; }
+    public String getResourcePath() { return resourcePath; }
+    public void setResourcePath(String resourcePath) { this.resourcePath = resourcePath; }
     public Boolean getLatest() { return latest; }
     public void setLatest(Boolean latest) { this.latest = latest; }
     public Long getUploadedBy() { return uploadedBy; }

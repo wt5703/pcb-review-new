@@ -19,7 +19,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/mock-users")
-@Tag(name = "本地 Mock 用户", description = "仅用于开发联调的初始化账号、部门、邮箱和角色目录；生产环境由统一身份系统替代。")
+@Tag(name = "本地 Mock 用户", description = "仅用于开发联调的初始化账号、部门、邮箱、手机号和角色目录；生产环境由统一身份系统替代。")
 public class MockUserController {
     private final MockUserDirectoryApplicationService mockUserDirectoryApplicationService;
 
@@ -28,7 +28,7 @@ public class MockUserController {
     }
 
     @GetMapping
-    @Operation(summary = "查询本地初始化账号", description = "返回可用于本地 Mock 身份切换的账号 ID、姓名、测试邮箱、所属部门和预设角色。")
+    @Operation(summary = "查询本地初始化账号", description = "返回可用于本地 Mock 身份切换和评审白名单选择的账号 ID、员工工号、姓名、测试邮箱、手机号、所属部门和预设角色。")
     public ApiResponse<List<MockUserDirectoryApplicationService.MockUserView>> list(HttpServletRequest request) {
         return ApiResponse.ok(mockUserDirectoryApplicationService.listEnabledUsers(), traceId(request));
     }
