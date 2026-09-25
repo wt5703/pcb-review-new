@@ -155,7 +155,7 @@ public class OpinionApplicationService {
     public OpinionView reply(long opinionId, ReplyOpinionCommand command, CurrentUser currentUser) {
         ReviewOpinionRecord opinion = requireOpinion(opinionId);
         ReviewTaskRecord task = requireOpenTask(opinion.getTaskId());
-        if (!task.getDesignerId().equals(currentUser.id())) {
+        if (!task.getDesignerId().equals(currentUser.id()) && !permissionPolicy.isAdministrator(currentUser.roles())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "只有任务设计者可以答复意见");
         }
         if (!OpinionStatus.PENDING_REPLY.name().equals(opinion.getStatus()) && !OpinionStatus.CONFIRMED_REJECTED.name().equals(opinion.getStatus())) {
@@ -390,7 +390,7 @@ public class OpinionApplicationService {
     }
 
     private void requirePendingReplyOwner(ReviewOpinionRecord opinion, CurrentUser currentUser, String action) {
-        if (!opinion.getRaisedBy().equals(currentUser.id())) {
+        if (!opinion.getRaisedBy().equals(currentUser.id()) && !permissionPolicy.isAdministrator(currentUser.roles())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "只有意见提出人可以" + action + "意见");
         }
         if (!OpinionStatus.PENDING_REPLY.name().equals(opinion.getStatus())) {
