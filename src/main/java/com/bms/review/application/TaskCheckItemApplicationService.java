@@ -2,8 +2,6 @@ package com.bms.review.application;
 
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
-import com.bms.audit.infrastructure.OperationAuditMapper;
-import com.bms.audit.infrastructure.OperationAuditRecord;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.application.TaskNodeAuthorizationService;
 import com.bms.identity.domain.Permission;
@@ -33,7 +31,7 @@ import java.util.LinkedHashSet;
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 维护任务内固定互检检查项：进行中任务按最新模板同步显示，已结束任务仅读取既有快照，并校验检查结论的说明与意见关联要求。
+ * @description 维护任务内固定互检检查项：实例仅关联模板 itemId，名称从模板读取；进行中任务同步当前模板，已结束任务仅读取既有检查结果。
  */
 @Service
 public class TaskCheckItemApplicationService {
@@ -43,20 +41,17 @@ public class TaskCheckItemApplicationService {
     private final TaskAssignmentAccessMapper assignmentAccessMapper;
     private final TaskNodeAuthorizationService taskNodeAuthorizationService;
     private final ReviewOpinionMapper opinionMapper;
-    private final OperationAuditMapper auditMapper;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public TaskCheckItemApplicationService(ReviewTaskMapper taskMapper, CheckItemTemplateMapper templateMapper,
                                            TaskCheckItemMapper taskCheckItemMapper, TaskAssignmentAccessMapper assignmentAccessMapper,
-                                           TaskNodeAuthorizationService taskNodeAuthorizationService, ReviewOpinionMapper opinionMapper,
-                                           OperationAuditMapper auditMapper) {
+                                           TaskNodeAuthorizationService taskNodeAuthorizationService, ReviewOpinionMapper opinionMapper) {
         this.taskMapper = taskMapper;
         this.templateMapper = templateMapper;
         this.taskCheckItemMapper = taskCheckItemMapper;
         this.assignmentAccessMapper = assignmentAccessMapper;
         this.taskNodeAuthorizationService = taskNodeAuthorizationService;
         this.opinionMapper = opinionMapper;
-        this.auditMapper = auditMapper;
     }
 
     @Transactional
@@ -66,8 +61,9 @@ public class TaskCheckItemApplicationService {
         List<TaskCheckItemRecord> records = taskCheckItemMapper.findByTaskId(taskId);
         if (!isFinished(task)) {
             Set<Long> activeTemplateIds = templates.stream().map(CheckItemTemplateRecord::getId).collect(java.util.stream.Collectors.toSet());
-            records = records.stream().filter(record -> activeTemplateIds.contains(record.getTemplateItemId())).toList();
+            records = records.stream().filter(record -> activeTemplateIds.contains(record.getItemId())).toList();
         }
+        Map<Long, CheckItemTemplateRecord> templatesByItemId = templatesByItemId(records, templates, isFinished(task));
         Map<Long, List<TaskCheckItemRecord>> itemsByParentId = records.stream()
                 .filter(record -> record.getParentId() != null)
                 .collect(java.util.stream.Collectors.groupingBy(TaskCheckItemRecord::getParentId));
@@ -75,10 +71,10 @@ public class TaskCheckItemApplicationService {
                 .filter(record -> record.getParentId() == null)
                 .sorted(java.util.Comparator.comparing(TaskCheckItemRecord::getSortNo))
                 .map(category -> new CheckItemCategoryView(new CheckItemCategoryInfo(category.getId(), task.getReviewType(),
-                        category.getItemName(), category.getSortNo()),
+                        itemNameOf(category, templatesByItemId), category.getSortNo()),
                         itemsByParentId.getOrDefault(category.getId(), List.of()).stream()
                                 .sorted(java.util.Comparator.comparing(TaskCheckItemRecord::getSortNo))
-                                .map(CheckItemListItemView::from)
+                                .map(item -> CheckItemListItemView.from(item, itemNameOf(item, templatesByItemId)))
                                 .toList()))
                 .toList();
     }
@@ -97,18 +93,16 @@ public class TaskCheckItemApplicationService {
         }
         requireLeafCheckItem(record);
         validateCommand(command);
-        Long opinionId = command.result() == CheckResult.FAIL
+        ReviewOpinionRecord opinion = command.result() == CheckResult.FAIL
                 ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), currentUser) : null;
         record.setCheckResult(command.result().name());
         record.setComment(command.comment());
         record.setRichText(command.richText());
-        record.setLinkedOpinionId(opinionId);
         record.setStatus(CheckItemStatus.COMPLETED.name());
         if (taskCheckItemMapper.submit(record) != 1) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务");
         }
-        appendAudit(record.getId(), "CHECK_ITEM_SUBMITTED", currentUser.id(), command.result().name());
-        return CheckItemView.from(record, linkedOpinion(record));
+        return CheckItemView.from(record, opinion, itemNameOf(record));
     }
 
     /**
@@ -131,12 +125,11 @@ public class TaskCheckItemApplicationService {
             if (record == null) { throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务"); }
             requireLeafCheckItem(record);
             validateBatchCommand(command);
-            Long opinionId = command.result() == CheckResult.FAIL ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), currentUser) : null;
-            record.setCheckResult(command.result().name()); record.setComment(command.comment()); record.setRichText(command.richText()); record.setLinkedOpinionId(opinionId);
+            ReviewOpinionRecord opinion = command.result() == CheckResult.FAIL ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), currentUser) : null;
+            record.setCheckResult(command.result().name()); record.setComment(command.comment()); record.setRichText(command.richText());
             record.setStatus(CheckItemStatus.COMPLETED.name());
             if (taskCheckItemMapper.submit(record) != 1) { throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务"); }
-            appendAudit(record.getId(), "CHECK_ITEM_BATCH_SUBMITTED", currentUser.id(), command.result().name());
-            views.add(CheckItemView.from(record, linkedOpinion(record)));
+            views.add(CheckItemView.from(record, opinion, itemNameOf(record)));
         }
         return List.copyOf(views);
     }
@@ -157,7 +150,7 @@ public class TaskCheckItemApplicationService {
         List<CheckItemTemplateRecord> templates = allTemplates;
         Map<Long, TaskCheckItemRecord> existing = new HashMap<>();
         for (TaskCheckItemRecord item : taskCheckItemMapper.findByTaskId(task.getId())) {
-            existing.put(item.getTemplateItemId(), item);
+            existing.put(item.getItemId(), item);
         }
         Map<Long, CheckItemTemplateRecord> templateById = allTemplates.stream()
                 .collect(java.util.stream.Collectors.toMap(CheckItemTemplateRecord::getId, template -> template, (left, right) -> left));
@@ -178,12 +171,10 @@ public class TaskCheckItemApplicationService {
         if (current != null) {
             snapshot.setId(current.getId());
             snapshot.setStatus(current.getStatus());
-            snapshot.setVersion(current.getVersion());
             taskCheckItemMapper.refreshTemplateSnapshot(snapshot);
         } else {
             snapshot.setId(taskCheckItemMapper.nextId());
             snapshot.setStatus(CheckItemStatus.PENDING.name());
-            snapshot.setVersion(0L);
             taskCheckItemMapper.insert(snapshot);
         }
         existing.put(template.getId(), snapshot);
@@ -192,9 +183,8 @@ public class TaskCheckItemApplicationService {
     private TaskCheckItemRecord snapshotOf(long taskId, CheckItemTemplateRecord template, Long parentId) {
         TaskCheckItemRecord item = new TaskCheckItemRecord();
         item.setTaskId(taskId);
-        item.setTemplateItemId(template.getId());
+        item.setItemId(template.getId());
         item.setParentId(parentId);
-        item.setItemName(template.getItemName());
         item.setSortNo(template.getSortNo());
         return item;
     }
@@ -220,10 +210,6 @@ public class TaskCheckItemApplicationService {
         return TaskStatus.FINISHED.name().equals(task.getStatus());
     }
 
-    private void appendAudit(long itemId, String action, long operatorId, String detail) {
-        auditMapper.insert(new OperationAuditRecord("TASK_CHECK_ITEM", itemId, action, operatorId, detail));
-    }
-
     private void validateCommand(SubmitCheckItemCommand command) {
         validateResult(command.result(), command.comment());
     }
@@ -245,7 +231,7 @@ public class TaskCheckItemApplicationService {
         }
     }
 
-    private Long createOrUpdateMutualOpinion(long taskId, TaskCheckItemRecord item, String comment, String richText, CurrentUser currentUser) {
+    private ReviewOpinionRecord createOrUpdateMutualOpinion(long taskId, TaskCheckItemRecord item, String comment, String richText, CurrentUser currentUser) {
         String opinionContent = richText == null || richText.isBlank() ? comment.trim() : richText.trim();
         ReviewOpinionRecord opinion = opinionMapper.findActiveMutualCheckItemOpinion(taskId, item.getId());
         if (opinion == null) {
@@ -257,14 +243,36 @@ public class TaskCheckItemApplicationService {
             opinion.setContent(opinionContent); opinion.setRichText(opinionContent);
             if (opinionMapper.updateContent(opinion) != 1) { throw new BusinessException(ErrorCode.VERSION_CONFLICT, "关联互检意见已被其他操作更新，请刷新后重试"); }
         }
-        return opinion.getId();
+        return opinion;
     }
 
-    private ReviewOpinionRecord linkedOpinion(TaskCheckItemRecord record) {
-        if (record.getLinkedOpinionId() == null) {
-            return null;
+    private Map<Long, CheckItemTemplateRecord> templatesByItemId(List<TaskCheckItemRecord> records,
+                                                                    List<CheckItemTemplateRecord> activeTemplates,
+                                                                    boolean finished) {
+        if (records.isEmpty()) {
+            return Map.of();
         }
-        return opinionMapper.findById(record.getLinkedOpinionId());
+        List<CheckItemTemplateRecord> source = finished
+                ? templateMapper.findByIds(records.stream().map(TaskCheckItemRecord::getItemId).distinct().toList())
+                : activeTemplates;
+        return source.stream().collect(java.util.stream.Collectors.toMap(CheckItemTemplateRecord::getId,
+                template -> template, (left, right) -> left));
+    }
+
+    private String itemNameOf(TaskCheckItemRecord record) {
+        CheckItemTemplateRecord template = templateMapper.findById(record.getItemId());
+        if (template == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "互检检查项模板不存在");
+        }
+        return template.getItemName();
+    }
+
+    private String itemNameOf(TaskCheckItemRecord record, Map<Long, CheckItemTemplateRecord> templatesByItemId) {
+        CheckItemTemplateRecord template = templatesByItemId.get(record.getItemId());
+        if (template == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "互检检查项模板不存在");
+        }
+        return template.getItemName();
     }
 
     public record SubmitCheckItemCommand(CheckResult result, String comment, String richText) { }
@@ -276,18 +284,18 @@ public class TaskCheckItemApplicationService {
      * 互检单查询子项：检查结论、文字意见和富文本只存在于可空 opinion 内，避免把同一信息平铺在 items 中。
      */
     public record CheckItemListItemView(Long id, String itemName, int sortNo, CheckItemListOpinionView opinion) {
-        static CheckItemListItemView from(TaskCheckItemRecord record) {
+        static CheckItemListItemView from(TaskCheckItemRecord record, String itemName) {
             CheckItemListOpinionView opinion = record.getCheckResult() == null ? null
                     : new CheckItemListOpinionView(CheckResult.valueOf(record.getCheckResult()), record.getComment(), record.getRichText());
-            return new CheckItemListItemView(record.getId(), record.getItemName(), record.getSortNo(), opinion);
+            return new CheckItemListItemView(record.getId(), itemName, record.getSortNo(), opinion);
         }
     }
     public record CheckItemListOpinionView(CheckResult result, String comment, String richText) { }
     public record CheckItemView(Long id, String itemName, int sortNo,
                                 CheckResult result, String comment, String richText, CheckItemOpinionView opinion,
                                 CheckItemStatus status) {
-        static CheckItemView from(TaskCheckItemRecord record, ReviewOpinionRecord opinion) {
-            return new CheckItemView(record.getId(), record.getItemName(),
+        static CheckItemView from(TaskCheckItemRecord record, ReviewOpinionRecord opinion, String itemName) {
+            return new CheckItemView(record.getId(), itemName,
                     record.getSortNo(), record.getCheckResult() == null ? null : CheckResult.valueOf(record.getCheckResult()), record.getComment(), record.getRichText(),
                     opinion == null ? null : CheckItemOpinionView.from(opinion), CheckItemStatus.valueOf(record.getStatus()));
         }

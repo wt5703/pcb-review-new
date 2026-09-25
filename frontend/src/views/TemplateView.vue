@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { reviewApi } from '@/api/review-api'
-import type { TemplateListCategory } from '@/api/types'
+import type { ReviewType, TemplateListCategory } from '@/api/types'
 
 type EditorMode = 'create-category' | 'edit-category' | 'edit-item' | null
 type EditableItem = { id?: number; itemName: string }
@@ -12,7 +12,7 @@ const saving = ref(false)
 const loading = ref(true)
 const error = ref('')
 const message = ref('')
-const reviewType = ref('PCB')
+const reviewType = ref<ReviewType>('PCB')
 const categories = ref<TemplateListCategory[]>([])
 const editorMode = ref<EditorMode>(null)
 const editingId = ref<number>()
@@ -45,6 +45,7 @@ async function load(): Promise<void> {
 }
 
 function closeEditor(): void { editorMode.value = null; resetEditor() }
+function changeReviewType(): void { closeEditor(); void load() }
 function openCreate(): void { resetEditor(); editor.items = []; editorMode.value = 'create-category' }
 function openCategoryEditor(group: TemplateListCategory): void { fillEditor(group); editorMode.value = 'edit-category' }
 function openItemEditor(group: TemplateListCategory, itemId: number): void {
@@ -108,7 +109,7 @@ async function importWorkbook(event: Event): Promise<void> {
   error.value = ''
   message.value = ''
   try {
-    const result = await reviewApi.importTemplate(file)
+    const result = await reviewApi.importTemplate(file, reviewType.value)
     message.value = `导入完成：共 ${result.totalRows} 行，新增 ${result.createdCount} 条，更新 ${result.updatedCount} 条。`
     await load()
   } catch (cause) { error.value = cause instanceof Error ? cause.message : '导入失败' } finally {
@@ -125,6 +126,7 @@ onMounted(load)
     <header class="template-toolbar">
       <h1>互检单管理</h1>
       <div class="toolbar-actions">
+        <label class="review-type-select">模板类型<select v-model="reviewType" @change="changeReviewType"><option value="PCB">PCB评审</option><option value="SCHEMATIC">原理图评审</option></select></label>
         <button class="btn primary" @click="openCreate">＋ 新增类别</button>
         <button class="btn" :disabled="importing" @click="fileInput?.click()">{{ importing ? '导入中…' : '导入 Excel' }}</button>
         <input ref="fileInput" class="hidden" type="file" accept=".xlsx" @change="importWorkbook" />
@@ -182,5 +184,5 @@ onMounted(load)
 </template>
 
 <style scoped>
-.template-page{max-width:1400px;margin:0 auto}.template-toolbar{display:flex;align-items:center;justify-content:space-between;margin:8px 0 20px}.template-toolbar h1{margin:0;font-size:24px;letter-spacing:-.4px;color:#1d2740}.toolbar-actions,.group-actions{display:flex;gap:8px}.toolbar-actions .btn{height:38px}.template-error{margin:0 0 12px}.template-root{padding:18px}.template-heading,.editor-title{display:flex;justify-content:space-between;align-items:center;gap:12px}.template-heading{margin:4px 0 26px}.template-heading h2,.editor-title h2,.editor-title h3{margin:0;color:#1e2942}.template-heading h2{font-size:17px}.template-list{display:grid;gap:12px}.template-group{overflow:hidden;border:1px solid #dfe3ed;border-radius:11px;background:#fff}.template-group.disabled{opacity:.65}.group-header{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:68px;padding:0 18px;background:#fbfcff;border-bottom:1px solid #e8eaf1}.category-badge{display:inline-block;margin-right:12px;padding:5px 9px;border-radius:6px;background:#f0edff;color:#6657d9;font-size:12px}.group-header b{font-size:16px;color:#25304a}.group-header small{margin-left:9px;color:#737c91;font-size:13px}.template-item{display:grid;grid-template-columns:30px minmax(0,1fr) auto auto;align-items:center;gap:10px;min-height:52px;padding:0 18px;border-bottom:1px solid #eef0f5;color:#2f3850;font-size:13px}.template-item>span{display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:#f3f5f9;color:#616c84;font-size:12px}.template-item b{font-weight:500}.template-item em{font-style:normal;color:#bd7b2b;font-size:12px}.text-link{border:0;background:transparent;font-size:13px;white-space:nowrap}.group-footer{padding:11px 18px;background:#fff}.category-editor,.item-editor{padding:18px;border:1px solid #dde2ed;border-radius:10px;background:#fff;box-shadow:0 2px 8px rgba(35,42,70,.03)}.category-editor{margin-bottom:16px}.inner-editor,.item-editor{margin:12px 18px}.category-editor label,.item-editor label{display:grid;gap:9px;color:#2b344b;font-size:13px;font-weight:700}.category-editor input,.item-editor input{width:100%;height:40px;padding:9px 11px;border:1px solid #dce1eb;border-radius:7px;background:#fafbfe;outline:0}.category-editor input:focus,.item-editor input:focus{border-color:#786be2;box-shadow:0 0 0 3px #f0eeff}.item-title{margin:20px 0 10px}.item-input-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}.category-editor footer,.item-editor footer{display:flex;justify-content:flex-end;margin-top:17px;padding-top:14px;border-top:1px solid #e7eaf1}.item-editor h3{font-size:16px}.toast-message{margin-bottom:12px}@media(max-width:720px){.template-toolbar,.group-header{align-items:flex-start;flex-direction:column}.toolbar-actions{width:100%}.template-item{grid-template-columns:30px 1fr}.template-item .text-link{grid-column:2;justify-self:start;padding:0}.group-actions{width:100%}.item-input-row{grid-template-columns:1fr}.template-root{padding:12px}.group-header,.template-item,.group-footer{padding-left:13px;padding-right:13px}.inner-editor,.item-editor{margin-left:12px;margin-right:12px}}
+.template-page{max-width:1400px;margin:0 auto}.template-toolbar{display:flex;align-items:center;justify-content:space-between;margin:8px 0 20px}.template-toolbar h1{margin:0;font-size:24px;letter-spacing:-.4px;color:#1d2740}.toolbar-actions,.group-actions{display:flex;gap:8px}.toolbar-actions .btn{height:38px}.review-type-select{display:flex;align-items:center;gap:7px;color:#596078;font-size:13px;white-space:nowrap}.review-type-select select{height:38px;padding:0 30px 0 10px;border:1px solid #dbe0eb;border-radius:7px;background:#fff;color:#28334c}.template-error{margin:0 0 12px}.template-root{padding:18px}.template-heading,.editor-title{display:flex;justify-content:space-between;align-items:center;gap:12px}.template-heading{margin:4px 0 26px}.template-heading h2,.editor-title h2,.editor-title h3{margin:0;color:#1e2942}.template-heading h2{font-size:17px}.template-list{display:grid;gap:12px}.template-group{overflow:hidden;border:1px solid #dfe3ed;border-radius:11px;background:#fff}.template-group.disabled{opacity:.65}.group-header{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:68px;padding:0 18px;background:#fbfcff;border-bottom:1px solid #e8eaf1}.category-badge{display:inline-block;margin-right:12px;padding:5px 9px;border-radius:6px;background:#f0edff;color:#6657d9;font-size:12px}.group-header b{font-size:16px;color:#25304a}.group-header small{margin-left:9px;color:#737c91;font-size:13px}.template-item{display:grid;grid-template-columns:30px minmax(0,1fr) auto auto;align-items:center;gap:10px;min-height:52px;padding:0 18px;border-bottom:1px solid #eef0f5;color:#2f3850;font-size:13px}.template-item>span{display:grid;place-items:center;width:27px;height:27px;border-radius:50%;background:#f3f5f9;color:#616c84;font-size:12px}.template-item b{font-weight:500}.template-item em{font-style:normal;color:#bd7b2b;font-size:12px}.text-link{border:0;background:transparent;font-size:13px;white-space:nowrap}.group-footer{padding:11px 18px;background:#fff}.category-editor,.item-editor{padding:18px;border:1px solid #dde2ed;border-radius:10px;background:#fff;box-shadow:0 2px 8px rgba(35,42,70,.03)}.category-editor{margin-bottom:16px}.inner-editor,.item-editor{margin:12px 18px}.category-editor label,.item-editor label{display:grid;gap:9px;color:#2b344b;font-size:13px;font-weight:700}.category-editor input,.item-editor input{width:100%;height:40px;padding:9px 11px;border:1px solid #dce1eb;border-radius:7px;background:#fafbfe;outline:0}.category-editor input:focus,.item-editor input:focus{border-color:#786be2;box-shadow:0 0 0 3px #f0eeff}.item-title{margin:20px 0 10px}.item-input-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}.category-editor footer,.item-editor footer{display:flex;justify-content:flex-end;margin-top:17px;padding-top:14px;border-top:1px solid #e7eaf1}.item-editor h3{font-size:16px}.toast-message{margin-bottom:12px}@media(max-width:720px){.template-toolbar,.group-header{align-items:flex-start;flex-direction:column}.toolbar-actions{width:100%;flex-wrap:wrap}.template-item{grid-template-columns:30px 1fr}.template-item .text-link{grid-column:2;justify-self:start;padding:0}.group-actions{width:100%}.item-input-row{grid-template-columns:1fr}.template-root{padding:12px}.group-header,.template-item,.group-footer{padding-left:13px;padding-right:13px}.inner-editor,.item-editor{margin-left:12px;margin-right:12px}}
 </style>

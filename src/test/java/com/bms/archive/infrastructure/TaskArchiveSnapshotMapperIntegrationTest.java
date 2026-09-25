@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * @author 王涛
  * @date 2026-09-18
- * @description 验证归档快照在本地数据库中可按任务唯一写入并读取，确保结束后的历史详情不依赖可变业务表重新计算。
+ * @description 验证归档快照在本地数据库中可按任务唯一写入并读取；流程节点不写入快照表。
  */
 @SpringBootTest
 class TaskArchiveSnapshotMapperIntegrationTest {
@@ -18,10 +18,10 @@ class TaskArchiveSnapshotMapperIntegrationTest {
 
     @Test
     void shouldPersistAndLoadArchiveSnapshot() {
-        TaskArchiveSnapshotRecord snapshot = new TaskArchiveSnapshotRecord(9901L, "FINISHED", "{\"taskId\":9901}", "[]", "[]", "[]", "[]", "[]");
+        TaskArchiveSnapshotRecord snapshot = new TaskArchiveSnapshotRecord(9901L, "[]", "[]");
         snapshotMapper.insert(snapshot);
 
         assertThat(snapshotMapper.existsByTaskId(9901L)).isTrue();
-        assertThat(snapshotMapper.findByTaskId(9901L).taskSnapshot()).isEqualTo("{\"taskId\":9901}");
+        assertThat(snapshotMapper.findByTaskId(9901L).fileSnapshot()).isEqualTo("[]");
     }
 }

@@ -11,7 +11,6 @@ import com.bms.review.infrastructure.CheckItemTemplateRecord;
 import com.bms.review.infrastructure.TaskCheckItemMapper;
 import com.bms.review.infrastructure.TaskCheckItemRecord;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
-import com.bms.audit.infrastructure.OperationAuditMapper;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
@@ -32,7 +31,7 @@ import static org.mockito.Mockito.never;
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 验证进行中任务按当前模板生成检查项快照、已结束任务不再同步模板，以及不合格检查项必须带说明和关联意见的约束。
+ * @description 验证进行中任务按当前模板生成检查项实例、结束任务通过 itemId 查询模板名称，以及不合格检查项必须带说明的约束。
  */
 class TaskCheckItemApplicationServiceTest {
     private final ReviewTaskMapper taskMapper = mock(ReviewTaskMapper.class);
@@ -41,16 +40,15 @@ class TaskCheckItemApplicationServiceTest {
     private final TaskAssignmentAccessMapper assignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
     private final TaskNodeAuthorizationService taskNodeAuthorizationService = mock(TaskNodeAuthorizationService.class);
     private final ReviewOpinionMapper opinionMapper = mock(ReviewOpinionMapper.class);
-    private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
     private final TaskCheckItemApplicationService service = new TaskCheckItemApplicationService(taskMapper, templateMapper,
-            taskCheckItemMapper, assignmentAccessMapper, taskNodeAuthorizationService, opinionMapper, auditMapper);
+            taskCheckItemMapper, assignmentAccessMapper, taskNodeAuthorizationService, opinionMapper);
     private final CurrentUser pcbLeader = new CurrentUser(1L, Set.of(Role.PCB_LEADER));
 
     @Test
     void shouldMaterializeCurrentTemplateForActiveTask() {
         ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
         CheckItemTemplateRecord template = template(31L, "线距检查");
-        TaskCheckItemRecord materialized = item(51L, 31L, "spacing", "线距检查");
+        TaskCheckItemRecord materialized = item(51L, 31L);
         materialized.setParentId(null);
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(templateMapper.findEnabledByReviewType(ReviewType.PCB.name())).thenReturn(List.of(template));
@@ -69,7 +67,7 @@ class TaskCheckItemApplicationServiceTest {
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(templateMapper.findEnabledByReviewType(ReviewType.PCB.name())).thenReturn(List.of());
         when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of());
-        when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(item(51L, 31L, "spacing", "线距检查"));
+        when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(item(51L, 31L));
 
         assertThatThrownBy(() -> service.submit(1001L, 51L,
                 new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.FAIL, null, null), pcbLeader))
@@ -80,11 +78,13 @@ class TaskCheckItemApplicationServiceTest {
     @Test
     void shouldKeepExistingSnapshotWhenTaskIsFinished() {
         ReviewTaskRecord task = task(TaskStatus.FINISHED);
-        TaskCheckItemRecord category = item(41L, 30L, "category", "结束时的类别");
+        TaskCheckItemRecord category = item(41L, 30L);
         category.setParentId(null);
-        TaskCheckItemRecord snapshot = item(51L, 31L, "spacing", "结束时的线距检查");
+        TaskCheckItemRecord snapshot = item(51L, 31L);
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of(category, snapshot));
+        when(templateMapper.findByIds(List.of(30L, 31L))).thenReturn(List.of(template(30L, "结束时的类别"),
+                template(31L, "结束时的线距检查")));
 
         List<TaskCheckItemApplicationService.CheckItemCategoryView> items = service.list(1001L, pcbLeader);
 
@@ -109,15 +109,13 @@ class TaskCheckItemApplicationServiceTest {
         return record;
     }
 
-    private TaskCheckItemRecord item(long id, long templateId, String key, String name) {
+    private TaskCheckItemRecord item(long id, long itemId) {
         TaskCheckItemRecord record = new TaskCheckItemRecord();
         record.setId(id);
-        record.setTemplateItemId(templateId);
+        record.setItemId(itemId);
         record.setParentId(41L);
-        record.setItemName(name);
         record.setSortNo(1);
         record.setStatus("PENDING");
-        record.setVersion(0L);
         return record;
     }
 }

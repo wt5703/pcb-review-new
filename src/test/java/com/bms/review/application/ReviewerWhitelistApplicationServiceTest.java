@@ -1,6 +1,5 @@
 package com.bms.review.application;
 
-import com.bms.audit.infrastructure.OperationAuditMapper;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Role;
 import com.bms.review.domain.ReviewRole;
@@ -24,8 +23,7 @@ import static org.mockito.Mockito.when;
  */
 class ReviewerWhitelistApplicationServiceTest {
     private final ReviewerWhitelistMapper whitelistMapper = mock(ReviewerWhitelistMapper.class);
-    private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
-    private final ReviewerWhitelistApplicationService service = new ReviewerWhitelistApplicationService(whitelistMapper, auditMapper);
+    private final ReviewerWhitelistApplicationService service = new ReviewerWhitelistApplicationService(whitelistMapper);
 
     @Test
     void shouldAddEmployeeNumbersForSupportedReviewRoles() {
@@ -40,7 +38,6 @@ class ReviewerWhitelistApplicationServiceTest {
 
         assertThat(result.createdCount()).isEqualTo(6);
         verify(whitelistMapper, times(6)).insert(any());
-        verify(auditMapper).insert(any());
     }
 
     @Test
@@ -52,6 +49,5 @@ class ReviewerWhitelistApplicationServiceTest {
 
         assertThat(result.deletedCount()).isEqualTo(2);
         verify(whitelistMapper).logicDeleteByEmployeeNo("PCB-1001", 1L);
-        verify(auditMapper).insert(any());
     }
 }

@@ -8,7 +8,9 @@ INSERT INTO role_definition (role_code, role_name, role_description, enabled) VA
     ('EMC_EXPERT', 'EMC专家', '负责 EMC 相关评审意见提出与确认，并可下载 PCB/原理图文件。', TRUE),
     ('DESIGNER', '设计师', '负责创建评审任务、上传设计文件和答复专家意见。', TRUE),
     ('PROCESS_EXPERT', '工艺专家', '负责工艺评审意见提出与确认。', TRUE),
-    ('STRUCTURE_EXPERT', '结构专家', '负责结构评审意见提出与确认。', TRUE);
+    ('STRUCTURE_EXPERT', '结构专家', '负责结构评审意见提出与确认。', TRUE),
+    ('PCB_MUTUAL_CHECK', 'PCB互检单评审', '负责已分配 PCB 任务的互检检查项与互检意见处理。', TRUE),
+    ('SCHEMATIC_MUTUAL_CHECK', '原理图互检单评审', '负责已分配原理图任务的互检检查项与互检意见处理。', TRUE);
 
 INSERT INTO user_account (id, employee_no, display_name, email, mobile, department_name, enabled) VALUES
     (1, 'BMS001', '王鹏飞', 'wang.pengfei@bms.example.com', '13800000001', 'BMS硬件部', TRUE),

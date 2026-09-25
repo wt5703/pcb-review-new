@@ -2,8 +2,6 @@ package com.bms.workflow.interfaces;
 
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
-import com.bms.review.infrastructure.TaskReviewerMapper;
-import com.bms.review.infrastructure.TaskReviewerRecord;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
@@ -33,15 +31,12 @@ class WorkflowControllerIntegrationTest {
     @Autowired
     private ReviewTaskMapper taskMapper;
     @Autowired
-    private TaskReviewerMapper reviewerMapper;
-    @Autowired
     private ReviewFileMapper fileMapper;
 
     @Test
     void shouldFinishArchiveAndRejectSecondTransitionThroughRestApi() throws Exception {
         long taskId = 8301L;
         taskMapper.insert(task(taskId));
-        reviewerMapper.insert(reviewer(taskId));
         fileMapper.insert(file(taskId));
 
         mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
@@ -68,27 +63,24 @@ class WorkflowControllerIntegrationTest {
     }
 
     @Test
-    void shouldRegisterCompanyFilesAndStartProcessAndStructureReviewInOneTransition() throws Exception {
+    void shouldStartProcessAndStructureReviewAfterStageFilesWereUploaded() throws Exception {
         long taskId = 8303L;
         ReviewTaskRecord task = task(taskId);
         task.setStatus(TaskStatus.PCB_EXPERT_REVIEWING.name());
         task.setReviewRoles("PROCESS_EXPERT");
         taskMapper.insert(task);
+        fileMapper.insert(file(taskId, 8304L, "PCB_PROCESS_REVIEW"));
+        fileMapper.insert(file(taskId, 8305L, "PCB_STRUCTURE_REVIEW"));
 
         mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-User-Id", "10")
                         .header("X-Mock-Roles", "DESIGNER")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"actions":["START_PCB_STRUCTURE_REVIEW","START_PCB_PROCESS_REVIEW"],"comment":"上传工艺图和结构图并开启评审",
-                                 "stageFiles":[
-                                   {"scene":"PROCESS_REVIEW","fileId":"/bms/pcb/8303/structure.zip","fileName":"结构图.zip","fileSize":128,"fileKind":"STRUCTURE"},
-                                   {"scene":"PROCESS_REVIEW","fileId":"/bms/pcb/8303/process.zip","fileName":"工艺图.zip","fileSize":256,"fileKind":"PROCESS"}
-                                 ]}
+                                {"actions":["START_PCB_STRUCTURE_REVIEW","START_PCB_PROCESS_REVIEW"],"comment":"文件已上传，开启工艺和结构评审"}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.toStatus").value("PCB_PROCESS_STRUCTURE_REVIEWING"))
-                .andExpect(jsonPath("$.data.stageFiles.length()").value(2));
+                .andExpect(jsonPath("$.data.toStatus").value("PCB_PROCESS_STRUCTURE_REVIEWING"));
     }
 
     private ReviewTaskRecord task(long taskId) {
@@ -106,25 +98,15 @@ class WorkflowControllerIntegrationTest {
         return task;
     }
 
-    private TaskReviewerRecord reviewer(long taskId) {
-        TaskReviewerRecord reviewer = new TaskReviewerRecord();
-        reviewer.setId(8302L);
-        reviewer.setTaskId(taskId);
-        reviewer.setReviewRole("PCB_MUTUAL_CHECK");
-        reviewer.setReviewerId(20L);
-        reviewer.setProcessStatus("SUBMITTED");
-        reviewer.setAssignedBy(1L);
-        reviewer.setNoOpinion(true);
-        reviewer.setVersion(0L);
-        return reviewer;
+    private ReviewFileRecord file(long taskId) {
+        return file(taskId, 8302L, "PCB_REVIEW");
     }
 
-    private ReviewFileRecord file(long taskId) {
+    private ReviewFileRecord file(long taskId, long fileId, String category) {
         ReviewFileRecord file = new ReviewFileRecord();
-        file.setId(8302L);
+        file.setId(fileId);
         file.setTaskId(taskId);
-        file.setFileCategory("TASK_CREATION");
-        file.setBusinessFileKey("pcb-design");
+        file.setFileCategory(category);
         file.setFileName("BMS.pcb");
         file.setFileSize(100L);
         file.setMd5("workflow-md5");

@@ -30,7 +30,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/reviewer-whitelists")
-@Tag(name = "评审人员白名单", description = "维护硬件、EMC、结构、工艺和 PCB 评审角色可选员工工号。")
+@Tag(name = "评审人员白名单", description = "维护硬件、EMC、结构、工艺、PCB 评审及 PCB/原理图互检职责的可选员工工号。")
 public class ReviewerWhitelistController {
     private final ReviewerWhitelistApplicationService whitelistApplicationService;
 
@@ -45,7 +45,7 @@ public class ReviewerWhitelistController {
     }
 
     @PostMapping
-    @Operation(summary = "批量新增评审人员白名单", description = "仅支持 意见评审=HARDWARE_EXPERT、 EMC评审=EMC_EXPERT、结构评审=STRUCTURE_EXPERT、工艺评审=PROCESS_EXPERT、PCB评审=PCB_EXPERT；同一角色与工号的重复映射会被忽略")
+    @Operation(summary = "批量新增评审人员白名单", description = "支持 硬件评审=HARDWARE_EXPERT、EMC评审=EMC_EXPERT、结构评审=STRUCTURE_EXPERT、工艺评审=PROCESS_EXPERT、PCB评审=PCB_EXPERT、PCB互检=PCB_MUTUAL_CHECK、原理图互检=SCHEMATIC_MUTUAL_CHECK；同一角色与工号的重复映射会被忽略")
     ApiResponse<ReviewerWhitelistApplicationService.SaveResult> add(
             @Valid @RequestBody AddReviewerWhitelistRequest request,
             HttpServletRequest servletRequest) {

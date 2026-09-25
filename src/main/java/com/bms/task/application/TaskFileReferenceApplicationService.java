@@ -40,8 +40,11 @@ public class TaskFileReferenceApplicationService {
         TaskApplicationService.TaskView draft = taskApplicationService.updateDraft(taskId, command, currentUser);
         List<Long> taskFileIds = fileApplicationService.bindPendingInitialFiles(taskId, fileIds, currentUser).stream()
                 .map(FileApplicationService.FileView::id).toList();
-        TaskApplicationService.TaskView saved = taskFileIds.isEmpty() ? draft
-                : taskApplicationService.saveDraftFiles(taskId, taskFileIds, currentUser);
-        return submit ? taskApplicationService.submit(taskId, taskFileIds, currentUser) : saved;
+        // 提交时由 submit 一次性将既有文件和本次绑定的多个文件写入任务，
+        // 避免先保存草稿文件、再提交时把同一批文件 ID 重复追加。
+        if (submit) {
+            return taskApplicationService.submit(taskId, taskFileIds, currentUser);
+        }
+        return taskFileIds.isEmpty() ? draft : taskApplicationService.saveDraftFiles(taskId, taskFileIds, currentUser);
     }
 }

@@ -11,7 +11,6 @@ public class ReviewFileRecord {
     private Long id;
     private Long taskId;
     private String fileCategory;
-    private String businessFileKey;
     private String fileName;
     private String fileFormat;
     private Long fileSize;
@@ -29,8 +28,6 @@ public class ReviewFileRecord {
     public void setTaskId(Long taskId) { this.taskId = taskId; }
     public String getFileCategory() { return fileCategory; }
     public void setFileCategory(String fileCategory) { this.fileCategory = fileCategory; }
-    public String getBusinessFileKey() { return businessFileKey; }
-    public void setBusinessFileKey(String businessFileKey) { this.businessFileKey = businessFileKey; }
     public String getFileName() { return fileName; }
     public void setFileName(String fileName) { this.fileName = fileName; }
     public String getFileFormat() { return fileFormat; }

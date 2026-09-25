@@ -58,8 +58,8 @@ class PcbHappyPathIntegrationTest {
     private long createAndSubmitTask() throws Exception {
         String fileId = "c778c14e-6f1a-4f4f-9f11-100000000004";
         ReviewFileRecord pending = new ReviewFileRecord();
-        pending.setId(reviewFileMapper.nextId()); pending.setFileId(fileId); pending.setTaskId(null); pending.setFileCategory("TASK_CREATION");
-        pending.setBusinessFileKey(null); pending.setFileName("BMS-P1.pcb"); pending.setFileFormat("pcb"); pending.setLatest(true);
+        pending.setId(reviewFileMapper.nextId()); pending.setFileId(fileId); pending.setTaskId(null); pending.setFileCategory("PCB_REVIEW");
+        pending.setFileName("BMS-P1.pcb"); pending.setFileFormat("pcb"); pending.setLatest(true);
         pending.setFileSize(8L); pending.setMd5("happy-path-md5"); pending.setResourcePath("company-pcb-p1"); pending.setUploadedBy(10L);
         reviewFileMapper.insert(pending);
         String taskRequest = """
@@ -93,10 +93,16 @@ class PcbHappyPathIntegrationTest {
     }
 
     private void registerLatestPcbFile(long taskId) {
+        registerLatestFile(taskId, "PCB_REVIEW", "BMS-P1-最新版本.pcb", "pcb-file-latest");
+        registerLatestFile(taskId, "PCB_PROCESS_REVIEW", "BMS-P1-工艺图.zip", "process-file-latest");
+        registerLatestFile(taskId, "PCB_STRUCTURE_REVIEW", "BMS-P1-结构图.zip", "structure-file-latest");
+    }
+
+    private void registerLatestFile(long taskId, String fileCategory, String fileName, String fileId) {
         ReviewFileRecord file = new ReviewFileRecord();
-        file.setId(reviewFileMapper.nextId()); file.setTaskId(taskId); file.setFileCategory("PCB_REVIEW");
-        file.setBusinessFileKey("PCB_REVIEW"); file.setFileName("BMS-P1-最新版本.pcb"); file.setFileFormat("pcb");
-        file.setFileSize(12L); file.setMd5("latest-pcb-md5"); file.setFileId("pcb-file-latest"); file.setResourcePath("company-pcb-latest");
+        file.setId(reviewFileMapper.nextId()); file.setTaskId(taskId); file.setFileCategory(fileCategory);
+        file.setFileName(fileName); file.setFileFormat(fileName.substring(fileName.lastIndexOf('.') + 1));
+        file.setFileSize(12L); file.setMd5("latest-pcb-md5"); file.setFileId(fileId); file.setResourcePath("company-" + fileId);
         file.setLatest(true); file.setUploadedBy(10L); file.setUploadedStage("PCB_EXPERT_REVIEWING");
         reviewFileMapper.insert(file);
     }

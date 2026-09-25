@@ -45,10 +45,27 @@ public final class PermissionPolicy {
         permissions.put(Role.STRUCTURE_EXPERT, EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.FILL_OPINION,
                 Permission.CONFIRM_OPINION, Permission.VIEW_OPINION, Permission.DOWNLOAD_STRUCTURE_FILE,
                 Permission.UPLOAD_MUTUAL_CHECK_FILE, Permission.DOWNLOAD_MUTUAL_CHECK_FILE));
+        permissions.put(Role.PCB_MUTUAL_CHECK, mutualCheckPermissions());
+        permissions.put(Role.SCHEMATIC_MUTUAL_CHECK, mutualCheckPermissions());
+    }
+
+    /**
+     * 互检人员只能处理已分配给自己的任务：填写检查项/互检意见、查看并确认对应意见，
+     * 不授予查看全部任务、分配人员或结束任务的管理权限。
+     */
+    private Set<Permission> mutualCheckPermissions() {
+        return EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.FILL_OPINION,
+                Permission.CONFIRM_OPINION, Permission.VIEW_OPINION,
+                Permission.UPLOAD_MUTUAL_CHECK_FILE, Permission.DOWNLOAD_MUTUAL_CHECK_FILE);
     }
 
     public boolean has(Set<Role> roles, Permission permission) {
         return roles.stream().anyMatch(role -> permissions.getOrDefault(role, Set.of()).contains(permission));
+    }
+
+    /** 硬件开发部经理是平台管理员，可在本地联调或实际授权场景中代办任何业务动作。 */
+    public boolean isAdministrator(Set<Role> roles) {
+        return roles.contains(Role.HARDWARE_DEPARTMENT_MANAGER);
     }
 
     public boolean canViewAllTasks(Set<Role> roles) {

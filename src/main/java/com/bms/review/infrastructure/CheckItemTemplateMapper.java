@@ -27,12 +27,19 @@ public interface CheckItemTemplateMapper {
     List<CheckItemTemplateRecord> findEnabledByReviewType(String reviewType);
 
     @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, "
-            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE (#{reviewType} IS NULL OR review_type=#{reviewType}) ORDER BY review_type, sort_no, id")
+            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE enabled=TRUE "
+            + "AND (#{reviewType} IS NULL OR review_type=#{reviewType}) ORDER BY review_type, parent_id, sort_no, id")
     List<CheckItemTemplateRecord> findAll(String reviewType);
 
     @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, "
             + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE id=#{id}")
     CheckItemTemplateRecord findById(long id);
+
+    @Select("<script>SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, sort_no AS sortNo, enabled, version "
+            + "FROM check_item_template WHERE id IN "
+            + "<foreach collection='itemIds' item='itemId' open='(' separator=',' close=')'>#{itemId}</foreach>"
+            + "</script>")
+    List<CheckItemTemplateRecord> findByIds(@Param("itemIds") List<Long> itemIds);
 
     @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, "
             + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE review_type=#{reviewType} AND parent_id IS NULL AND item_name=#{itemName} LIMIT 1")
@@ -47,9 +54,17 @@ public interface CheckItemTemplateMapper {
     int update(CheckItemTemplateRecord record);
 
     @Update("UPDATE check_item_template SET enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 "
-            + "WHERE parent_id=#{parentId}")
+            + "WHERE parent_id=#{parentId} AND enabled=TRUE")
     int disableChildrenByParentId(@Param("parentId") long parentId);
 
     @Update("UPDATE check_item_template SET enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=#{id}")
     int disableById(long id);
+
+    @Update("UPDATE check_item_template SET sort_no=sort_no-1, updated_at=CURRENT_TIMESTAMP, version=version+1 "
+            + "WHERE review_type=#{reviewType} AND parent_id IS NULL AND enabled=TRUE AND sort_no > #{sortNo}")
+    int decrementCategorySortAfter(@Param("reviewType") String reviewType, @Param("sortNo") int sortNo);
+
+    @Update("UPDATE check_item_template SET sort_no=sort_no-1, updated_at=CURRENT_TIMESTAMP, version=version+1 "
+            + "WHERE parent_id=#{parentId} AND enabled=TRUE AND sort_no > #{sortNo}")
+    int decrementSiblingItemSortAfter(@Param("parentId") long parentId, @Param("sortNo") int sortNo);
 }

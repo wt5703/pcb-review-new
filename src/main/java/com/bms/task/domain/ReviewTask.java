@@ -85,7 +85,10 @@ public final class ReviewTask {
 
     public void addInitialFile(Long fileId) {
         ensureEditable();
-        initialFileIds.add(Objects.requireNonNull(fileId));
+        Long requiredFileId = Objects.requireNonNull(fileId);
+        if (!initialFileIds.contains(requiredFileId)) {
+            initialFileIds.add(requiredFileId);
+        }
     }
 
     public void submit() {

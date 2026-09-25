@@ -27,22 +27,6 @@ CREATE TABLE review_task (
 CREATE INDEX idx_review_task_query ON review_task (review_type, status, designer_id);
 CREATE INDEX idx_review_task_designer_name ON review_task (designer_name);
 
-CREATE TABLE task_reviewer (
-    id BIGINT PRIMARY KEY,
-    task_id BIGINT NOT NULL,
-    review_role VARCHAR(64) NOT NULL,
-    reviewer_id BIGINT NOT NULL,
-    process_status VARCHAR(32) NOT NULL,
-    assigned_by BIGINT NOT NULL,
-    assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    submitted_at TIMESTAMP,
-    no_opinion BOOLEAN NOT NULL DEFAULT FALSE,
-    version BIGINT NOT NULL DEFAULT 0,
-    UNIQUE (task_id, review_role, reviewer_id)
-);
-
-CREATE INDEX idx_task_reviewer_my_task ON task_reviewer (reviewer_id, process_status, task_id);
-
 CREATE TABLE review_opinion (
     id BIGINT PRIMARY KEY,
     task_id BIGINT NOT NULL,
@@ -65,7 +49,6 @@ CREATE TABLE review_file (
     file_id VARCHAR(64) NOT NULL UNIQUE,
     task_id BIGINT,
     file_category VARCHAR(32) NOT NULL,
-    business_file_key VARCHAR(128),
     file_name VARCHAR(512) NOT NULL,
     file_format VARCHAR(32) NOT NULL,
     file_size BIGINT NOT NULL,
@@ -74,11 +57,10 @@ CREATE TABLE review_file (
     is_latest BOOLEAN NOT NULL,
     uploaded_stage VARCHAR(64),
     uploaded_by BIGINT NOT NULL,
-    uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (task_id, file_category, business_file_key, is_latest)
+    uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_review_file_latest ON review_file (task_id, file_category, business_file_key, is_latest);
+CREATE INDEX idx_review_file_latest ON review_file (task_id, file_category, is_latest);
 CREATE INDEX idx_review_file_owner ON review_file (uploaded_by, uploaded_at);
 
 CREATE TABLE opinion_reply (
@@ -145,27 +127,14 @@ CREATE INDEX idx_task_check_item_parent ON task_check_item (task_id, parent_id, 
 CREATE TABLE task_flow_record (
     id BIGINT PRIMARY KEY,
     task_id BIGINT NOT NULL,
-    from_status VARCHAR(64) NOT NULL,
-    to_status VARCHAR(64) NOT NULL,
     action VARCHAR(64) NOT NULL,
-    operator_id BIGINT NOT NULL,
+    action_name VARCHAR(100) NOT NULL,
+    operate_id BIGINT NOT NULL,
     comment VARCHAR(2000),
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    create_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_task_flow_record_task ON task_flow_record (task_id, created_at);
-
-CREATE TABLE operation_audit_log (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    aggregate_type VARCHAR(64) NOT NULL,
-    aggregate_id BIGINT NOT NULL,
-    action VARCHAR(64) NOT NULL,
-    operator_id BIGINT NOT NULL,
-    detail VARCHAR(2000),
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_operation_audit_log_aggregate ON operation_audit_log (aggregate_type, aggregate_id, created_at);
+CREATE INDEX idx_task_flow_record_task ON task_flow_record (task_id, create_at);
 
 CREATE TABLE outbox_event (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -197,12 +166,7 @@ CREATE INDEX idx_notification_send_record_outbox ON notification_send_record (ou
 CREATE TABLE task_archive_snapshot (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     task_id BIGINT NOT NULL UNIQUE,
-    final_status VARCHAR(64) NOT NULL,
-    task_snapshot TEXT NOT NULL,
     file_snapshot TEXT NOT NULL,
-    reviewer_snapshot TEXT NOT NULL,
-    opinion_snapshot TEXT NOT NULL,
-    flow_snapshot TEXT NOT NULL,
     notification_snapshot TEXT NOT NULL,
     archived_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

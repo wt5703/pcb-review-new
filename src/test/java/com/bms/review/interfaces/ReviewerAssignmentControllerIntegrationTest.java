@@ -34,7 +34,9 @@ class ReviewerAssignmentControllerIntegrationTest {
         long taskId = 8401L;
         taskMapper.insert(task(taskId));
 
-        mockMvc.perform(get("/tasks/{taskId}/workflow/assignable-reviewers", taskId)
+        mockMvc.perform(get("/workflow/assignable-reviewers")
+                        .param("reviewType", "PCB")
+                        .param("taskStatus", "MUTUAL_CHECK_PENDING_ASSIGNMENT")
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER"))
                 .andExpect(status().isOk())
@@ -48,7 +50,8 @@ class ReviewerAssignmentControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.toStatus").value("MUTUAL_CHECK_REVIEWING"))
                 .andExpect(jsonPath("$.data.assignedReviewers.length()").value(2))
-                .andExpect(jsonPath("$.data.assignedReviewers[0].status").value("PENDING"));
+                .andExpect(jsonPath("$.data.assignedReviewers[0].role").value("PCB_MUTUAL_CHECK"))
+                .andExpect(jsonPath("$.data.assignedReviewers[0].reviewerId").value(20));
 
     }
 
@@ -57,7 +60,9 @@ class ReviewerAssignmentControllerIntegrationTest {
         long taskId = 8402L;
         taskMapper.insert(task(taskId));
 
-        mockMvc.perform(get("/tasks/{taskId}/workflow/assignable-reviewers", taskId)
+        mockMvc.perform(get("/workflow/assignable-reviewers")
+                        .param("reviewType", "PCB")
+                        .param("taskStatus", "MUTUAL_CHECK_PENDING_ASSIGNMENT")
                         .header("X-Mock-User-Id", "88")
                         .header("X-Mock-Roles", "PROCESS_EXPERT"))
                 .andExpect(status().isForbidden())

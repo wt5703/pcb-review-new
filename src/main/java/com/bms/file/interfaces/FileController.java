@@ -35,22 +35,22 @@ public class FileController {
     }
 
     @PostMapping(value = "/files/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "上传文件", description = "前端仅传 file、可选 taskId 和必填 fileCategory。后端从环境配置读取基础目录并追加 UUID，调用公司资源服务 /upload。没有 taskId 时仅允许 TASK_CREATION；上传记录统一写入 review_file，taskId 为空表示待任务保存或提交时绑定。")
+    @Operation(summary = "上传文件", description = "前端仅传 file、可选 taskId 和必填 fileCategory。fileCategory 仅允许 PCB_REVIEW、PCB_PROCESS_REVIEW、PCB_STRUCTURE_REVIEW、SCHEMATIC_REVIEW。后端从环境配置读取基础目录并追加 UUID，调用公司资源服务 /upload；没有 taskId 时仅允许 PCB_REVIEW 或 SCHEMATIC_REVIEW，供创建任务保存或提交时绑定。")
     ApiResponse<UploadFileView> upload(@RequestPart("file") MultipartFile multipartFile,
                                        @RequestParam(required = false) Long taskId,
-                                       @RequestParam @NotNull @Schema(description = "任务创建=TASK_CREATION PCB评审=PCB_REVIEW 原理图评审=SCHEMATIC_REVIEW 互检单评审=MUTUAL_CHECK_REVIEW 工艺评审=PROCESS_REVIEW 结构评审=STRUCTURE_REVIEW", requiredMode = Schema.RequiredMode.REQUIRED) FileCategory fileCategory,
+                                       @RequestParam @NotNull @Schema(description = "PCB评审=PCB_REVIEW，PCB工艺评审=PCB_PROCESS_REVIEW，PCB结构评审=PCB_STRUCTURE_REVIEW，原理图评审=SCHEMATIC_REVIEW", requiredMode = Schema.RequiredMode.REQUIRED) FileCategory fileCategory,
                                        HttpServletRequest servletRequest) {
         if (taskId == null) {
             FileApplicationService.UploadedFileView uploaded = fileApplicationService.uploadPendingInitialFile(multipartFile, fileCategory,
                     CurrentUserHolder.require());
             return ApiResponse.ok(new UploadFileView(uploaded.fileId(), uploaded.taskFileId(), uploaded.fileName(), uploaded.fileSize(), uploaded.fileCategory()), traceId(servletRequest));
         }
-        FileApplicationService.FileView storedFile = fileApplicationService.uploadAndRegister(taskId, fileCategory, multipartFile, CurrentUserHolder.require());
+        FileApplicationService.FileView storedFile = fileApplicationService.upload(taskId, fileCategory, multipartFile, CurrentUserHolder.require());
         return ApiResponse.ok(new UploadFileView(storedFile.fileId(), storedFile.id(), storedFile.fileName(), storedFile.fileSize(), storedFile.category()), traceId(servletRequest));
     }
 
     @GetMapping("/files/latest")
-    @Operation(summary = "查询任务当前节点的最新文件", description = "按任务和文件类别查询当前文件；类别必须为六类 FileCategory 之一。")
+    @Operation(summary = "查询任务当前节点的最新文件", description = "按任务和文件类别查询当前有效文件；类别仅支持四类 FileCategory。")
     ApiResponse<java.util.List<FileApplicationService.FileView>> latest(@RequestParam long taskId,
             @RequestParam FileCategory fileCategory, HttpServletRequest servletRequest) {
         return ApiResponse.ok(fileApplicationService.listLatestByCategory(taskId, fileCategory, CurrentUserHolder.require()), traceId(servletRequest));

@@ -1,8 +1,6 @@
 package com.bms.review.interfaces;
 
 import com.jayway.jsonpath.JsonPath;
-import com.bms.review.infrastructure.TaskReviewerMapper;
-import com.bms.review.infrastructure.TaskReviewerRecord;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
@@ -34,14 +32,11 @@ class CheckItemOpinionIntegrationTest {
     private MockMvc mockMvc;
     @Autowired
     private ReviewTaskMapper taskMapper;
-    @Autowired
-    private TaskReviewerMapper reviewerMapper;
 
     @Test
     void shouldCompleteFailedCheckItemWithOpinionInOneBatchSubmission() throws Exception {
         long taskId = 8501L;
         taskMapper.insert(task(taskId));
-        reviewerMapper.insert(reviewer(taskId));
 
         mockMvc.perform(post("/check-item-templates")
                         .header("X-Mock-User-Id", "1")
@@ -170,19 +165,6 @@ class CheckItemOpinionIntegrationTest {
         task.setInitialFileIds("8503");
         task.setVersion(0L);
         return task;
-    }
-
-    private TaskReviewerRecord reviewer(long taskId) {
-        TaskReviewerRecord reviewer = new TaskReviewerRecord();
-        reviewer.setId(8502L);
-        reviewer.setTaskId(taskId);
-        reviewer.setReviewRole("PCB_MUTUAL_CHECK");
-        reviewer.setReviewerId(20L);
-        reviewer.setProcessStatus("PENDING");
-        reviewer.setAssignedBy(1L);
-        reviewer.setNoOpinion(false);
-        reviewer.setVersion(0L);
-        return reviewer;
     }
 
 }

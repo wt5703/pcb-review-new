@@ -18,8 +18,10 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -50,8 +52,33 @@ public class OpinionController {
                 request.sourceItemId(), request.content(), request.richText(), request.severity()), CurrentUserHolder.require()), traceId(servletRequest));
     }
 
+    @PostMapping("/tasks/{taskId}/opinions/no-opinion")
+    @Operation(summary = "无意见确认提交", description = "专家、工艺或结构评审人在当前评审节点确认无意见。接口不推进流程，而是新增一条 severity=PASS、status=CONFIRMED_PASS 的 review_opinion 审计记录，并标记该评审人已提交；同一人员、同一阶段不能重复提交，也不能在已提出实际意见后提交无意见。")
+    ApiResponse<OpinionApplicationService.OpinionView> submitNoOpinion(@PathVariable long taskId,
+                                                                         @Valid @RequestBody SubmitNoOpinionRequest request,
+                                                                         HttpServletRequest servletRequest) {
+        return ApiResponse.ok(opinionApplicationService.submitNoOpinion(taskId, request.sourceType(), CurrentUserHolder.require()), traceId(servletRequest));
+    }
+
+    @PutMapping("/opinions/{opinionId}")
+    @Operation(summary = "编辑待答复评审意见", description = "仅意见提出人可编辑尚未被设计者答复的 PENDING_REPLY 意见，可调整问题等级及富文本内容；意见一旦被答复即不允许编辑。")
+    ApiResponse<OpinionApplicationService.OpinionView> update(@PathVariable long opinionId,
+                                                                @Valid @RequestBody UpdateOpinionRequest request,
+                                                                HttpServletRequest servletRequest) {
+        return ApiResponse.ok(opinionApplicationService.update(opinionId,
+                new OpinionApplicationService.UpdateOpinionCommand(request.content(), request.richText(), request.severity()),
+                CurrentUserHolder.require()), traceId(servletRequest));
+    }
+
+    @DeleteMapping("/opinions/{opinionId}")
+    @Operation(summary = "删除待答复评审意见", description = "仅意见提出人可删除尚未被设计者答复的 PENDING_REPLY 意见；已答复、待确认或已确认意见不可删除。")
+    ApiResponse<Void> delete(@PathVariable long opinionId, HttpServletRequest servletRequest) {
+        opinionApplicationService.delete(opinionId, CurrentUserHolder.require());
+        return ApiResponse.ok(null, traceId(servletRequest));
+    }
+
     @GetMapping("/tasks/{taskId}/opinions")
-    @Operation(summary = "分页查询任务意见列表", description = "每条记录在同一个扁平模型中返回专家意见、冗余的提出人姓名 raisedByName、全部设计者答复及各答复的确认结果，默认按意见提出时间倒序。severity 可按 SERIOUS、GENERAL、MINOR 筛选；sourceType 可筛选单一来源，sourceTypes 可传多个逗号分隔的来源（如 PROCESS_REVIEW,STRUCTURE_REVIEW）；scene=REVIEW_WORKSPACE 仅返回当前登录专家提出的意见，scene=DESIGNER_REPLY 返回任务所有意见。pageNo 从 1 开始，pageSize 最大为 100。")
+    @Operation(summary = "分页查询任务意见列表", description = "每条记录在同一个扁平模型中返回专家意见、冗余的提出人姓名 raisedByName、全部设计者答复及各答复的确认结果，默认按意见提出时间倒序。severity 可按 SERIOUS、GENERAL、MINOR 筛选；无意见确认产生的 PASS 审计记录不在问题列表中展示。sourceType 可筛选单一来源，sourceTypes 可传多个逗号分隔的来源（如 PROCESS_REVIEW,STRUCTURE_REVIEW）；scene=REVIEW_WORKSPACE 仅返回当前登录专家提出的意见，scene=DESIGNER_REPLY 返回任务所有意见。pageNo 从 1 开始，pageSize 最大为 100。")
     ApiResponse<OpinionApplicationService.OpinionPage> list(@PathVariable long taskId,
             @RequestParam(required = false) @Parameter(description = "问题等级：SERIOUS 严重、GENERAL 一般、MINOR 轻微") String severity,
             @RequestParam(required = false) @Parameter(description = "意见状态：PENDING_REPLY  待答复、PENDING_CONFIRMATION 待确认、CONFIRMED_PASS 确认通过、CONFIRMED_REJECTED 确认不通过、WITHDRAWN 撤回") OpinionStatus status,
@@ -110,6 +137,13 @@ public class OpinionController {
                                @Schema(description = "富文本提取意见，支持文字与内嵌 data URI 图片；为空时使用 content", requiredMode = Schema.RequiredMode.NOT_REQUIRED) String richText,
                                @Schema(description = "问题等级：SERIOUS 严重、GENERAL 一般、MINOR 轻微") String severity) {
     }
+    @Schema(description = "无意见确认提交请求")
+    record SubmitNoOpinionRequest(@Schema(description = "当前评审来源，仅允许 EXPERT_REVIEW、PROCESS_REVIEW 或 STRUCTURE_REVIEW", requiredMode = Schema.RequiredMode.REQUIRED)
+                                  @NotNull OpinionSourceType sourceType) { }
+    @Schema(description = "编辑评审意见请求")
+    record UpdateOpinionRequest(@Schema(description = "具体、可执行的评审意见内容", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String content,
+                                @Schema(description = "富文本意见，支持文字和内嵌截图；为空时使用 content") String richText,
+                                @Schema(description = "问题等级：SERIOUS 严重、GENERAL 一般、MINOR 轻微") String severity) { }
     @Schema(description = "设计者答复意见请求")
     record ReplyOpinionRequest(@Schema(description = "答复结论", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull ReplyType replyType,
                                @Schema(description = "答复说明或整改说明；不支持上传文件或粘贴图片") String reason) {

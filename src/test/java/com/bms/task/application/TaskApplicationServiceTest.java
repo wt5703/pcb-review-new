@@ -1,18 +1,21 @@
 package com.bms.task.application;
 
-import com.bms.audit.infrastructure.OperationAuditMapper;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Role;
 import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.notification.infrastructure.OutboxEventMapper;
+import com.bms.notification.infrastructure.NotificationSendRecordMapper;
+import com.bms.notification.infrastructure.NotificationSendRecord;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
+import com.bms.workflow.infrastructure.TaskFlowMapper;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Set;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -24,19 +27,20 @@ import static org.mockito.Mockito.when;
 /**
  * @author 王涛
  * @date 2026-09-14
- * @description 验证评审任务应用服务在创建、提交和分页筛选时协调持久化、审计与 Outbox 的行为，不依赖真实数据库。
+ * @description 验证评审任务应用服务在创建、提交和分页筛选时协调持久化、流程记录与 Outbox 的行为，不依赖真实数据库。
  */
 class TaskApplicationServiceTest {
     private final ReviewTaskMapper taskMapper = mock(ReviewTaskMapper.class);
-    private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
     private final OutboxEventMapper outboxEventMapper = mock(OutboxEventMapper.class);
     private final TaskAssignmentAccessMapper taskAssignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
-    private final TaskApplicationService service = new TaskApplicationService(taskMapper, auditMapper, outboxEventMapper,
-            taskAssignmentAccessMapper);
+    private final TaskFlowMapper flowMapper = mock(TaskFlowMapper.class);
+    private final NotificationSendRecordMapper notificationSendRecordMapper = mock(NotificationSendRecordMapper.class);
+    private final TaskApplicationService service = new TaskApplicationService(taskMapper, outboxEventMapper,
+            taskAssignmentAccessMapper, flowMapper, notificationSendRecordMapper);
     private final CurrentUser designer = new CurrentUser(10L, Set.of(Role.DESIGNER));
 
     @Test
-    void shouldCreateTaskAndAppendAuditRecord() {
+    void shouldCreateTaskWithoutFlowRecord() {
         when(taskMapper.nextId()).thenReturn(101L);
 
         TaskApplicationService.TaskView result = service.create(new TaskApplicationService.CreateTaskCommand(
@@ -44,7 +48,6 @@ class TaskApplicationServiceTest {
 
         assertThat(result.id()).isEqualTo(101L);
         verify(taskMapper).insert(any(ReviewTaskRecord.class));
-        verify(auditMapper).insert(any());
     }
 
     @Test
@@ -55,7 +58,7 @@ class TaskApplicationServiceTest {
         TaskApplicationService.TaskView result = service.submit(101L, List.of(3001L), designer);
 
         assertThat(result.status()).isEqualTo(TaskStatus.PCB_EXPERT_REVIEWING.name());
-        verify(auditMapper).insert(any());
+        verify(flowMapper).insert(any());
         verify(outboxEventMapper).insert(any());
     }
 
@@ -93,6 +96,21 @@ class TaskApplicationServiceTest {
         TaskApplicationService.TaskPage page = service.list(null, new CurrentUser(88L, Set.of(Role.PROCESS_EXPERT)));
 
         assertThat(page.items()).extracting(TaskApplicationService.TaskView::id).containsExactly(2L);
+    }
+
+    @Test
+    void shouldIncludeNotificationRecordsWhenLoadingTaskDetail() {
+        when(taskMapper.findById(101L)).thenReturn(record(101L, "BMS PCB评审", TaskStatus.PCB_EXPERT_REVIEWING, 0L));
+        when(notificationSendRecordMapper.findByTaskId(101L)).thenReturn(List.of(new NotificationSendRecord(201L,
+                "TASK_SUBMITTED", "designer@example.com", "TASK_SUBMITTED", "SENT", null,
+                LocalDateTime.of(2026, 9, 25, 10, 0))));
+
+        TaskApplicationService.TaskView result = service.get(101L, designer);
+
+        assertThat(result.notificationRecords()).singleElement().satisfies(record -> {
+            assertThat(record.eventType()).isEqualTo("TASK_SUBMITTED");
+            assertThat(record.deliveryStatus()).isEqualTo("SENT");
+        });
     }
 
     private ReviewTaskRecord record(long id, String name, TaskStatus status, long version) {

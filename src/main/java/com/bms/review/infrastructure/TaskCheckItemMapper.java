@@ -17,25 +17,23 @@ public interface TaskCheckItemMapper {
     @Select("SELECT COALESCE(MAX(id), 0) + 1 FROM task_check_item")
     long nextId();
 
-    @Insert("INSERT INTO task_check_item (id, task_id, template_item_id, parent_id, item_name, sort_no, status, version) "
-            + "VALUES (#{id}, #{taskId}, #{templateItemId}, #{parentId}, #{itemName}, #{sortNo}, #{status}, #{version})")
+    @Insert("INSERT INTO task_check_item (id, task_id, item_id, parent_id, sort_no, status) "
+            + "VALUES (#{id}, #{taskId}, #{itemId}, #{parentId}, #{sortNo}, #{status})")
     int insert(TaskCheckItemRecord record);
 
-    @Update("UPDATE task_check_item SET parent_id=#{parentId}, item_name=#{itemName}, "
-            + "sort_no=#{sortNo}, updated_at=CURRENT_TIMESTAMP WHERE task_id=#{taskId} AND template_item_id=#{templateItemId}")
+    @Update("UPDATE task_check_item SET parent_id=#{parentId}, sort_no=#{sortNo}, updated_at=CURRENT_TIMESTAMP "
+            + "WHERE task_id=#{taskId} AND item_id=#{itemId}")
     int refreshTemplateSnapshot(TaskCheckItemRecord record);
 
-    @Select("SELECT id, task_id AS taskId, template_item_id AS templateItemId, parent_id AS parentId, "
-            + "item_name AS itemName, sort_no AS sortNo, check_result AS checkResult, comment, opinion_rich_text AS richText, "
-            + "linked_opinion_id AS linkedOpinionId, status, version FROM task_check_item WHERE task_id=#{taskId} ORDER BY sort_no, id")
+    @Select("SELECT id, task_id AS taskId, item_id AS itemId, parent_id AS parentId, sort_no AS sortNo, "
+            + "check_result AS checkResult, comment, rich_text AS richText, status FROM task_check_item WHERE task_id=#{taskId} ORDER BY sort_no, id")
     List<TaskCheckItemRecord> findByTaskId(long taskId);
 
-    @Select("SELECT id, task_id AS taskId, template_item_id AS templateItemId, parent_id AS parentId, "
-            + "item_name AS itemName, sort_no AS sortNo, check_result AS checkResult, comment, opinion_rich_text AS richText, "
-            + "linked_opinion_id AS linkedOpinionId, status, version FROM task_check_item WHERE task_id=#{taskId} AND id=#{id}")
+    @Select("SELECT id, task_id AS taskId, item_id AS itemId, parent_id AS parentId, sort_no AS sortNo, "
+            + "check_result AS checkResult, comment, rich_text AS richText, status FROM task_check_item WHERE task_id=#{taskId} AND id=#{id}")
     TaskCheckItemRecord findByTaskIdAndId(long taskId, long id);
 
-    @Update("UPDATE task_check_item SET check_result=#{checkResult}, comment=#{comment}, opinion_rich_text=#{richText}, linked_opinion_id=#{linkedOpinionId}, status=#{status}, "
+    @Update("UPDATE task_check_item SET check_result=#{checkResult}, comment=#{comment}, rich_text=#{richText}, status=#{status}, "
             + "updated_at=CURRENT_TIMESTAMP WHERE id=#{id} AND task_id=#{taskId}")
     int submit(TaskCheckItemRecord record);
 }

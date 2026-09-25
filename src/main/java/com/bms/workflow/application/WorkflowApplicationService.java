@@ -1,13 +1,9 @@
 package com.bms.workflow.application;
 
-import com.bms.audit.infrastructure.OperationAuditMapper;
-import com.bms.audit.infrastructure.OperationAuditRecord;
 import com.bms.archive.application.TaskArchiveApplicationService;
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
 import com.bms.file.infrastructure.ReviewFileMapper;
-import com.bms.file.application.FileApplicationService;
-import com.bms.file.domain.FileUploadScene;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Permission;
 import com.bms.identity.domain.PermissionPolicy;
@@ -15,7 +11,6 @@ import com.bms.file.domain.FileCategory;
 import com.bms.notification.infrastructure.OutboxEventMapper;
 import com.bms.notification.infrastructure.OutboxEventRecord;
 import com.bms.review.application.TaskCheckItemApplicationService;
-import com.bms.review.application.ReviewerAssignmentService;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.OpinionStatus;
 import com.bms.review.domain.OpinionSourceType;
@@ -46,43 +41,36 @@ public class WorkflowApplicationService {
     private final ReviewFileMapper fileMapper;
     private final TaskCheckItemApplicationService checkItemApplicationService;
     private final TaskFlowMapper flowMapper;
-    private final OperationAuditMapper auditMapper;
     private final OutboxEventMapper outboxEventMapper;
     private final TaskArchiveApplicationService taskArchiveApplicationService;
-    private final ReviewerAssignmentService reviewerAssignmentService;
     private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService;
-    private final FileApplicationService fileApplicationService;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public WorkflowApplicationService(ReviewTaskMapper taskMapper, ReviewOpinionMapper opinionMapper,
                                       ReviewFileMapper fileMapper, TaskCheckItemApplicationService checkItemApplicationService, TaskFlowMapper flowMapper,
-                                      OperationAuditMapper auditMapper, OutboxEventMapper outboxEventMapper,
+                                      OutboxEventMapper outboxEventMapper,
                                       TaskArchiveApplicationService taskArchiveApplicationService,
-                                      ReviewerAssignmentService reviewerAssignmentService,
-                                      ReviewerWhitelistApplicationService reviewerWhitelistApplicationService,
-                                      FileApplicationService fileApplicationService) {
+                                      ReviewerWhitelistApplicationService reviewerWhitelistApplicationService) {
         this.taskMapper = taskMapper;
         this.opinionMapper = opinionMapper;
         this.fileMapper = fileMapper;
         this.checkItemApplicationService = checkItemApplicationService;
         this.flowMapper = flowMapper;
-        this.auditMapper = auditMapper;
         this.outboxEventMapper = outboxEventMapper;
         this.taskArchiveApplicationService = taskArchiveApplicationService;
-        this.reviewerAssignmentService = reviewerAssignmentService;
         this.reviewerWhitelistApplicationService = reviewerWhitelistApplicationService;
-        this.fileApplicationService = fileApplicationService;
     }
 
     /**
-     * 查询当前任务节点可分配的职责及人员。流程域只负责从状态决定“可分配什么职责”，
-     * 白名单域再依据职责把员工工号解析为可用于 reviewerIds 的用户账号。
+     * 按前端传入的任务类型和当前状态查询本节点可分配人员。
+     * 此查询是节点规则的静态解析，不读取具体任务，因而不接收 taskId；实际提交时仍由
+     * {@link #transition(long, TransitionBatchCommand, CurrentUser)} 校验任务的真实状态。
      */
-    public List<AssignableReviewerRoleView> listAssignableReviewers(long taskId, CurrentUser currentUser) {
-        ReviewTaskRecord task = requireTask(taskId);
-        List<AssignableRoleRule> rules = assignableRoleRules(task);
+    public List<AssignableReviewerRoleView> listAssignableReviewers(ReviewType reviewType, TaskStatus taskStatus,
+                                                                       CurrentUser currentUser) {
+        List<AssignableRoleRule> rules = assignableRoleRules(reviewType, taskStatus);
         if (rules.isEmpty()) {
-            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "当前流程节点不需要分配人员");
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "该任务类型和状态不支持分配人员");
         }
         for (AssignableRoleRule rule : rules) {
             if (!permissionPolicy.has(currentUser.roles(), rule.assignmentRole().assignmentPermission())) {
@@ -95,7 +83,7 @@ public class WorkflowApplicationService {
 
     @Transactional
     public WorkflowView transition(long taskId, WorkflowAction action, String comment, CurrentUser currentUser) {
-        return transition(taskId, new TransitionCommand(action, comment, null, List.of(), List.of()), currentUser);
+        return transition(taskId, new TransitionCommand(action, comment, null, List.of()), currentUser);
     }
 
     /**
@@ -113,7 +101,7 @@ public class WorkflowApplicationService {
                         "PCB 工艺评审和结构评审必须同时提交 START_PCB_STRUCTURE_REVIEW、START_PCB_PROCESS_REVIEW");
             }
             return transition(taskId, new TransitionCommand(command.actions().get(0), command.comment(), command.assignedRole(),
-                    command.reviewerIds(), command.stageFiles()), currentUser);
+                    command.reviewerIds()), currentUser);
         }
         if (!isPcbStageReviewPair(command.actions())) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR,
@@ -122,12 +110,12 @@ public class WorkflowApplicationService {
         if (command.assignedRole() != null || !command.reviewerIds().isEmpty()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "开启工艺和结构评审时不能同时分配人员");
         }
-        // 固定先登记并开启结构评审，再开启工艺评审；整个方法在同一事务中执行，任一步失败均会回滚。
+        // 文件已由文件接口完成上传和落库；这里固定先开启结构评审，再开启工艺评审。
         WorkflowView structureView = transition(taskId, new TransitionCommand(WorkflowAction.START_PCB_STRUCTURE_REVIEW,
-                command.comment(), null, List.of(), command.stageFiles()), currentUser);
+                command.comment(), null, List.of()), currentUser);
         WorkflowView processView = transition(taskId, new TransitionCommand(WorkflowAction.START_PCB_PROCESS_REVIEW,
-                command.comment(), null, List.of(), List.of()), currentUser);
-        return new WorkflowView(taskId, structureView.fromStatus(), processView.toStatus(), List.of(), structureView.stageFiles());
+                command.comment(), null, List.of()), currentUser);
+        return new WorkflowView(taskId, structureView.fromStatus(), processView.toStatus(), List.of());
     }
 
     private boolean isPcbStageReviewPair(List<WorkflowAction> actions) {
@@ -161,8 +149,6 @@ public class WorkflowApplicationService {
         }
         validatePayload(task, action, command);
         validateActionPrerequisites(task, action);
-        List<FileApplicationService.FileView> registeredFiles = registerStageFiles(taskId, command.stageFiles(), currentUser);
-        List<ReviewerAssignmentService.ReviewerView> assignedReviewers = assignReviewers(taskId, command, currentUser);
         TaskStatus target = targetStatus(task, action, currentUser);
         validateStageFilePresence(task, action);
         if (action == WorkflowAction.FINISH) {
@@ -173,28 +159,15 @@ public class WorkflowApplicationService {
         if (taskMapper.update(task) != 1) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
         }
-        appendHistory(taskId, fromStatus, target.name(), action, currentUser.id(), command.comment());
-        auditMapper.insert(new OperationAuditRecord("REVIEW_TASK", taskId, "WORKFLOW_" + action.name(), currentUser.id(),
-                fromStatus + " -> " + target.name()));
+        appendHistory(taskId, action, currentUser.id(), command.comment());
         outboxEventMapper.insert(new OutboxEventRecord("TASK_STATUS_CHANGED", "REVIEW_TASK", taskId,
                 "{\"taskId\":" + taskId + ",\"action\":\"" + action.name() + "\",\"toStatus\":\"" + target.name() + "\"}", "PENDING"));
         if (action == WorkflowAction.FINISH) {
             taskArchiveApplicationService.archive(task);
         }
-        return new WorkflowView(taskId, TaskStatus.valueOf(fromStatus), target, assignedReviewers, registeredFiles);
-    }
-
-    private List<ReviewerAssignmentService.ReviewerView> assignReviewers(long taskId, TransitionCommand command, CurrentUser currentUser) {
-        if (command.assignedRole() == null) {
-            return List.of();
-        }
-        return reviewerAssignmentService.assign(taskId, command.assignedRole(), command.reviewerIds(), currentUser);
-    }
-
-    private List<FileApplicationService.FileView> registerStageFiles(long taskId, List<StageFileCommand> stageFiles, CurrentUser currentUser) {
-        return stageFiles.stream().map(file -> fileApplicationService.registerStageFile(taskId, file.scene(),
-                new FileApplicationService.FileReferenceCommand(file.fileId(), file.fileName(), file.fileSize(), file.md5(), null),
-                file.fileKind(), currentUser)).toList();
+        List<AssignedReviewerView> assignedReviewers = command.assignedRole() == null ? List.of()
+                : command.reviewerIds().stream().distinct().map(reviewerId -> new AssignedReviewerView(command.assignedRole(), reviewerId)).toList();
+        return new WorkflowView(taskId, TaskStatus.valueOf(fromStatus), target, assignedReviewers);
     }
 
     private void validatePayload(ReviewTaskRecord task, WorkflowAction action, TransitionCommand command) {
@@ -210,34 +183,6 @@ public class WorkflowApplicationService {
         if (command.assignedRole() != null && !isExpectedAssignmentRole(action, command.assignedRole())) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "评审人员职责与当前流程动作不匹配");
         }
-        boolean isPcbStageReview = action == WorkflowAction.START_PCB_PROCESS_REVIEW
-                || action == WorkflowAction.START_PCB_STRUCTURE_REVIEW;
-        if (!command.stageFiles().isEmpty() && !supportsStageFiles(action)) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "当前流程动作不支持登记阶段文件");
-        }
-        if (isPcbStageReview && command.stageFiles().stream().anyMatch(file -> file.scene() != FileUploadScene.PROCESS_REVIEW)) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "开启工艺/结构评审时仅允许登记 PROCESS_REVIEW 场景文件");
-        }
-        if (action == WorkflowAction.START_PCB_MATUAL_ASSIGNMENT
-                && command.stageFiles().stream().anyMatch(file -> file.scene() != FileUploadScene.PCB_REVIEW)) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "开启互检单分配时仅允许登记 PCB_REVIEW 场景的最新文件");
-        }
-        if ((action == WorkflowAction.START_SCHEMATIC_EXPERT_ASSIGNMENT || action == WorkflowAction.PREPARE_FINISH)
-                && command.stageFiles().stream().anyMatch(file -> file.scene() != FileUploadScene.SCHEMATIC_REVIEW)) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "当前原理图流程动作仅允许登记 SCHEMATIC_REVIEW 场景的最新文件");
-        }
-        if (action == WorkflowAction.PREPARE_FINISH && ReviewType.PCB.name().equals(task.getReviewType())
-                && !command.stageFiles().isEmpty()) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "PCB 准备结束不接收阶段文件，请在互检单分配前上传最新 PCB 文件");
-        }
-    }
-
-    private boolean supportsStageFiles(WorkflowAction action) {
-        return action == WorkflowAction.START_PCB_STRUCTURE_REVIEW
-                || action == WorkflowAction.START_PCB_PROCESS_REVIEW
-                || action == WorkflowAction.START_PCB_MATUAL_ASSIGNMENT
-                || action == WorkflowAction.START_SCHEMATIC_EXPERT_ASSIGNMENT
-                || action == WorkflowAction.PREPARE_FINISH;
     }
 
     private boolean isExpectedAssignmentRole(WorkflowAction action, ReviewRole role) {
@@ -249,25 +194,19 @@ public class WorkflowApplicationService {
         };
     }
 
-    private List<AssignableRoleRule> assignableRoleRules(ReviewTaskRecord task) {
-        TaskStatus status = TaskStatus.valueOf(task.getStatus());
-        ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
+    private List<AssignableRoleRule> assignableRoleRules(ReviewType reviewType, TaskStatus status) {
         if (reviewType == ReviewType.PCB && status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT) {
-            // 互检属于 PCB 工作范畴，人员来源使用维护中的 PCB 评审白名单。
-            return List.of(new AssignableRoleRule(ReviewRole.PCB_MUTUAL_CHECK, List.of(ReviewRole.PCB_EXPERT)));
+            return List.of(new AssignableRoleRule(ReviewRole.PCB_MUTUAL_CHECK,
+                    List.of(ReviewRole.PCB_MUTUAL_CHECK)));
         }
         if (reviewType == ReviewType.SCHEMATIC
                 && status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT) {
-            // 原理图互检可由各专业白名单人员承担，最终任务职责统一记为原理图互检。
-            return List.of(new AssignableRoleRule(ReviewRole.SCHEMATIC_MUTUAL_CHECK, List.of(
-                    ReviewRole.HARDWARE_EXPERT, ReviewRole.EMC_EXPERT, ReviewRole.PCB_EXPERT,
-                    ReviewRole.PROCESS_EXPERT, ReviewRole.STRUCTURE_EXPERT)));
+            return List.of(new AssignableRoleRule(ReviewRole.SCHEMATIC_MUTUAL_CHECK,
+                    List.of(ReviewRole.SCHEMATIC_MUTUAL_CHECK)));
         }
         if (reviewType == ReviewType.SCHEMATIC && status == TaskStatus.SCHEMATIC_PENDING_HARDWARE_EXPERT_ASSIGNMENT) {
-            return List.of(
-                    new AssignableRoleRule(ReviewRole.SCHEMATIC_HARDWARE_EXPERT, List.of(ReviewRole.HARDWARE_EXPERT)),
-                    new AssignableRoleRule(ReviewRole.SCHEMATIC_OTHER_EXPERT, List.of(
-                            ReviewRole.EMC_EXPERT, ReviewRole.PROCESS_EXPERT, ReviewRole.STRUCTURE_EXPERT)));
+            return List.of(new AssignableRoleRule(ReviewRole.SCHEMATIC_HARDWARE_EXPERT,
+                    List.of(ReviewRole.HARDWARE_EXPERT)));
         }
         return List.of();
     }
@@ -319,7 +258,7 @@ public class WorkflowApplicationService {
         if (!allowedStatus) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "当前任务状态不允许执行该流程动作");
         }
-        if (!task.getDesignerId().equals(currentUser.id())) {
+        if (!task.getDesignerId().equals(currentUser.id()) && !permissionPolicy.isAdministrator(currentUser.roles())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "仅任务设计者可以执行当前流程动作");
         }
         return target;
@@ -331,8 +270,10 @@ public class WorkflowApplicationService {
      */
     private void validateActionPrerequisites(ReviewTaskRecord task, WorkflowAction action) {
         switch (action) {
-            case START_PCB_STRUCTURE_REVIEW, START_PCB_PROCESS_REVIEW ->
-                    requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.EXPERT_REVIEW), "专家评审意见尚未全部确认通过，不能开启工艺或结构评审");
+            case START_PCB_STRUCTURE_REVIEW, START_PCB_PROCESS_REVIEW -> {
+                requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.EXPERT_REVIEW), "专家评审意见尚未全部确认通过，不能开启工艺或结构评审");
+                requirePcbExpertsSubmitted(task.getId());
+            }
             case START_PCB_MATUAL_ASSIGNMENT ->
                     requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.EXPERT_REVIEW, OpinionSourceType.PROCESS_REVIEW,
                             OpinionSourceType.STRUCTURE_REVIEW), "专家、工艺或结构评审意见尚未全部确认通过，不能开启互检单分配");
@@ -353,17 +294,42 @@ public class WorkflowApplicationService {
         }
     }
 
-    /** 阶段文件可以先通过文件域上传，也可以随 transition 登记；无论哪种方式都必须已存在对应文件。 */
+    /**
+     * PCB 首轮专家评审结束后才能进入工艺/结构评审。除了意见已闭环外，任务中已分配的
+     * 硬件、EMC、PCB 专家都必须显式提交实际意见或确认无意见，避免遗漏已分配专家。
+     */
+    private void requirePcbExpertsSubmitted(long taskId) {
+        ReviewTaskRecord task = requireTask(taskId);
+        boolean allSubmitted = task.getExpertLeaderId() != null && opinionMapper.findByTaskId(taskId).stream()
+                .anyMatch(opinion -> OpinionSourceType.EXPERT_REVIEW.name().equals(opinion.getSourceType())
+                        && task.getExpertLeaderId().equals(opinion.getRaisedBy()));
+        if (!allSubmitted) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT,
+                    "仍有已分配专家未提交评审意见或确认无意见，不能开启工艺或结构评审");
+        }
+    }
+
+    /** 流程推进前确认文件接口已完成当前阶段文件的上传和落库。 */
     private void validateStageFilePresence(ReviewTaskRecord task, WorkflowAction action) {
+        if (action == WorkflowAction.START_PCB_MATUAL_ASSIGNMENT) {
+            requireLatestStageFile(task, FileCategory.PCB_PROCESS_REVIEW);
+            requireLatestStageFile(task, FileCategory.PCB_STRUCTURE_REVIEW);
+            return;
+        }
         FileCategory category = switch (action) {
-            case START_PCB_PROCESS_REVIEW -> FileCategory.PROCESS_REVIEW;
-            case START_PCB_STRUCTURE_REVIEW -> FileCategory.STRUCTURE_REVIEW;
-            case START_PCB_MATUAL_ASSIGNMENT -> FileCategory.PCB_REVIEW;
+            case START_PCB_PROCESS_REVIEW -> FileCategory.PCB_PROCESS_REVIEW;
+            case START_PCB_STRUCTURE_REVIEW -> FileCategory.PCB_STRUCTURE_REVIEW;
             case START_SCHEMATIC_EXPERT_ASSIGNMENT -> FileCategory.SCHEMATIC_REVIEW;
             case PREPARE_FINISH -> ReviewType.SCHEMATIC.name().equals(task.getReviewType()) ? FileCategory.SCHEMATIC_REVIEW : null;
             default -> null;
         };
-        if (category != null && fileMapper.findLatestByTaskIdAndCategory(task.getId(), category.name()).isEmpty()) {
+        if (category != null) {
+            requireLatestStageFile(task, category);
+        }
+    }
+
+    private void requireLatestStageFile(ReviewTaskRecord task, FileCategory category) {
+        if (fileMapper.findLatestByTaskIdAndCategory(task.getId(), category.name()).isEmpty()) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT,
                     missingFileMessage(category));
         }
@@ -371,8 +337,8 @@ public class WorkflowApplicationService {
 
     private String missingFileMessage(FileCategory category) {
         return switch (category) {
-            case PROCESS_REVIEW -> "请先上传工艺图文件";
-            case STRUCTURE_REVIEW -> "请先上传结构图文件";
+            case PCB_PROCESS_REVIEW -> "请先上传工艺图文件";
+            case PCB_STRUCTURE_REVIEW -> "请先上传结构图文件";
             case PCB_REVIEW -> "请先上传最新 PCB 评审文件";
             case SCHEMATIC_REVIEW -> "请先上传最新原理图评审文件";
             default -> "请先上传当前流程所需文件";
@@ -406,64 +372,47 @@ public class WorkflowApplicationService {
         return task;
     }
 
-    private void appendHistory(long taskId, String fromStatus, String toStatus, WorkflowAction action, long operatorId, String comment) {
+    private void appendHistory(long taskId, WorkflowAction action, long operateId, String comment) {
         TaskFlowRecord record = new TaskFlowRecord();
         record.setId(flowMapper.nextId());
         record.setTaskId(taskId);
-        record.setFromStatus(fromStatus);
-        record.setToStatus(toStatus);
         record.setAction(action.name());
-        record.setOperatorId(operatorId);
+        record.setActionName(action.actionName());
+        record.setOperateId(operateId);
         record.setComment(comment);
         flowMapper.insert(record);
     }
 
-    public record TransitionCommand(WorkflowAction action, String comment, ReviewRole assignedRole, List<Long> reviewerIds,
-                                    List<StageFileCommand> stageFiles) {
+    public record TransitionCommand(WorkflowAction action, String comment, ReviewRole assignedRole, List<Long> reviewerIds) {
         public TransitionCommand {
             if (reviewerIds != null && reviewerIds.stream().anyMatch(id -> id == null)) {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "评审人员用户 ID 不能为空");
             }
-            if (stageFiles != null && stageFiles.stream().anyMatch(file -> file == null)) {
-                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "阶段文件不能为空");
-            }
             reviewerIds = reviewerIds == null ? List.of() : List.copyOf(reviewerIds);
-            stageFiles = stageFiles == null ? List.of() : List.copyOf(stageFiles);
         }
     }
 
     /** 前端 transition 请求模型；只有 START_PCB_STRUCTURE_REVIEW + START_PCB_PROCESS_REVIEW 可同时出现。 */
     public record TransitionBatchCommand(List<WorkflowAction> actions, String comment, ReviewRole assignedRole,
-                                         List<Long> reviewerIds, List<StageFileCommand> stageFiles) {
+                                         List<Long> reviewerIds) {
         public TransitionBatchCommand {
             if (actions == null || actions.isEmpty() || actions.stream().anyMatch(action -> action == null)) {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "流程动作不能为空");
             }
             actions = List.copyOf(actions);
             reviewerIds = reviewerIds == null ? List.of() : List.copyOf(reviewerIds);
-            stageFiles = stageFiles == null ? List.of() : List.copyOf(stageFiles);
-        }
-    }
-
-    public record StageFileCommand(FileUploadScene scene, String fileId, String fileName, long fileSize, String md5, String fileKind) {
-        public StageFileCommand(FileUploadScene scene, String fileId, String fileName, long fileSize, String md5) {
-            this(scene, fileId, fileName, fileSize, md5, null);
-        }
-        public StageFileCommand {
-            if (scene == null || fileId == null || fileId.isBlank() || fileName == null || fileName.isBlank() || fileSize < 0) {
-                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "阶段文件参数不合法");
-            }
         }
     }
 
     public record WorkflowView(Long taskId, TaskStatus fromStatus, TaskStatus toStatus,
-                               List<ReviewerAssignmentService.ReviewerView> assignedReviewers,
-                               List<FileApplicationService.FileView> stageFiles) {
+                               List<AssignedReviewerView> assignedReviewers) {
         public WorkflowView {
             assignedReviewers = List.copyOf(assignedReviewers);
-            stageFiles = List.copyOf(stageFiles);
         }
     }
+
+    /** 本次流转登记的人员。分配历史由 task_flow_record 记录，不再维护独立任务人员状态表。 */
+    public record AssignedReviewerView(ReviewRole role, Long reviewerId) { }
 
     @Schema(description = "当前流程节点的一类可分配职责及对应候选人员")
     public record AssignableReviewerRoleView(

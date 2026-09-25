@@ -8,7 +8,6 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
-import com.bms.review.infrastructure.TaskReviewerMapper;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -27,8 +26,6 @@ class TaskControllerIntegrationTest {
     private MockMvc mockMvc;
     @Autowired
     private ReviewFileMapper reviewFileMapper;
-    @Autowired
-    private TaskReviewerMapper taskReviewerMapper;
 
     @Test
     void shouldCreateAndSubmitTaskWithCompanyFileReferences() throws Exception {
@@ -51,8 +48,30 @@ class TaskControllerIntegrationTest {
                 .hasSize(2)
                 .extracting(item -> item.getResourcePath())
                 .containsExactlyInAnyOrder("company-p2-pcb", "company-p2-sch");
-        org.assertj.core.api.Assertions.assertThat(taskReviewerMapper.findActiveByTaskId(taskId))
-                .anyMatch(item -> item.getReviewerId().equals(1L) && item.getReviewRole().equals("PCB_EXPERT"));
+    }
+
+    @Test
+    void shouldSaveDraftWithMultipleCompanyFileReferences() throws Exception {
+        String firstFileId = "c778c14e-6f1a-4f4f-9f11-100000000021";
+        String secondFileId = "c778c14e-6f1a-4f4f-9f11-100000000022";
+        reviewFileMapper.insert(pending(firstFileId, "BMS-DRAFT-A.pcb", 8L, "company-draft-a"));
+        reviewFileMapper.insert(pending(secondFileId, "BMS-DRAFT-B.sch", 13L, "company-draft-b"));
+        String request = """
+                {"reviewType":"PCB","taskName":"多文件草稿保存","projectName":"BMS","designerId":10,"designerName":"设计者A","designName":"BMS-DRAFT","pcbType":"BMU","expectedCompletedDate":"2026-09-30","expertLeaderId":1,"expertLeaderName":"王鹏飞","reviewRoles":["PCB_EXPERT"],"files":["c778c14e-6f1a-4f4f-9f11-100000000021","c778c14e-6f1a-4f4f-9f11-100000000022"]}
+                """;
+
+        String response = mockMvc.perform(post("/tasks/save").contentType(MediaType.APPLICATION_JSON).content(request)
+                        .header("X-Mock-User-Id", "10")
+                        .header("X-Mock-Roles", "DESIGNER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("DRAFT"))
+                .andReturn().getResponse().getContentAsString();
+        long taskId = ((Number) com.jayway.jsonpath.JsonPath.read(response, "$.data.id")).longValue();
+
+        org.assertj.core.api.Assertions.assertThat(reviewFileMapper.findLatestByTaskId(taskId))
+                .hasSize(2)
+                .extracting(ReviewFileRecord::getFileId)
+                .containsExactlyInAnyOrder(firstFileId, secondFileId);
     }
 
     @Test
@@ -122,8 +141,8 @@ class TaskControllerIntegrationTest {
 
     private ReviewFileRecord pending(String fileId, String fileName, long fileSize, String resourcePath) {
         ReviewFileRecord record = new ReviewFileRecord();
-        record.setId(reviewFileMapper.nextId()); record.setFileId(fileId); record.setTaskId(null); record.setFileCategory("TASK_CREATION");
-        record.setBusinessFileKey(null); record.setFileName(fileName); record.setFileFormat("pcb"); record.setLatest(true);
+        record.setId(reviewFileMapper.nextId()); record.setFileId(fileId); record.setTaskId(null); record.setFileCategory("PCB_REVIEW");
+        record.setFileName(fileName); record.setFileFormat("pcb"); record.setLatest(true);
         record.setFileSize(fileSize); record.setMd5("test-md5-" + fileId); record.setResourcePath(resourcePath); record.setUploadedBy(10L);
         return record;
     }

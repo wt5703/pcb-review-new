@@ -1,8 +1,6 @@
 package com.bms.review.interfaces;
 
 import com.jayway.jsonpath.JsonPath;
-import com.bms.review.infrastructure.TaskReviewerMapper;
-import com.bms.review.infrastructure.TaskReviewerRecord;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
@@ -16,6 +14,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -31,14 +31,11 @@ class OpinionControllerIntegrationTest {
     private MockMvc mockMvc;
     @Autowired
     private ReviewTaskMapper taskMapper;
-    @Autowired
-    private TaskReviewerMapper reviewerMapper;
 
     @Test
     void shouldReplyAndConfirmOpinionWithoutRestartingTaskReview() throws Exception {
         long taskId = 8601L;
         taskMapper.insert(task(taskId));
-        reviewerMapper.insert(reviewer(taskId));
 
         String raiseResponse = mockMvc.perform(post("/tasks/{taskId}/opinions", taskId)
                         .header("X-Mock-User-Id", "20")
@@ -85,6 +82,64 @@ class OpinionControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.confirmedPass").value(1));
     }
 
+    @Test
+    void shouldRecordNoOpinionAsPassedAuditWithoutAddingDesignerWork() throws Exception {
+        long taskId = 8602L;
+        ReviewTaskRecord task = task(taskId);
+        task.setStatus(TaskStatus.PCB_EXPERT_REVIEWING.name());
+        taskMapper.insert(task);
+
+        mockMvc.perform(post("/tasks/{taskId}/opinions/no-opinion", taskId)
+                        .header("X-Mock-User-Id", "20")
+                        .header("X-Mock-Roles", "HARDWARE_EXPERT")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sourceType\":\"EXPERT_REVIEW\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.severity").value("PASS"))
+                .andExpect(jsonPath("$.data.status").value("CONFIRMED_PASS"));
+
+        mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)
+                        .header("X-Mock-User-Id", "10")
+                        .header("X-Mock-Roles", "DESIGNER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(0))
+                .andExpect(jsonPath("$.data.unsubmittedReviewers.length()").value(0));
+    }
+
+    @Test
+    void shouldAllowRaiserToEditAndDeleteOpinionBeforeDesignerReplies() throws Exception {
+        long taskId = 8603L;
+        taskMapper.insert(task(taskId));
+        String response = mockMvc.perform(post("/tasks/{taskId}/opinions", taskId)
+                        .header("X-Mock-User-Id", "20")
+                        .header("X-Mock-Roles", "HARDWARE_EXPERT")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sourceType\":\"EXPERT_REVIEW\",\"severity\":\"GENERAL\",\"content\":\"原始意见\"}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long opinionId = ((Number) JsonPath.read(response, "$.data.id")).longValue();
+
+        mockMvc.perform(put("/opinions/{opinionId}", opinionId)
+                        .header("X-Mock-User-Id", "20")
+                        .header("X-Mock-Roles", "HARDWARE_EXPERT")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"severity\":\"SERIOUS\",\"content\":\"<p>修改后的意见</p>\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.severity").value("SERIOUS"))
+                .andExpect(jsonPath("$.data.content").value("<p>修改后的意见</p>"));
+
+        mockMvc.perform(delete("/opinions/{opinionId}", opinionId)
+                        .header("X-Mock-User-Id", "20")
+                        .header("X-Mock-Roles", "HARDWARE_EXPERT"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/tasks/{taskId}/opinions", taskId)
+                        .header("X-Mock-User-Id", "20")
+                        .header("X-Mock-Roles", "HARDWARE_EXPERT"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(0));
+    }
+
     private ReviewTaskRecord task(long taskId) {
         ReviewTaskRecord task = new ReviewTaskRecord();
         task.setId(taskId);
@@ -100,16 +155,4 @@ class OpinionControllerIntegrationTest {
         return task;
     }
 
-    private TaskReviewerRecord reviewer(long taskId) {
-        TaskReviewerRecord reviewer = new TaskReviewerRecord();
-        reviewer.setId(8602L);
-        reviewer.setTaskId(taskId);
-        reviewer.setReviewRole("PCB_EXPERT");
-        reviewer.setReviewerId(20L);
-        reviewer.setProcessStatus("PENDING");
-        reviewer.setAssignedBy(1L);
-        reviewer.setNoOpinion(false);
-        reviewer.setVersion(0L);
-        return reviewer;
-    }
 }

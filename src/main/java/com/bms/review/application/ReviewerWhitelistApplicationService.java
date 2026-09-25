@@ -1,7 +1,5 @@
 package com.bms.review.application;
 
-import com.bms.audit.infrastructure.OperationAuditMapper;
-import com.bms.audit.infrastructure.OperationAuditRecord;
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
 import com.bms.identity.application.CurrentUser;
@@ -31,16 +29,16 @@ public class ReviewerWhitelistApplicationService {
             ReviewRole.EMC_EXPERT,
             ReviewRole.STRUCTURE_EXPERT,
             ReviewRole.PROCESS_EXPERT,
-            ReviewRole.PCB_EXPERT);
+            ReviewRole.PCB_EXPERT,
+            ReviewRole.PCB_MUTUAL_CHECK,
+            ReviewRole.SCHEMATIC_MUTUAL_CHECK);
     private static final Set<ReviewRole> SUPPORTED_ROLES = Set.copyOf(SUPPORTED_ROLE_ORDER);
 
     private final ReviewerWhitelistMapper whitelistMapper;
-    private final OperationAuditMapper auditMapper;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
-    public ReviewerWhitelistApplicationService(ReviewerWhitelistMapper whitelistMapper, OperationAuditMapper auditMapper) {
+    public ReviewerWhitelistApplicationService(ReviewerWhitelistMapper whitelistMapper) {
         this.whitelistMapper = whitelistMapper;
-        this.auditMapper = auditMapper;
     }
 
     /**
@@ -61,7 +59,7 @@ public class ReviewerWhitelistApplicationService {
         int createdCount = 0;
         for (RoleEmployeeNos roleEmployeeNo : roleEmployeeNos) {
             if (!SUPPORTED_ROLES.contains(roleEmployeeNo.reviewRole())) {
-                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "白名单仅支持硬件、EMC、结构、工艺和 PCB 评审角色");
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "白名单仅支持硬件、EMC、结构、工艺、PCB 评审及 PCB/原理图互检职责");
             }
             Set<String> employeeNos = roleEmployeeNo.employeeNos().stream()
                     .map(String::trim)
@@ -87,8 +85,6 @@ public class ReviewerWhitelistApplicationService {
                 createdCount++;
             }
         }
-        auditMapper.insert(new OperationAuditRecord("REVIEWER_WHITELIST", 0L, "REVIEWER_WHITELIST_ADDED", currentUser.id(),
-                "新增映射数=" + createdCount));
         return new SaveResult(createdCount, views());
     }
 
@@ -106,8 +102,6 @@ public class ReviewerWhitelistApplicationService {
         if (deletedCount == 0) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "未找到可删除的白名单记录");
         }
-        auditMapper.insert(new OperationAuditRecord("REVIEWER_WHITELIST", hasId ? id : 0L, "REVIEWER_WHITELIST_DELETED",
-                currentUser.id(), hasId ? "按主键逻辑删除" : "按员工工号逻辑删除：" + employeeNo.trim()));
         return new DeleteResult(deletedCount);
     }
 

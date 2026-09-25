@@ -82,7 +82,7 @@ public class TaskController {
     }
 
     @GetMapping("/{taskId}")
-    @Operation(summary = "查询评审任务详情", description = "按任务 ID 返回当前用户有权查看的一条任务基础信息；用于任务详情页加载，不再通过分页任务列表反查。")
+    @Operation(summary = "查询评审任务详情", description = "按任务 ID 返回当前用户有权查看的一条任务基础信息及邮件投递记录；用于任务详情页加载，不再通过分页任务列表反查。")
     ApiResponse<TaskApplicationService.TaskView> detail(@PathVariable long taskId, HttpServletRequest servletRequest) {
         return ApiResponse.ok(taskService.get(taskId, CurrentUserHolder.require()), traceId(servletRequest));
     }

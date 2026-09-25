@@ -15,18 +15,21 @@ export interface Task {
   reviewRoles: string[]
   reviewDescription?: string
   status: string
+  /** 仅任务详情接口返回的邮件投递记录。 */
+  notificationRecords?: NotificationRecord[]
+}
+
+export interface NotificationRecord {
+  eventType: string
+  recipient: string
+  templateCode: string
+  deliveryStatus: string
+  failureReason?: string
+  attemptedAt?: string
 }
 
 /** 文件上传接口返回的 UUID；任务保存/提交时 files 仅传多个 UUID。 */
 export type TaskFileReference = string
-
-/** 文件上传接口返回的文件引用；用于阶段文件登记等非任务创建场景。 */
-export interface FileReference {
-  fileId: string
-  fileName: string
-  fileSize: number
-  md5?: string
-}
 
 /** 公司资源服务上传代理的返回值。 */
 export interface ResourceUploadResult {
@@ -57,7 +60,7 @@ export interface Opinion {
   richText?: string
   raisedBy: number
   raisedByName: string
-  severity: 'SERIOUS' | 'GENERAL' | 'MINOR'
+  severity: 'SERIOUS' | 'GENERAL' | 'MINOR' | 'PASS'
   createdAt?: string
   status: 'PENDING_REPLY' | 'PENDING_CONFIRMATION' | 'CONFIRMED_PASS' | 'CONFIRMED_REJECTED' | 'WITHDRAWN'
   replies: OpinionReply[]
@@ -77,6 +80,7 @@ export interface OpinionSummary {
   confirmedPass: number
   confirmedRejected: number
   withdrawn: number
+  unsubmittedReviewers: Array<{ reviewerId: number; reviewerName: string; reviewRole: string; processStatus: string }>
 }
 
 export interface OpinionReply {
@@ -130,11 +134,8 @@ export interface CheckItemListItem {
 }
 
 export interface Reviewer {
-  id: number
   reviewerId: number
   role: string
-  status: string
-  noOpinion: boolean
 }
 
 /** 当前流程节点按职责归组的可分配人员；userId 可直接提交为 reviewerIds。 */
@@ -155,7 +156,6 @@ export interface ArchiveFile {
   fileId: number
   stageName: string
   fileCategory: string
-  businessFileKey: string
   fileName: string
   fileFormat?: string
   uploaderId: number
@@ -171,7 +171,6 @@ export interface TaskFile {
   id: number
   taskId: number
   category: string
-  businessFileKey: string
   fileName: string
   fileFormat?: string
   fileSize: number

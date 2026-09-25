@@ -2,8 +2,6 @@ package com.bms.task.application;
 
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
-import com.bms.audit.infrastructure.OperationAuditMapper;
-import com.bms.audit.infrastructure.OperationAuditRecord;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Permission;
 import com.bms.identity.domain.PermissionPolicy;
@@ -11,15 +9,17 @@ import com.bms.identity.domain.Role;
 import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.notification.infrastructure.OutboxEventMapper;
 import com.bms.notification.infrastructure.OutboxEventRecord;
+import com.bms.notification.infrastructure.NotificationSendRecord;
+import com.bms.notification.infrastructure.NotificationSendRecordMapper;
 import com.bms.task.domain.ReviewTask;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
+import com.bms.workflow.domain.WorkflowAction;
+import com.bms.workflow.infrastructure.TaskFlowMapper;
+import com.bms.workflow.infrastructure.TaskFlowRecord;
 import com.bms.review.domain.ReviewRole;
-import com.bms.review.domain.ReviewerProcessStatus;
-import com.bms.review.infrastructure.TaskReviewerMapper;
-import com.bms.review.infrastructure.TaskReviewerRecord;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,24 +40,20 @@ import java.util.stream.Collectors;
 public class TaskApplicationService {
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
     private final ReviewTaskMapper taskMapper;
-    private final OperationAuditMapper auditMapper;
     private final OutboxEventMapper outboxEventMapper;
     private final TaskAssignmentAccessMapper taskAssignmentAccessMapper;
-    private final TaskReviewerMapper reviewerMapper;
+    private final TaskFlowMapper flowMapper;
+    private final NotificationSendRecordMapper notificationSendRecordMapper;
 
     @Autowired
-    public TaskApplicationService(ReviewTaskMapper taskMapper, OperationAuditMapper auditMapper, OutboxEventMapper outboxEventMapper,
-                                  TaskAssignmentAccessMapper taskAssignmentAccessMapper, TaskReviewerMapper reviewerMapper) {
+    public TaskApplicationService(ReviewTaskMapper taskMapper, OutboxEventMapper outboxEventMapper,
+                                  TaskAssignmentAccessMapper taskAssignmentAccessMapper, TaskFlowMapper flowMapper,
+                                  NotificationSendRecordMapper notificationSendRecordMapper) {
         this.taskMapper = taskMapper;
-        this.auditMapper = auditMapper;
         this.outboxEventMapper = outboxEventMapper;
         this.taskAssignmentAccessMapper = taskAssignmentAccessMapper;
-        this.reviewerMapper = reviewerMapper;
-    }
-
-    public TaskApplicationService(ReviewTaskMapper taskMapper, OperationAuditMapper auditMapper, OutboxEventMapper outboxEventMapper,
-                                  TaskAssignmentAccessMapper taskAssignmentAccessMapper) {
-        this(taskMapper, auditMapper, outboxEventMapper, taskAssignmentAccessMapper, null);
+        this.flowMapper = flowMapper;
+        this.notificationSendRecordMapper = notificationSendRecordMapper;
     }
 
     @Transactional
@@ -69,7 +65,6 @@ public class TaskApplicationService {
                 command.designerId(), command.designerName(), command.designName(), command.pcbType(), command.expectedCompletedDate(),
                 command.expertLeaderId(), command.expertLeaderName(), command.reviewRoles(), command.reviewDescription());
         taskMapper.insert(toRecord(task));
-        appendAudit(task.id(), "TASK_CREATED", currentUser.id(), "创建评审任务草稿");
         return TaskView.from(task);
     }
 
@@ -83,8 +78,7 @@ public class TaskApplicationService {
         if (taskMapper.update(toRecord(task)) != 1) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
         }
-        createInitialReviewerViews(task, currentUser);
-        appendAudit(task.id(), "TASK_SUBMITTED", currentUser.id(), "提交评审任务，进入" + task.status().name());
+        appendFlow(task.id(), WorkflowAction.CREATE, currentUser.id(), "提交评审任务");
         outboxEventMapper.insert(new OutboxEventRecord("TASK_SUBMITTED", "REVIEW_TASK", task.id(),
                 "{\"taskId\":" + task.id() + ",\"reviewType\":\"" + task.reviewType().name() + "\"}", "PENDING"));
         return TaskView.from(task);
@@ -111,7 +105,6 @@ public class TaskApplicationService {
         if (taskMapper.updateDraft(existing) != 1) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "任务已提交，不允许编辑");
         }
-        appendAudit(taskId, "TASK_DRAFT_UPDATED", currentUser.id(), "编辑任务草稿");
         return TaskView.from(updated);
     }
 
@@ -124,7 +117,6 @@ public class TaskApplicationService {
         if (taskMapper.update(toRecord(task)) != 1) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
         }
-        appendAudit(task.id(), "TASK_DRAFT_FILES_SAVED", currentUser.id(), "保存草稿评审文件");
         return TaskView.from(task);
     }
 
@@ -134,7 +126,10 @@ public class TaskApplicationService {
         if (!canView(task, currentUser)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看该任务");
         }
-        return TaskView.from(task);
+        List<NotificationRecordView> notificationRecords = notificationSendRecordMapper.findByTaskId(taskId).stream()
+                .map(NotificationRecordView::from)
+                .toList();
+        return TaskView.from(task, notificationRecords);
     }
 
     public List<TaskView> list(CurrentUser currentUser) {
@@ -166,8 +161,15 @@ public class TaskApplicationService {
         return record;
     }
 
-    private void appendAudit(long taskId, String action, long operatorId, String detail) {
-        auditMapper.insert(new OperationAuditRecord("REVIEW_TASK", taskId, action, operatorId, detail));
+    private void appendFlow(long taskId, WorkflowAction action, long operateId, String comment) {
+        TaskFlowRecord record = new TaskFlowRecord();
+        record.setId(flowMapper.nextId());
+        record.setTaskId(taskId);
+        record.setAction(action.name());
+        record.setActionName(action.actionName());
+        record.setOperateId(operateId);
+        record.setComment(comment);
+        flowMapper.insert(record);
     }
 
     private boolean canView(ReviewTask task, CurrentUser currentUser) {
@@ -188,23 +190,10 @@ public class TaskApplicationService {
         if (designerId == null) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "任务设计者不能为空");
         }
-        if (!currentUser.roles().contains(Role.DESIGNER) || !designerId.equals(currentUser.id())) {
+        if (!permissionPolicy.isAdministrator(currentUser.roles())
+                && (!currentUser.roles().contains(Role.DESIGNER) || !designerId.equals(currentUser.id()))) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "仅任务设计者可以" + action + "该任务");
         }
-    }
-
-    private void createInitialReviewerViews(ReviewTask task, CurrentUser currentUser) {
-        if (reviewerMapper == null) {
-            return;
-        }
-        List<ReviewRole> initialRoles = task.reviewType() == ReviewType.PCB ? task.reviewRoles() : List.of(ReviewRole.SCHEMATIC_LEADER);
-        initialRoles.stream().distinct().forEach(role -> {
-            TaskReviewerRecord record = new TaskReviewerRecord();
-            record.setId(reviewerMapper.nextId()); record.setTaskId(task.id()); record.setReviewRole(role.name());
-            record.setReviewerId(task.expertLeaderId()); record.setProcessStatus(ReviewerProcessStatus.PENDING.name());
-            record.setAssignedBy(currentUser.id()); record.setNoOpinion(false); record.setVersion(0L);
-            reviewerMapper.insert(record);
-        });
     }
 
     public record CreateTaskCommand(ReviewType reviewType, String taskName, String projectName, Long designerId, String designerName,
@@ -218,11 +207,28 @@ public class TaskApplicationService {
 
     public record TaskView(Long id, ReviewType reviewType, String taskName, String projectName, Long designerId, String designerName,
                            String designName, String pcbType, LocalDate expectedCompletedDate, Long expertLeaderId, String expertLeaderName,
-                           List<ReviewRole> reviewRoles, String reviewDescription, String status) {
+                           List<ReviewRole> reviewRoles, String reviewDescription, String status,
+                           List<NotificationRecordView> notificationRecords) {
         static TaskView from(ReviewTask task) {
             return new TaskView(task.id(), task.reviewType(), task.taskName(), task.projectName(), task.designerId(), task.designerName(),
                     task.designName(), task.pcbType(), task.expectedCompletedDate(), task.expertLeaderId(), task.expertLeaderName(),
-                    task.reviewRoles(), task.reviewDescription(), task.status().name());
+                    task.reviewRoles(), task.reviewDescription(), task.status().name(), List.of());
+        }
+
+        static TaskView from(ReviewTask task, List<NotificationRecordView> notificationRecords) {
+            TaskView taskView = from(task);
+            return new TaskView(taskView.id(), taskView.reviewType(), taskView.taskName(), taskView.projectName(),
+                    taskView.designerId(), taskView.designerName(), taskView.designName(), taskView.pcbType(),
+                    taskView.expectedCompletedDate(), taskView.expertLeaderId(), taskView.expertLeaderName(),
+                    taskView.reviewRoles(), taskView.reviewDescription(), taskView.status(), List.copyOf(notificationRecords));
+        }
+    }
+
+    public record NotificationRecordView(String eventType, String recipient, String templateCode,
+                                         String deliveryStatus, String failureReason, java.time.LocalDateTime attemptedAt) {
+        static NotificationRecordView from(NotificationSendRecord record) {
+            return new NotificationRecordView(record.eventType(), record.recipient(), record.templateCode(),
+                    record.deliveryStatus(), record.failureReason(), record.attemptedAt());
         }
     }
 

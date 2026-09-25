@@ -28,14 +28,16 @@ public class DictionaryController {
             new DictionaryItem(ReviewRole.EMC_EXPERT.name(), "EMC评审"),
             new DictionaryItem(ReviewRole.STRUCTURE_EXPERT.name(), "结构评审"),
             new DictionaryItem(ReviewRole.PROCESS_EXPERT.name(), "工艺评审"),
-            new DictionaryItem(ReviewRole.PCB_EXPERT.name(), "PCB评审"));
+            new DictionaryItem(ReviewRole.PCB_EXPERT.name(), "PCB评审"),
+            new DictionaryItem(ReviewRole.PCB_MUTUAL_CHECK.name(), "PCB互检单评审"),
+            new DictionaryItem(ReviewRole.SCHEMATIC_MUTUAL_CHECK.name(), "原理图互检单评审"));
 
     private static final List<DictionaryItem> TASK_STATUSES = java.util.Arrays.stream(TaskStatus.values())
             .map(status -> new DictionaryItem(status.name(), status.displayName()))
             .toList();
 
     @GetMapping("/task-options")
-    @Operation(summary = "查询任务字典", description = "返回 PCB 板类型、创建任务可选的评审角色、白名单可配置角色和全部任务状态。code 是接口传参值，name 是前端显示中文名称；互检职责和原理图流程内部职责不在创建页选择。")
+    @Operation(summary = "查询任务字典", description = "返回 PCB 板类型、创建任务可选的评审角色、白名单可配置角色和全部任务状态。code 是接口传参值，name 是前端显示中文名称；PCB/原理图互检职责只在白名单及分配流程使用，不在创建页选择。")
     public ApiResponse<TaskOptionsView> taskOptions(HttpServletRequest request) {
         return ApiResponse.ok(new TaskOptionsView(
                 List.of("BMU板", "BSU板", "分流器板", "高压板", "转接板", "储能板", "其他"),

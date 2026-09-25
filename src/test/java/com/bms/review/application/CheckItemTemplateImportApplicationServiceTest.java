@@ -1,10 +1,10 @@
 package com.bms.review.application;
 
-import com.bms.audit.infrastructure.OperationAuditMapper;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Role;
 import com.bms.review.infrastructure.CheckItemTemplateMapper;
 import com.bms.review.infrastructure.CheckItemTemplateRecord;
+import com.bms.task.domain.ReviewType;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -22,8 +22,7 @@ import static org.mockito.Mockito.when;
 /** 验证导入以类别名称和 parentId 建模，不需要检查项编码。 */
 class CheckItemTemplateImportApplicationServiceTest {
     private final CheckItemTemplateMapper templateMapper = mock(CheckItemTemplateMapper.class);
-    private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
-    private final CheckItemTemplateApplicationService service = new CheckItemTemplateApplicationService(templateMapper, auditMapper);
+    private final CheckItemTemplateApplicationService service = new CheckItemTemplateApplicationService(templateMapper);
 
     @Test
     void shouldSplitLineStartedParenthesizedNumbersWithoutBreakingDecimals() throws Exception {
@@ -36,7 +35,7 @@ class CheckItemTemplateImportApplicationServiceTest {
                                 + "3）边缘定位柱（金属化孔、金属定位柱）与PAD边缘<1.5mm，需增加阻焊丝印；\n"
                                 + "4）从板螺丝孔螺母柱(螺母柱直径10mm）以螺丝孔中心画圆禁布区直径12.5mm以上、到器件禁布区直径15mm以上。\n"
                                 + "5\\)板子中间的螺丝附件器件与板子垂直放置"),
-                new CurrentUser(1L, Set.of(Role.PCB_LEADER)));
+                ReviewType.SCHEMATIC, new CurrentUser(1L, Set.of(Role.PCB_LEADER)));
 
         ArgumentCaptor<CheckItemTemplateRecord> records = ArgumentCaptor.forClass(CheckItemTemplateRecord.class);
         verify(templateMapper, atLeastOnce()).insert(records.capture());
@@ -44,6 +43,7 @@ class CheckItemTemplateImportApplicationServiceTest {
 
         assertThat(result.totalRows()).isEqualTo(6);
         assertThat(inserted.get(0).getItemName()).isEqualTo("螺丝孔");
+        assertThat(inserted.get(0).getReviewType()).isEqualTo(ReviewType.SCHEMATIC.name());
         assertThat(inserted.get(0).getParentId()).isNull();
         assertThat(inserted.get(0).getSortNo()).isEqualTo(1);
         assertThat(inserted.stream().skip(1).toList()).allSatisfy(record -> assertThat(record.getParentId()).isEqualTo(10L));

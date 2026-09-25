@@ -4,8 +4,7 @@ import com.bms.archive.infrastructure.TaskArchiveSnapshotMapper;
 import com.bms.archive.infrastructure.TaskArchiveSnapshotRecord;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
-import com.bms.review.infrastructure.TaskReviewerMapper;
-import com.bms.review.infrastructure.TaskReviewerRecord;
+import com.bms.notification.infrastructure.NotificationSendRecordMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import com.bms.workflow.infrastructure.TaskFlowMapper;
 import com.bms.workflow.infrastructure.TaskFlowRecord;
@@ -24,44 +23,38 @@ import static org.mockito.Mockito.when;
 /**
  * @author 王涛
  * @date 2026-09-18
- * @description 验证任务结束时归档只冻结流程节点与当前阶段的最新文件，不归档评审意见和邮件投递记录。
+ * @description 验证任务结束时冻结阶段文件和邮件记录，归档读取的流程节点来自 task_flow_record。
  */
 class TaskArchiveApplicationServiceTest {
     private final TaskArchiveSnapshotMapper snapshotMapper = mock(TaskArchiveSnapshotMapper.class);
     private final ReviewFileMapper fileMapper = mock(ReviewFileMapper.class);
-    private final TaskReviewerMapper reviewerMapper = mock(TaskReviewerMapper.class);
     private final TaskFlowMapper flowMapper = mock(TaskFlowMapper.class);
-    private final TaskArchiveApplicationService service = new TaskArchiveApplicationService(snapshotMapper, fileMapper, reviewerMapper,
-            flowMapper, new ObjectMapper().findAndRegisterModules());
+    private final NotificationSendRecordMapper notificationSendRecordMapper = mock(NotificationSendRecordMapper.class);
+    private final TaskArchiveApplicationService service = new TaskArchiveApplicationService(snapshotMapper, fileMapper,
+            flowMapper, notificationSendRecordMapper, new ObjectMapper().findAndRegisterModules());
 
     @Test
     void shouldFreezeStructuredArchiveFieldsForDisplay() {
         LocalDateTime time = LocalDateTime.of(2026, 9, 18, 10, 30);
         ReviewFileRecord file = new ReviewFileRecord();
         file.setId(101L);
-        file.setFileCategory("TASK_CREATION");
-        file.setBusinessFileKey("MAIN_PCB");
+        file.setFileCategory("PCB_REVIEW");
         file.setFileName("BMU_Control_V2.PCB");
         file.setUploadedBy(9L);
         file.setUploadedAt(time);
         file.setUploadedStage("PCB_EXPERT_REVIEWING");
         TaskFlowRecord flow = new TaskFlowRecord();
         flow.setId(401L);
-        flow.setToStatus("MUTUAL_CHECK_REVIEWING");
         flow.setAction("START_MUTUAL_CHECK");
-        flow.setOperatorId(2L);
+        flow.setActionName("开启互检单评审");
+        flow.setOperateId(2L);
         flow.setComment("互检人员已完成分配");
         flow.setCreatedAt(time.plusHours(1));
-        TaskReviewerRecord reviewer = new TaskReviewerRecord();
-        reviewer.setReviewerId(20L);
-        reviewer.setReviewRole("PCB_EXPERT");
-        reviewer.setProcessStatus("COMPLETED");
         ReviewTaskRecord task = new ReviewTaskRecord();
         task.setId(1001L);
         task.setTaskName("BMU 控制板评审");
         task.setStatus("FINISHED");
         when(fileMapper.findLatestByTaskId(1001L)).thenReturn(List.of(file));
-        when(reviewerMapper.findActiveByTaskId(1001L)).thenReturn(List.of(reviewer));
         when(flowMapper.findByTaskId(1001L)).thenReturn(List.of(flow));
         service.archive(task);
 
@@ -80,5 +73,6 @@ class TaskArchiveApplicationServiceTest {
             assertThat(value.fileName()).isEqualTo("BMU_Control_V2.PCB");
             assertThat(value.downloadPath()).isEqualTo("/leapmotor/pcb_review/files/download?taskId=1001&fileId=101");
         });
+        verify(flowMapper, org.mockito.Mockito.times(2)).findByTaskId(1001L);
     }
 }

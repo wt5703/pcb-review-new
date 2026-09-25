@@ -6,14 +6,24 @@ package com.bms.workflow.domain;
  * @description 枚举任务流程域允许执行的状态推进动作；动作名称表达业务语义，避免在接口或应用服务中散落状态字符串。
  */
 public enum WorkflowAction {
-    CREATE,
-    START_PCB_STRUCTURE_REVIEW,
-    START_PCB_PROCESS_REVIEW,
-    START_PCB_MATUAL_ASSIGNMENT,
-    START_PCB_MATUAL_REVIEW,
-    START_SCHEMATIC_MATUAL_REVIEW,
-    START_SCHEMATIC_EXPERT_ASSIGNMENT,
-    START_SCHEMATIC_EXPERT_REVIEW,
-    PREPARE_FINISH,
-    FINISH
+    CREATE("创建任务"),
+    START_PCB_STRUCTURE_REVIEW("开启结构评审"),
+    START_PCB_PROCESS_REVIEW("开启工艺评审"),
+    START_PCB_MATUAL_ASSIGNMENT("开启互检单分配"),
+    START_PCB_MATUAL_REVIEW("开启互检单评审"),
+    START_SCHEMATIC_MATUAL_REVIEW("开启互检单评审"),
+    START_SCHEMATIC_EXPERT_ASSIGNMENT("开启硬件专家分配"),
+    START_SCHEMATIC_EXPERT_REVIEW("开启原理图专家评审"),
+    PREPARE_FINISH("准备结束"),
+    FINISH("结束任务");
+
+    private final String actionName;
+
+    WorkflowAction(String actionName) {
+        this.actionName = actionName;
+    }
+
+    public String actionName() {
+        return actionName;
+    }
 }

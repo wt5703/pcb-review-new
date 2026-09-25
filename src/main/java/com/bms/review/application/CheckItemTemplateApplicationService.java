@@ -1,7 +1,5 @@
 package com.bms.review.application;
 
-import com.bms.audit.infrastructure.OperationAuditMapper;
-import com.bms.audit.infrastructure.OperationAuditRecord;
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
 import com.bms.identity.application.CurrentUser;
@@ -37,12 +35,10 @@ import java.util.Set;
 @Service
 public class CheckItemTemplateApplicationService {
     private final CheckItemTemplateMapper templateMapper;
-    private final OperationAuditMapper auditMapper;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
-    public CheckItemTemplateApplicationService(CheckItemTemplateMapper templateMapper, OperationAuditMapper auditMapper) {
+    public CheckItemTemplateApplicationService(CheckItemTemplateMapper templateMapper) {
         this.templateMapper = templateMapper;
-        this.auditMapper = auditMapper;
     }
 
     @Transactional
@@ -60,7 +56,6 @@ public class CheckItemTemplateApplicationService {
             templateMapper.insert(child);
             items.add(TemplateView.from(child));
         }
-        appendAudit(category.getId(), "CHECK_ITEM_TEMPLATE_CREATED", currentUser.id(), category.getItemName());
         return new TemplateCategoryView(TemplateView.from(category), List.copyOf(items));
     }
 
@@ -78,7 +73,6 @@ public class CheckItemTemplateApplicationService {
             }
             target.setItemName(command.itemName().trim());
             templateMapper.update(target);
-            appendAudit(target.getId(), "CHECK_ITEM_TEMPLATE_ITEM_RENAMED", currentUser.id(), target.getItemName());
             return new TemplateUpdateView(TemplateView.from(target), List.of());
         }
 
@@ -105,7 +99,6 @@ public class CheckItemTemplateApplicationService {
             }
             items.add(TemplateView.from(child));
         }
-        appendAudit(target.getId(), "CHECK_ITEM_TEMPLATE_UPDATED", currentUser.id(), target.getItemName());
         return new TemplateUpdateView(TemplateView.from(target), List.copyOf(items));
     }
 
@@ -141,8 +134,10 @@ public class CheckItemTemplateApplicationService {
         templateMapper.disableById(id);
         if (isCategory) {
             templateMapper.disableChildrenByParentId(id);
+            templateMapper.decrementCategorySortAfter(template.getReviewType(), template.getSortNo());
+        } else {
+            templateMapper.decrementSiblingItemSortAfter(template.getParentId(), template.getSortNo());
         }
-        appendAudit(template.getId(), "CHECK_ITEM_TEMPLATE_DISABLED", currentUser.id(), template.getItemName());
     }
 
     /**
@@ -150,9 +145,12 @@ public class CheckItemTemplateApplicationService {
      * 文件中不再使用或保存检查项编码。
      */
     @Transactional
-    public ImportResult importWorkbook(byte[] workbookBytes, CurrentUser currentUser) {
+    public ImportResult importWorkbook(byte[] workbookBytes, ReviewType reviewType, CurrentUser currentUser) {
         requireManagePermission(currentUser);
-        List<ImportCategory> categories = readCategories(workbookBytes);
+        if (reviewType == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "导入互检单模板时必须选择任务类型");
+        }
+        List<ImportCategory> categories = readCategories(workbookBytes, reviewType);
         int created = 0;
         int updated = 0;
         for (ImportCategory imported : categories) {
@@ -160,13 +158,11 @@ public class CheckItemTemplateApplicationService {
             if (category == null) {
                 category = newTemplate(imported.reviewType(), null, imported.categoryName(), imported.sortNo(), true);
                 templateMapper.insert(category);
-                appendAudit(category.getId(), "CHECK_ITEM_TEMPLATE_IMPORTED_CREATED", currentUser.id(), category.getItemName());
                 created++;
             } else {
                 category.setSortNo(imported.sortNo());
                 category.setEnabled(true);
                 templateMapper.update(category);
-                appendAudit(category.getId(), "CHECK_ITEM_TEMPLATE_IMPORTED_UPDATED", currentUser.id(), category.getItemName());
                 updated++;
             }
             for (int index = 0; index < imported.itemNames().size(); index++) {
@@ -175,13 +171,11 @@ public class CheckItemTemplateApplicationService {
                 if (item == null) {
                     item = newTemplate(imported.reviewType(), category.getId(), itemName, index + 1, true);
                     templateMapper.insert(item);
-                    appendAudit(item.getId(), "CHECK_ITEM_TEMPLATE_IMPORTED_CREATED", currentUser.id(), item.getItemName());
                     created++;
                 } else {
                     item.setSortNo(index + 1);
                     item.setEnabled(true);
                     templateMapper.update(item);
-                    appendAudit(item.getId(), "CHECK_ITEM_TEMPLATE_IMPORTED_UPDATED", currentUser.id(), item.getItemName());
                     updated++;
                 }
             }
@@ -190,7 +184,7 @@ public class CheckItemTemplateApplicationService {
         return new ImportResult(totalRows, created, updated);
     }
 
-    private List<ImportCategory> readCategories(byte[] workbookBytes) {
+    private List<ImportCategory> readCategories(byte[] workbookBytes, ReviewType reviewType) {
         if (workbookBytes == null || workbookBytes.length == 0) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "导入文件不能为空");
         }
@@ -202,8 +196,7 @@ public class CheckItemTemplateApplicationService {
             Map<String, Integer> headers = readHeaders(sheet);
             DataFormatter formatter = new DataFormatter();
             Map<String, ImportCategoryBuilder> categories = new LinkedHashMap<>();
-            Map<ReviewType, String> previousCategoryNames = new HashMap<>();
-            Map<ReviewType, Integer> categorySorts = new HashMap<>();
+            String previousCategoryName = null;
             int startRow = headers.remove("__HEADER_ROW__") + 1;
             for (int rowIndex = startRow; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
                 Row row = sheet.getRow(rowIndex);
@@ -211,20 +204,18 @@ public class CheckItemTemplateApplicationService {
                     continue;
                 }
                 int displayRow = rowIndex + 1;
-                ReviewType reviewType = parseReviewType(headers.containsKey("评审类型") ? cell(row, headers, "评审类型", formatter) : "PCB", displayRow);
                 String categoryName = cell(row, headers, "类别", formatter);
                 if (!categoryName.isBlank()) {
-                    previousCategoryNames.put(reviewType, categoryName);
+                    previousCategoryName = categoryName;
                 } else {
-                    categoryName = previousCategoryNames.get(reviewType);
+                    categoryName = previousCategoryName;
                 }
                 if (categoryName == null || categoryName.isBlank()) {
                     throw new BusinessException(ErrorCode.VALIDATION_ERROR, "第 " + displayRow + " 行检查项缺少类别；合并类别单元格仅可继承上一条非空类别");
                 }
                 String normalizedCategoryName = categoryName.trim();
-                String key = reviewType.name() + "|" + normalizedCategoryName;
-                ImportCategoryBuilder category = categories.computeIfAbsent(key, ignored -> new ImportCategoryBuilder(reviewType, normalizedCategoryName,
-                        categorySorts.merge(reviewType, 1, Integer::sum)));
+                ImportCategoryBuilder category = categories.computeIfAbsent(normalizedCategoryName,
+                        ignored -> new ImportCategoryBuilder(reviewType, normalizedCategoryName, categories.size() + 1));
                 String items = cell(row, headers, "检查项", formatter);
                 for (String itemName : splitEmbeddedItems(items)) {
                     if (!category.itemNames.add(itemName)) {
@@ -257,7 +248,7 @@ public class CheckItemTemplateApplicationService {
                 return headers;
             }
         }
-        throw new BusinessException(ErrorCode.VALIDATION_ERROR, "未找到检查项模板表头；仅支持“类别、检查项”列，可选“评审类型”列");
+        throw new BusinessException(ErrorCode.VALIDATION_ERROR, "未找到检查项模板表头；仅支持“类别、检查项”列");
     }
 
     private boolean isBlankRow(Row row, DataFormatter formatter) {
@@ -269,14 +260,6 @@ public class CheckItemTemplateApplicationService {
 
     private String cell(Row row, Map<String, Integer> headers, String header, DataFormatter formatter) {
         return formatter.formatCellValue(row.getCell(headers.get(header))).trim();
-    }
-
-    private ReviewType parseReviewType(String value, int row) {
-        try {
-            return ReviewType.valueOf(value.trim().toUpperCase());
-        } catch (IllegalArgumentException exception) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "第 " + row + " 行评审类型仅支持 PCB 或 SCHEMATIC");
-        }
     }
 
     /** 仅按行首编号拆分，避免把 1.5mm、12.5mm 等正文数值当作检查项编号。 */
@@ -325,10 +308,6 @@ public class CheckItemTemplateApplicationService {
 
     private void requireName(String value, String fieldName) {
         if (value == null || value.isBlank()) throw new BusinessException(ErrorCode.VALIDATION_ERROR, fieldName + "不能为空");
-    }
-
-    private void appendAudit(long templateId, String action, long operatorId, String detail) {
-        auditMapper.insert(new OperationAuditRecord("CHECK_ITEM_TEMPLATE", templateId, action, operatorId, detail));
     }
 
     public record CreateCategoryCommand(ReviewType reviewType, String categoryName, List<CreateItemCommand> items) { }

@@ -1,5 +1,6 @@
 package com.bms.review.infrastructure;
 
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Select;
@@ -53,8 +54,11 @@ public interface ReviewOpinionMapper {
     @Update("UPDATE review_opinion SET status=#{status}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
     int updateStatus(ReviewOpinionRecord record);
 
-    @Update("UPDATE review_opinion SET content=#{content}, rich_text_content=#{richText}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
+    @Update("UPDATE review_opinion SET severity=#{severity}, content=#{content}, rich_text_content=#{richText}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
     int updateContent(ReviewOpinionRecord record);
+
+    @Delete("DELETE FROM review_opinion WHERE id=#{id} AND status='PENDING_REPLY'")
+    int deletePendingReply(long id);
 
     @Insert("INSERT INTO opinion_reply (id, opinion_id, reply_type, reason, replied_by, reply_no) "
             + "VALUES (#{id}, #{opinionId}, #{replyType}, #{reason}, #{repliedBy}, #{replyNo})")

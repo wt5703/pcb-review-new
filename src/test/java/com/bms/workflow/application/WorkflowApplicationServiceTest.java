@@ -1,17 +1,15 @@
 package com.bms.workflow.application;
 
-import com.bms.audit.infrastructure.OperationAuditMapper;
 import com.bms.archive.application.TaskArchiveApplicationService;
 import com.bms.common.BusinessException;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
-import com.bms.file.application.FileApplicationService;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Role;
 import com.bms.notification.infrastructure.OutboxEventMapper;
 import com.bms.review.application.TaskCheckItemApplicationService;
-import com.bms.review.application.ReviewerAssignmentService;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
+import com.bms.review.domain.ReviewRole;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.infrastructure.ReviewOpinionRecord;
 import com.bms.task.domain.ReviewType;
@@ -43,30 +41,44 @@ class WorkflowApplicationServiceTest {
     private final ReviewFileMapper fileMapper = mock(ReviewFileMapper.class);
     private final TaskCheckItemApplicationService checkItemApplicationService = mock(TaskCheckItemApplicationService.class);
     private final TaskFlowMapper flowMapper = mock(TaskFlowMapper.class);
-    private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
     private final OutboxEventMapper outboxEventMapper = mock(OutboxEventMapper.class);
     private final TaskArchiveApplicationService taskArchiveApplicationService = mock(TaskArchiveApplicationService.class);
-    private final ReviewerAssignmentService reviewerAssignmentService = mock(ReviewerAssignmentService.class);
     private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService = mock(ReviewerWhitelistApplicationService.class);
-    private final FileApplicationService fileApplicationService = mock(FileApplicationService.class);
     private final WorkflowApplicationService service = new WorkflowApplicationService(taskMapper, opinionMapper,
-            fileMapper, checkItemApplicationService, flowMapper, auditMapper, outboxEventMapper, taskArchiveApplicationService,
-            reviewerAssignmentService, reviewerWhitelistApplicationService, fileApplicationService);
+            fileMapper, checkItemApplicationService, flowMapper, outboxEventMapper, taskArchiveApplicationService,
+            reviewerWhitelistApplicationService);
 
     @Test
     void shouldStartPcbProcessReviewForAuthorizedDesignerAfterExpertOpinionsPassed() {
         when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PCB_EXPERT_REVIEWING));
-        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
-        when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PROCESS_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
+        ReviewOpinionRecord submitted = new ReviewOpinionRecord();
+        submitted.setSourceType("EXPERT_REVIEW"); submitted.setRaisedBy(10L); submitted.setStatus("CONFIRMED_PASS");
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(submitted));
+        when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_PROCESS_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
+        when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_STRUCTURE_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
         when(taskMapper.update(any())).thenReturn(1);
         when(flowMapper.nextId()).thenReturn(1L);
 
-        WorkflowApplicationService.WorkflowView view = service.transition(1001L, WorkflowAction.START_PCB_PROCESS_REVIEW, null,
+        WorkflowApplicationService.WorkflowView view = service.transition(1001L,
+                new WorkflowApplicationService.TransitionBatchCommand(List.of(
+                        WorkflowAction.START_PCB_STRUCTURE_REVIEW, WorkflowAction.START_PCB_PROCESS_REVIEW), null, null, List.of()),
                 new CurrentUser(10L, Set.of(Role.DESIGNER)));
 
         assertThat(view.toStatus()).isEqualTo(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
-        verify(auditMapper).insert(any());
         verify(outboxEventMapper).insert(any());
+    }
+
+    @Test
+    void shouldRejectStartingPcbStageReviewWhenAnAssignedExpertHasNotSubmitted() {
+        when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PCB_EXPERT_REVIEWING));
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.transition(1001L,
+                new WorkflowApplicationService.TransitionBatchCommand(List.of(
+                        WorkflowAction.START_PCB_STRUCTURE_REVIEW, WorkflowAction.START_PCB_PROCESS_REVIEW), null, null, List.of()),
+                new CurrentUser(10L, Set.of(Role.DESIGNER))))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("仍有已分配专家未提交评审意见或确认无意见，不能开启工艺或结构评审");
     }
 
     @Test
@@ -123,6 +135,19 @@ class WorkflowApplicationServiceTest {
     }
 
     @Test
+    void shouldRequireLatestProcessAndStructureFilesBeforePcbMutualAssignment() {
+        when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING));
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
+        when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_PROCESS_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
+        when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_STRUCTURE_REVIEW")).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.START_PCB_MATUAL_ASSIGNMENT, null,
+                new CurrentUser(10L, Set.of(Role.DESIGNER))))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("请先上传结构图文件");
+    }
+
+    @Test
     void shouldReportMissingTaskWhenStatusUpdateDoesNotPersist() {
         when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.MUTUAL_CHECK_REVIEWING));
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
@@ -145,6 +170,7 @@ class WorkflowApplicationServiceTest {
         task.setTaskName("BMS PCB评审");
         task.setProjectName("BMS");
         task.setDesignerId(10L);
+        task.setExpertLeaderId(10L);
         task.setDesignName("BMS-P1");
         task.setStatus(status.name());
         task.setInitialFileIds("");

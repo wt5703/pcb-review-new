@@ -1,6 +1,5 @@
 package com.bms.notification.application;
 
-import com.bms.audit.infrastructure.OperationAuditMapper;
 import com.bms.notification.infrastructure.NotificationSendRecord;
 import com.bms.notification.infrastructure.NotificationSendRecordMapper;
 import com.bms.notification.infrastructure.OutboxEventEntity;
@@ -25,9 +24,8 @@ class NotificationApplicationServiceTest {
     private final OutboxEventMapper outboxEventMapper = mock(OutboxEventMapper.class);
     private final NotificationSendRecordMapper sendRecordMapper = mock(NotificationSendRecordMapper.class);
     private final MailGateway mailGateway = mock(MailGateway.class);
-    private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
     private final NotificationApplicationService service = new NotificationApplicationService(outboxEventMapper, sendRecordMapper,
-            mailGateway, auditMapper);
+            mailGateway);
 
     @Test
     void shouldMarkClaimedEventPublishedAfterMockMailSuccess() {
@@ -41,7 +39,6 @@ class NotificationApplicationServiceTest {
         assertThat(result.failedCount()).isZero();
         verify(outboxEventMapper).markPublished(11L);
         verify(sendRecordMapper).insert(any(NotificationSendRecord.class));
-        verify(auditMapper).insert(any());
     }
 
     @Test

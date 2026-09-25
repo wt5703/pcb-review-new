@@ -2,8 +2,6 @@ package com.bms.review.application;
 
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
-import com.bms.audit.infrastructure.OperationAuditMapper;
-import com.bms.audit.infrastructure.OperationAuditRecord;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.application.TaskNodeAuthorizationService;
 import com.bms.identity.domain.Permission;
@@ -13,13 +11,13 @@ import com.bms.notification.application.OutboxEventPublisher;
 import com.bms.review.domain.OpinionSourceType;
 import com.bms.review.domain.OpinionStatus;
 import com.bms.review.domain.ReplyType;
+import com.bms.review.domain.ReviewRole;
 import com.bms.review.infrastructure.OpinionConfirmationRecord;
 import com.bms.review.infrastructure.OpinionReplyRecord;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.infrastructure.ReviewOpinionRecord;
 import com.bms.review.infrastructure.TaskCheckItemMapper;
-import com.bms.review.infrastructure.TaskReviewerMapper;
-import com.bms.review.infrastructure.TaskReviewerRecord;
+import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
@@ -42,24 +40,20 @@ public class OpinionApplicationService {
     private final ReviewOpinionMapper opinionMapper;
     private final ReviewTaskMapper taskMapper;
     private final TaskCheckItemMapper taskCheckItemMapper;
-    private final TaskReviewerMapper reviewerMapper;
     private final TaskAssignmentAccessMapper assignmentAccessMapper;
     private final TaskNodeAuthorizationService taskNodeAuthorizationService;
-    private final OperationAuditMapper auditMapper;
     private final OutboxEventPublisher outboxEventPublisher;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     @Autowired
-    public OpinionApplicationService(ReviewOpinionMapper opinionMapper, ReviewTaskMapper taskMapper, TaskCheckItemMapper taskCheckItemMapper, TaskReviewerMapper reviewerMapper,
+    public OpinionApplicationService(ReviewOpinionMapper opinionMapper, ReviewTaskMapper taskMapper, TaskCheckItemMapper taskCheckItemMapper,
                                      TaskAssignmentAccessMapper assignmentAccessMapper, TaskNodeAuthorizationService taskNodeAuthorizationService,
-                                     OperationAuditMapper auditMapper, OutboxEventPublisher outboxEventPublisher) {
+                                     OutboxEventPublisher outboxEventPublisher) {
         this.opinionMapper = opinionMapper;
         this.taskMapper = taskMapper;
         this.taskCheckItemMapper = taskCheckItemMapper;
-        this.reviewerMapper = reviewerMapper;
         this.assignmentAccessMapper = assignmentAccessMapper;
         this.taskNodeAuthorizationService = taskNodeAuthorizationService;
-        this.auditMapper = auditMapper;
         this.outboxEventPublisher = outboxEventPublisher;
     }
 
@@ -68,15 +62,9 @@ public class OpinionApplicationService {
      * @date 2026-09-18
      * @description 兼容既有单元测试的构造入口；运行时由 Spring 注入完整依赖以支持未提交专家汇总。
      */
-    public OpinionApplicationService(ReviewOpinionMapper opinionMapper, ReviewTaskMapper taskMapper, TaskCheckItemMapper taskCheckItemMapper,
-                                     TaskAssignmentAccessMapper assignmentAccessMapper, TaskNodeAuthorizationService taskNodeAuthorizationService,
-                                     OperationAuditMapper auditMapper, OutboxEventPublisher outboxEventPublisher) {
-        this(opinionMapper, taskMapper, taskCheckItemMapper, null, assignmentAccessMapper, taskNodeAuthorizationService, auditMapper, outboxEventPublisher);
-    }
-
     @Transactional
     public OpinionView raise(RaiseOpinionCommand command, CurrentUser currentUser) {
-        requireOpenTask(command.taskId());
+        ReviewTaskRecord task = requireOpenTask(command.taskId());
         taskNodeAuthorizationService.requireCurrentTaskProcessor(command.taskId(), currentUser);
         if (!permissionPolicy.has(currentUser.roles(), Permission.FILL_OPINION)
                 && command.sourceType() != OpinionSourceType.MUTUAL_CHECK_ITEM && command.sourceType() != OpinionSourceType.MUTUAL_EXTRA) {
@@ -99,9 +87,68 @@ public class OpinionApplicationService {
         record.setRaisedByName(currentUser.resolvedDisplayName());
         record.setStatus(OpinionStatus.PENDING_REPLY.name());
         opinionMapper.insert(record);
-        appendAudit(record, "OPINION_RAISED", currentUser.id());
         outboxEventPublisher.publishTaskEvent("OPINION_RAISED", record.getTaskId(), currentUser.id());
         return toView(record);
+    }
+
+    /**
+     * 评审人确认当前阶段没有意见。该操作不触发工作流，而是持久化一条已通过的
+     * PASS 意见记录，使“已提交无意见”与实际评审意见一样可审计、可追溯。
+     */
+    @Transactional
+    public OpinionView submitNoOpinion(long taskId, OpinionSourceType sourceType, CurrentUser currentUser) {
+        ReviewTaskRecord task = requireOpenTask(taskId);
+        taskNodeAuthorizationService.requireCurrentTaskProcessor(taskId, currentUser);
+        if (!isNoOpinionSourceAvailable(task, sourceType)) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "当前评审节点不支持提交无意见");
+        }
+        boolean alreadySubmitted = opinionMapper.findByTaskId(taskId).stream()
+                .anyMatch(item -> currentUser.id().equals(item.getRaisedBy()) && sourceType.name().equals(item.getSourceType()));
+        if (alreadySubmitted) {
+            throw new BusinessException(ErrorCode.OPINION_STATUS_CONFLICT, "当前阶段已提交评审意见，不能重复提交无意见");
+        }
+        ReviewOpinionRecord record = new ReviewOpinionRecord();
+        record.setId(opinionMapper.nextOpinionId());
+        record.setTaskId(taskId);
+        record.setSourceType(sourceType.name());
+        record.setSeverity("PASS");
+        record.setContent("无意见，确认提交");
+        record.setRichText("无意见，确认提交");
+        record.setRaisedBy(currentUser.id());
+        record.setRaisedByName(currentUser.resolvedDisplayName());
+        record.setStatus(OpinionStatus.CONFIRMED_PASS.name());
+        opinionMapper.insert(record);
+        outboxEventPublisher.publishTaskEvent("NO_OPINION_SUBMITTED", taskId, currentUser.id());
+        return toView(record);
+    }
+
+    /** 编辑仅限尚未被设计者答复的本人意见，防止改变已进入闭环的评审事实。 */
+    @Transactional
+    public OpinionView update(long opinionId, UpdateOpinionCommand command, CurrentUser currentUser) {
+        ReviewOpinionRecord opinion = requireOpinion(opinionId);
+        requireOpenTask(opinion.getTaskId());
+        requirePendingReplyOwner(opinion, currentUser, "编辑");
+        String richText = requireContent(command.richText() == null ? command.content() : command.richText());
+        opinion.setSeverity(command.severity() == null || command.severity().isBlank() ? opinion.getSeverity() : command.severity());
+        opinion.setContent(richText);
+        opinion.setRichText(richText);
+        if (opinionMapper.updateContent(opinion) != 1) {
+            throw new BusinessException(ErrorCode.OPINION_STATUS_CONFLICT, "意见已被答复，不能编辑");
+        }
+        outboxEventPublisher.publishTaskEvent("OPINION_UPDATED", opinion.getTaskId(), currentUser.id());
+        return toView(opinion);
+    }
+
+    /** 删除仅限尚未被设计者答复的本人意见；流程审计记录会保留。 */
+    @Transactional
+    public void delete(long opinionId, CurrentUser currentUser) {
+        ReviewOpinionRecord opinion = requireOpinion(opinionId);
+        requireOpenTask(opinion.getTaskId());
+        requirePendingReplyOwner(opinion, currentUser, "删除");
+        if (opinionMapper.deletePendingReply(opinionId) != 1) {
+            throw new BusinessException(ErrorCode.OPINION_STATUS_CONFLICT, "意见已被答复，不能删除");
+        }
+        outboxEventPublisher.publishTaskEvent("OPINION_DELETED", opinion.getTaskId(), currentUser.id());
     }
 
     @Transactional
@@ -123,7 +170,6 @@ public class OpinionApplicationService {
         reply.setReplyNo(nextReplyNo(opinionId));
         opinionMapper.insertReply(reply);
         updateStatus(opinion, OpinionStatus.PENDING_CONFIRMATION);
-        appendAudit(opinion, "OPINION_REPLIED", currentUser.id());
         outboxEventPublisher.publishTaskEvent("OPINION_REPLIED", opinion.getTaskId(), currentUser.id());
         return toView(opinion);
     }
@@ -149,7 +195,6 @@ public class OpinionApplicationService {
         confirmation.setConfirmedBy(currentUser.id());
         opinionMapper.insertConfirmation(confirmation);
         updateStatus(opinion, command.passed() ? OpinionStatus.CONFIRMED_PASS : OpinionStatus.CONFIRMED_REJECTED);
-        appendAudit(opinion, command.passed() ? "OPINION_CONFIRMED_PASS" : "OPINION_CONFIRMED_REJECTED", currentUser.id());
         outboxEventPublisher.publishTaskEvent(command.passed() ? "OPINION_CONFIRMED_PASS" : "OPINION_CONFIRMED_REJECTED",
                 opinion.getTaskId(), currentUser.id());
         return toView(opinion);
@@ -169,7 +214,6 @@ public class OpinionApplicationService {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "撤回原因不能为空");
         }
         updateStatus(opinion, OpinionStatus.WITHDRAWN);
-        appendAudit(opinion, "OPINION_WITHDRAWN", currentUser.id());
         return toView(opinion);
     }
 
@@ -187,6 +231,8 @@ public class OpinionApplicationService {
         boolean reviewWorkspace = "REVIEW_WORKSPACE".equalsIgnoreCase(scene);
         List<OpinionSourceType> normalizedSourceTypes = sourceTypes == null ? List.of() : sourceTypes.stream().distinct().toList();
         return opinionMapper.findByTaskId(taskId).stream()
+                // severity=PASS 是“无意见，确认提交”的审计记录，不属于需要设计者处理的问题。
+                .filter(item -> !"PASS".equalsIgnoreCase(item.getSeverity()))
                 .filter(item -> severity == null || severity.isBlank() || severity.trim().equalsIgnoreCase(item.getSeverity()))
                 .filter(item -> status == null || status.name().equals(item.getStatus()))
                 .filter(item -> normalizedSourceTypes.isEmpty()
@@ -229,15 +275,87 @@ public class OpinionApplicationService {
     }
 
     public OpinionSummary summary(long taskId, List<OpinionSourceType> sourceTypes, CurrentUser currentUser) {
+        ReviewTaskRecord task = requireTask(taskId);
         List<OpinionView> opinions = list(taskId, null, null, null, sourceTypes, "DESIGNER_REPLY", currentUser);
         return new OpinionSummary(opinions.size(), count(opinions, OpinionStatus.PENDING_REPLY), count(opinions, OpinionStatus.PENDING_CONFIRMATION),
                 count(opinions, OpinionStatus.CONFIRMED_PASS), count(opinions, OpinionStatus.CONFIRMED_REJECTED), count(opinions, OpinionStatus.WITHDRAWN),
                 opinions.stream().filter(item -> item.status() == OpinionStatus.PENDING_CONFIRMATION || item.status() == OpinionStatus.CONFIRMED_REJECTED)
                         .map(item -> new OutstandingOpinionView(item.id(), item.content(), item.raisedBy(), item.raisedByName(), item.status())).toList(),
-                (reviewerMapper == null ? List.<TaskReviewerRecord>of() : reviewerMapper.findActiveByTaskId(taskId)).stream()
-                        .filter(item -> "PENDING".equals(item.getProcessStatus()) || "IN_PROGRESS".equals(item.getProcessStatus()))
-                        .map(item -> new OutstandingReviewerView(item.getReviewerId(), "专家#" + item.getReviewerId(), item.getReviewRole(), item.getProcessStatus())).toList());
+                unsubmittedReviewers(task, sourceTypes));
     }
+
+    private boolean isNoOpinionSourceAvailable(ReviewTaskRecord task, OpinionSourceType sourceType) {
+        TaskStatus status = TaskStatus.valueOf(task.getStatus());
+        ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
+        return switch (sourceType) {
+            case EXPERT_REVIEW -> (reviewType == ReviewType.PCB && status == TaskStatus.PCB_EXPERT_REVIEWING)
+                    || (reviewType == ReviewType.SCHEMATIC && status == TaskStatus.SCHEMATIC_REVIEWING);
+            case PROCESS_REVIEW, STRUCTURE_REVIEW -> reviewType == ReviewType.PCB
+                    && status == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING;
+            default -> false;
+        };
+    }
+
+    private boolean reviewerRoleMatchesCurrentSummary(ReviewTaskRecord task, List<OpinionSourceType> sourceTypes, String reviewRole) {
+        if (sourceTypes != null && !sourceTypes.isEmpty()) {
+            return sourceTypes.stream().anyMatch(source -> switch (source) {
+                case PROCESS_REVIEW -> ReviewRole.PROCESS_EXPERT.name().equals(reviewRole);
+                case STRUCTURE_REVIEW -> ReviewRole.STRUCTURE_EXPERT.name().equals(reviewRole);
+                case EXPERT_REVIEW -> ReviewRole.HARDWARE_EXPERT.name().equals(reviewRole)
+                        || ReviewRole.EMC_EXPERT.name().equals(reviewRole) || ReviewRole.PCB_EXPERT.name().equals(reviewRole)
+                        || ReviewRole.SCHEMATIC_HARDWARE_EXPERT.name().equals(reviewRole) || ReviewRole.SCHEMATIC_OTHER_EXPERT.name().equals(reviewRole);
+                case MUTUAL_CHECK_ITEM, MUTUAL_EXTRA -> ReviewRole.PCB_MUTUAL_CHECK.name().equals(reviewRole)
+                        || ReviewRole.SCHEMATIC_MUTUAL_CHECK.name().equals(reviewRole);
+            });
+        }
+        TaskStatus status = TaskStatus.valueOf(task.getStatus());
+        return switch (status) {
+            case PCB_EXPERT_REVIEWING -> ReviewRole.HARDWARE_EXPERT.name().equals(reviewRole)
+                    || ReviewRole.EMC_EXPERT.name().equals(reviewRole) || ReviewRole.PCB_EXPERT.name().equals(reviewRole);
+            case PCB_PROCESS_STRUCTURE_REVIEWING -> ReviewRole.PROCESS_EXPERT.name().equals(reviewRole)
+                    || ReviewRole.STRUCTURE_EXPERT.name().equals(reviewRole);
+            case SCHEMATIC_REVIEWING -> ReviewRole.SCHEMATIC_HARDWARE_EXPERT.name().equals(reviewRole)
+                    || ReviewRole.SCHEMATIC_OTHER_EXPERT.name().equals(reviewRole);
+            case MUTUAL_CHECK_REVIEWING -> ReviewRole.PCB_MUTUAL_CHECK.name().equals(reviewRole)
+                    || ReviewRole.SCHEMATIC_MUTUAL_CHECK.name().equals(reviewRole);
+            default -> false;
+        };
+    }
+
+    /**
+     * 未提交人员仅由任务创建时指定的专家/组长和任务评审职责推导；某人提交对应来源的意见（含 PASS 无意见）即视为已提交。
+     * 不维护独立人员状态或流程分配快照。
+     */
+    private List<OutstandingReviewerView> unsubmittedReviewers(ReviewTaskRecord task, List<OpinionSourceType> sourceTypes) {
+        List<ReviewOpinionRecord> opinions = opinionMapper.findByTaskId(task.getId());
+        List<AssignedReviewer> assignments = new java.util.ArrayList<>();
+        if (task.getExpertLeaderId() != null && task.getReviewRoles() != null && !task.getReviewRoles().isBlank()) {
+            java.util.Arrays.stream(task.getReviewRoles().split(",")).filter(role -> !role.isBlank())
+                    .forEach(role -> assignments.add(new AssignedReviewer(role.trim(), task.getExpertLeaderId())));
+        }
+        return assignments.stream()
+                .filter(assigned -> reviewerRoleMatchesCurrentSummary(task, sourceTypes, assigned.role()))
+                .distinct()
+                .filter(assigned -> opinions.stream().noneMatch(opinion -> assigned.reviewerId().equals(opinion.getRaisedBy())
+                        && matchesSourceForRole(opinion.getSourceType(), assigned.role())))
+                .map(assigned -> new OutstandingReviewerView(assigned.reviewerId(), "专家#" + assigned.reviewerId(), assigned.role(), "PENDING"))
+                .toList();
+    }
+
+    private boolean matchesSourceForRole(String sourceType, String role) {
+        return switch (sourceType) {
+            case "PROCESS_REVIEW" -> ReviewRole.PROCESS_EXPERT.name().equals(role);
+            case "STRUCTURE_REVIEW" -> ReviewRole.STRUCTURE_EXPERT.name().equals(role);
+            case "EXPERT_REVIEW" -> ReviewRole.HARDWARE_EXPERT.name().equals(role) || ReviewRole.EMC_EXPERT.name().equals(role)
+                    || ReviewRole.PCB_EXPERT.name().equals(role) || ReviewRole.SCHEMATIC_HARDWARE_EXPERT.name().equals(role)
+                    || ReviewRole.SCHEMATIC_OTHER_EXPERT.name().equals(role);
+            case "MUTUAL_CHECK_ITEM", "MUTUAL_EXTRA" -> ReviewRole.PCB_MUTUAL_CHECK.name().equals(role)
+                    || ReviewRole.SCHEMATIC_MUTUAL_CHECK.name().equals(role);
+            default -> false;
+        };
+    }
+
+    private record AssignedReviewer(String role, Long reviewerId) { }
 
     private ReviewTaskRecord requireOpenTask(long taskId) {
         ReviewTaskRecord task = requireTask(taskId);
@@ -269,6 +387,15 @@ public class OpinionApplicationService {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "评审意见不存在");
         }
         return opinion;
+    }
+
+    private void requirePendingReplyOwner(ReviewOpinionRecord opinion, CurrentUser currentUser, String action) {
+        if (!opinion.getRaisedBy().equals(currentUser.id())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "只有意见提出人可以" + action + "意见");
+        }
+        if (!OpinionStatus.PENDING_REPLY.name().equals(opinion.getStatus())) {
+            throw new BusinessException(ErrorCode.OPINION_STATUS_CONFLICT, "意见已被答复，不能" + action);
+        }
     }
 
     private void updateStatus(ReviewOpinionRecord opinion, OpinionStatus status) {
@@ -313,12 +440,6 @@ public class OpinionApplicationService {
         return OpinionView.from(record, replyViews);
     }
 
-    private void appendAudit(ReviewOpinionRecord opinion, String action, long operatorId) {
-        if (auditMapper != null) {
-            auditMapper.insert(new OperationAuditRecord("REVIEW_OPINION", opinion.getId(), action, operatorId, opinion.getStatus()));
-        }
-    }
-
     public record RaiseOpinionCommand(long taskId, OpinionSourceType sourceType, Long sourceItemId, String content, String richText, String severity) {
         public RaiseOpinionCommand(long taskId, OpinionSourceType sourceType, Long sourceItemId, String content, String severity) {
             this(taskId, sourceType, sourceItemId, content, null, severity);
@@ -327,6 +448,7 @@ public class OpinionApplicationService {
             this(taskId, sourceType, sourceItemId, content, null, "GENERAL");
         }
     }
+    public record UpdateOpinionCommand(String content, String richText, String severity) { }
     public record ReplyOpinionCommand(ReplyType replyType, String reason) {
         public ReplyOpinionCommand(ReplyType replyType, String reason, Long ignoredFileVersionId) {
             this(replyType, reason);

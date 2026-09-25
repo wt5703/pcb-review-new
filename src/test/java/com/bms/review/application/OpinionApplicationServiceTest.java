@@ -1,7 +1,6 @@
 package com.bms.review.application;
 
 import com.bms.identity.application.CurrentUser;
-import com.bms.audit.infrastructure.OperationAuditMapper;
 import com.bms.identity.application.TaskNodeAuthorizationService;
 import com.bms.identity.domain.Role;
 import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
@@ -40,10 +39,9 @@ class OpinionApplicationServiceTest {
     private final TaskCheckItemMapper taskCheckItemMapper = mock(TaskCheckItemMapper.class);
     private final TaskAssignmentAccessMapper assignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
     private final TaskNodeAuthorizationService taskNodeAuthorizationService = mock(TaskNodeAuthorizationService.class);
-    private final OperationAuditMapper auditMapper = mock(OperationAuditMapper.class);
     private final OutboxEventPublisher outboxEventPublisher = mock(OutboxEventPublisher.class);
     private final OpinionApplicationService service = new OpinionApplicationService(opinionMapper, taskMapper, taskCheckItemMapper,
-            assignmentAccessMapper, taskNodeAuthorizationService, auditMapper, outboxEventPublisher);
+            assignmentAccessMapper, taskNodeAuthorizationService, outboxEventPublisher);
 
     @Test
     void shouldRaiseMutualExtraOpinion() {

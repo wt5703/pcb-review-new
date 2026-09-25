@@ -1,7 +1,5 @@
 package com.bms.notification.application;
 
-import com.bms.audit.infrastructure.OperationAuditMapper;
-import com.bms.audit.infrastructure.OperationAuditRecord;
 import com.bms.notification.domain.NotificationDeliveryStatus;
 import com.bms.notification.infrastructure.NotificationSendRecord;
 import com.bms.notification.infrastructure.NotificationSendRecordMapper;
@@ -23,14 +21,12 @@ public class NotificationApplicationService {
     private final OutboxEventMapper outboxEventMapper;
     private final NotificationSendRecordMapper sendRecordMapper;
     private final MailGateway mailGateway;
-    private final OperationAuditMapper auditMapper;
 
     public NotificationApplicationService(OutboxEventMapper outboxEventMapper, NotificationSendRecordMapper sendRecordMapper,
-                                          MailGateway mailGateway, OperationAuditMapper auditMapper) {
+                                          MailGateway mailGateway) {
         this.outboxEventMapper = outboxEventMapper;
         this.sendRecordMapper = sendRecordMapper;
         this.mailGateway = mailGateway;
-        this.auditMapper = auditMapper;
     }
 
     @Transactional
@@ -56,13 +52,11 @@ public class NotificationApplicationService {
             sendRecordMapper.insert(new NotificationSendRecord(event.getId(), event.getEventType(), RECIPIENT_TBD, event.getEventType(),
                     NotificationDeliveryStatus.SUCCESS.name(), null, null));
             outboxEventMapper.markPublished(event.getId());
-            auditMapper.insert(new OperationAuditRecord("OUTBOX_EVENT", event.getId(), "NOTIFICATION_SENT", 0L, event.getEventType()));
             return true;
         } catch (RuntimeException exception) {
             sendRecordMapper.insert(new NotificationSendRecord(event.getId(), event.getEventType(), RECIPIENT_TBD, event.getEventType(),
                     NotificationDeliveryStatus.FAILED.name(), exception.getMessage(), null));
             outboxEventMapper.markFailed(event.getId());
-            auditMapper.insert(new OperationAuditRecord("OUTBOX_EVENT", event.getId(), "NOTIFICATION_FAILED", 0L, event.getEventType()));
             return false;
         }
     }

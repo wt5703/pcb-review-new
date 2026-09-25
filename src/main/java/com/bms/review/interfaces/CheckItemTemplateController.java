@@ -62,10 +62,12 @@ public class CheckItemTemplateController {
     }
 
     @PostMapping(value = "/import", consumes = "multipart/form-data")
-    @Operation(summary = "Excel 批量导入互检检查项模板", description = "导入首个工作表，支持“类别、检查项”列和可选“评审类型”列。检查项单元格可按行首 1)、2) 编号拆分为多个子项；不读取或保存检查项编码。任一行错误则整体回滚。")
+    @Operation(summary = "Excel 批量导入互检检查项模板", description = "导入前必须通过 reviewType 选择 PCB 或 SCHEMATIC，首个工作表仅读取“类别、检查项”列。检查项单元格可按行首 1)、2) 编号拆分为多个子项；不读取或保存检查项编码。任一行错误则整体回滚。")
     ApiResponse<CheckItemTemplateApplicationService.ImportResult> importWorkbook(@RequestPart("file") MultipartFile file,
+                                                                                  @RequestParam("reviewType") @NotNull ReviewType reviewType,
                                                                                   HttpServletRequest servletRequest) throws IOException {
-        return ApiResponse.ok(templateApplicationService.importWorkbook(file.getBytes(), CurrentUserHolder.require()), traceId(servletRequest));
+        return ApiResponse.ok(templateApplicationService.importWorkbook(file.getBytes(), reviewType,
+                CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @PutMapping
@@ -79,7 +81,7 @@ public class CheckItemTemplateController {
     }
 
     @DeleteMapping("/{checkItemId}")
-    @Operation(summary = "删除检查项大类或小类", description = "必须同时传检查项 ID 与 category。category=CATEGORY 时传大类ID，并逻辑停用该大类及本评审类型下全部子项；category=ITEM 时仅接受小类 ID，只逻辑停用该小类。不会物理删除历史定义。")
+    @Operation(summary = "删除检查项大类或小类", description = "必须同时传检查项 ID 与 category。category=CATEGORY 时传大类 ID，逻辑停用该大类及其全部子项，并将同评审类型后续大类的 sortNo 前移；category=ITEM 时仅接受小类 ID，逻辑停用该小类，并将同一大类后续子项的 sortNo 前移。不会物理删除历史定义。")
     ApiResponse<Void> disable(
             @Parameter(description = "待删除检查项记录 ID", required = true) @PathVariable("checkItemId") long checkItemId,
             @Parameter(description = "删除目标类别：CATEGORY=大类，ITEM=小类", required = true)
