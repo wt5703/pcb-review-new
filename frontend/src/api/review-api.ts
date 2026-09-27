@@ -30,7 +30,7 @@ export const reviewApi = {
   getOpinionSummary: (taskId: number, sourceTypes?: string) => request<OpinionSummary>(`/tasks/${taskId}/opinions/summary${queryString({ sourceTypes })}`),
   raiseOpinion: (taskId: number, body: { sourceType: Opinion['sourceType']; sourceItemId?: number; content: string; richText?: string; severity?: string }) =>
     request<Opinion>(`/tasks/${taskId}/opinions`, { method: 'POST', body: JSON.stringify(body) }),
-  submitNoOpinion: (taskId: number, sourceType: 'EXPERT_REVIEW' | 'PROCESS_REVIEW' | 'STRUCTURE_REVIEW') =>
+  submitNoOpinion: (taskId: number, sourceType: 'EXPERT_REVIEW' | 'SCHEMATIC_REVIEW' | 'PROCESS_REVIEW' | 'STRUCTURE_REVIEW') =>
     request<Opinion>(`/tasks/${taskId}/opinions/no-opinion`, { method: 'POST', body: JSON.stringify({ sourceType }) }),
   updateOpinion: (opinionId: number, body: { content: string; richText?: string; severity?: string }) =>
     request<Opinion>(`/opinions/${opinionId}`, { method: 'PUT', body: JSON.stringify(body) }),

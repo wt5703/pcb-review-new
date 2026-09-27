@@ -9,6 +9,7 @@ const router = useRouter()
 const route = useRoute()
 const editTaskId = computed(() => Number(route.params.taskId) || 0)
 const editing = computed(() => editTaskId.value > 0)
+const isAdministrator = computed(() => identity.roles.split(',').map((role) => role.trim()).includes('HARDWARE_DEPARTMENT_MANAGER'))
 const form = reactive({ reviewType: 'PCB', taskName: '', projectName: '', designName: '', designerId: identity.userId, designerName: `设计者#${identity.userId}`, expectedCompletedDate: '', pcbType: '', expertLeaderId: '', expertLeaderName: '', reviewRoles: [] as string[], reviewDescription: '' })
 const sourceFiles = ref<File[]>([])
 const uploadedFiles = ref<TaskFileReference[]>([])
@@ -21,7 +22,7 @@ const error = ref('')
 
 watch(() => form.reviewType, (type) => { if (type === 'SCHEMATIC') form.pcbType = '' })
 onMounted(async () => { try { const [options, users] = await Promise.all([reviewApi.getTaskOptions(), reviewApi.listMockUsers()]); pcbTypes.value = options.pcbTypes; reviewRoles.value = options.reviewRoles; mockUsers.value = users; const currentUser = users.find((user) => user.id === identity.userId); if (currentUser) form.designerName = currentUser.displayName
-  if (editing.value) { const task = await reviewApi.getTask(editTaskId.value); if (task.status !== 'DRAFT' || task.designerId !== identity.userId) { throw new Error('只有任务设计者可以编辑尚未提交的任务。') }; Object.assign(form, { reviewType: task.reviewType, taskName: task.taskName, projectName: task.projectName, designName: task.designName, designerId: task.designerId, designerName: task.designerName, expectedCompletedDate: task.expectedCompletedDate, pcbType: task.pcbType ?? '', expertLeaderId: task.expertLeaderId, expertLeaderName: task.expertLeaderName, reviewRoles: task.reviewRoles, reviewDescription: task.reviewDescription ?? '' }); savedFiles.value = await reviewApi.latestFiles(editTaskId.value, task.reviewType === 'PCB' ? 'PCB_REVIEW' : 'SCHEMATIC_REVIEW') }
+  if (editing.value) { const task = await reviewApi.getTask(editTaskId.value); if (task.status !== 'DRAFT' || (task.designerId !== identity.userId && !isAdministrator.value)) { throw new Error('只有任务设计者或平台管理员可以编辑尚未提交的任务。') }; Object.assign(form, { reviewType: task.reviewType, taskName: task.taskName, projectName: task.projectName, designName: task.designName, designerId: task.designerId, designerName: task.designerName, expectedCompletedDate: task.expectedCompletedDate, pcbType: task.pcbType ?? '', expertLeaderId: task.expertLeaderId, expertLeaderName: task.expertLeaderName, reviewRoles: task.reviewRoles, reviewDescription: task.reviewDescription ?? '' }); savedFiles.value = await reviewApi.latestFiles(editTaskId.value, task.reviewType === 'PCB' ? 'PCB_REVIEW' : 'SCHEMATIC_REVIEW') }
 } catch (cause) { error.value = cause instanceof Error ? cause.message : '字典、用户目录或任务加载失败。' } })
 function selectDesigner(): void { const user = mockUsers.value.find((item) => item.id === Number(form.designerId)); if (user) form.designerName = user.displayName }
 function selectLeader(): void { const user = mockUsers.value.find((item) => item.id === Number(form.expertLeaderId)); if (user) form.expertLeaderName = user.displayName }

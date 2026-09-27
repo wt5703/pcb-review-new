@@ -288,8 +288,8 @@ public class OpinionApplicationService {
         TaskStatus status = TaskStatus.valueOf(task.getStatus());
         ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
         return switch (sourceType) {
-            case EXPERT_REVIEW -> (reviewType == ReviewType.PCB && status == TaskStatus.PCB_EXPERT_REVIEWING)
-                    || (reviewType == ReviewType.SCHEMATIC && status == TaskStatus.SCHEMATIC_REVIEWING);
+            case EXPERT_REVIEW -> reviewType == ReviewType.PCB && status == TaskStatus.PCB_EXPERT_REVIEWING;
+            case SCHEMATIC_REVIEW -> reviewType == ReviewType.SCHEMATIC && status == TaskStatus.SCHEMATIC_REVIEWING;
             case PROCESS_REVIEW, STRUCTURE_REVIEW -> reviewType == ReviewType.PCB
                     && status == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING;
             default -> false;
@@ -302,8 +302,9 @@ public class OpinionApplicationService {
                 case PROCESS_REVIEW -> ReviewRole.PROCESS_EXPERT.name().equals(reviewRole);
                 case STRUCTURE_REVIEW -> ReviewRole.STRUCTURE_EXPERT.name().equals(reviewRole);
                 case EXPERT_REVIEW -> ReviewRole.HARDWARE_EXPERT.name().equals(reviewRole)
-                        || ReviewRole.EMC_EXPERT.name().equals(reviewRole) || ReviewRole.PCB_EXPERT.name().equals(reviewRole)
-                        || ReviewRole.SCHEMATIC_HARDWARE_EXPERT.name().equals(reviewRole) || ReviewRole.SCHEMATIC_OTHER_EXPERT.name().equals(reviewRole);
+                        || ReviewRole.EMC_EXPERT.name().equals(reviewRole) || ReviewRole.PCB_EXPERT.name().equals(reviewRole);
+                case SCHEMATIC_REVIEW -> ReviewRole.SCHEMATIC_HARDWARE_EXPERT.name().equals(reviewRole)
+                        || ReviewRole.SCHEMATIC_OTHER_EXPERT.name().equals(reviewRole);
                 case MUTUAL_CHECK_ITEM, MUTUAL_EXTRA -> ReviewRole.PCB_MUTUAL_CHECK.name().equals(reviewRole)
                         || ReviewRole.SCHEMATIC_MUTUAL_CHECK.name().equals(reviewRole);
             });
@@ -347,7 +348,8 @@ public class OpinionApplicationService {
             case "PROCESS_REVIEW" -> ReviewRole.PROCESS_EXPERT.name().equals(role);
             case "STRUCTURE_REVIEW" -> ReviewRole.STRUCTURE_EXPERT.name().equals(role);
             case "EXPERT_REVIEW" -> ReviewRole.HARDWARE_EXPERT.name().equals(role) || ReviewRole.EMC_EXPERT.name().equals(role)
-                    || ReviewRole.PCB_EXPERT.name().equals(role) || ReviewRole.SCHEMATIC_HARDWARE_EXPERT.name().equals(role)
+                    || ReviewRole.PCB_EXPERT.name().equals(role);
+            case "SCHEMATIC_REVIEW" -> ReviewRole.SCHEMATIC_HARDWARE_EXPERT.name().equals(role)
                     || ReviewRole.SCHEMATIC_OTHER_EXPERT.name().equals(role);
             case "MUTUAL_CHECK_ITEM", "MUTUAL_EXTRA" -> ReviewRole.PCB_MUTUAL_CHECK.name().equals(role)
                     || ReviewRole.SCHEMATIC_MUTUAL_CHECK.name().equals(role);

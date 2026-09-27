@@ -11,6 +11,7 @@ import com.bms.review.infrastructure.CheckItemTemplateRecord;
 import com.bms.review.infrastructure.TaskCheckItemMapper;
 import com.bms.review.infrastructure.TaskCheckItemRecord;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
+import com.bms.review.infrastructure.ReviewOpinionRecord;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
@@ -23,6 +24,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -73,6 +75,28 @@ class TaskCheckItemApplicationServiceTest {
                 new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.FAIL, null, null), pcbLeader))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("不合格或 NC 检查项必须填写意见");
+    }
+
+    @Test
+    void shouldWithdrawUnresolvedOpinionWhenFailedItemIsChangedToPass() {
+        ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
+        TaskCheckItemRecord checkItem = item(51L, 31L);
+        ReviewOpinionRecord opinion = new ReviewOpinionRecord();
+        opinion.setId(71L);
+        opinion.setStatus("PENDING_CONFIRMATION");
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(templateMapper.findEnabledByReviewType(ReviewType.PCB.name())).thenReturn(List.of());
+        when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(checkItem);
+        when(templateMapper.findById(31L)).thenReturn(template(31L, "线距检查"));
+        when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
+        when(opinionMapper.findActiveMutualCheckItemOpinion(1001L, 51L)).thenReturn(opinion);
+        when(opinionMapper.updateStatus(any(ReviewOpinionRecord.class))).thenReturn(1);
+
+        service.submit(1001L, 51L,
+                new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.PASS, null, null), pcbLeader);
+
+        assertThat(checkItem.getCheckResult()).isEqualTo(CheckResult.PASS.name());
+        verify(opinionMapper).updateStatus(argThat(value -> "WITHDRAWN".equals(value.getStatus())));
     }
 
     @Test

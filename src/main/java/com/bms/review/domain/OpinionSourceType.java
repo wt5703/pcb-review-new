@@ -7,6 +7,7 @@ package com.bms.review.domain;
  */
 public enum OpinionSourceType {
     EXPERT_REVIEW,
+    SCHEMATIC_REVIEW,
     PROCESS_REVIEW,
     STRUCTURE_REVIEW,
     MUTUAL_CHECK_ITEM,

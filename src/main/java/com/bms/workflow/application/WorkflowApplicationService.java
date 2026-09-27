@@ -285,7 +285,7 @@ public class WorkflowApplicationService {
                     requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.MUTUAL_CHECK_ITEM, OpinionSourceType.MUTUAL_EXTRA),
                             "互检单意见尚未全部确认通过，不能准备结束任务");
                 } else {
-                    requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.EXPERT_REVIEW),
+                    requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.SCHEMATIC_REVIEW),
                             "原理图专家评审意见尚未全部确认通过，不能准备结束任务");
                 }
             }

@@ -10,6 +10,11 @@ spring:
     enabled: true
   jackson:
     default-property-inclusion: non_null
+  servlet:
+    multipart:
+      # 工艺图、结构图通常为压缩包，覆盖 Spring Boot 默认 1MB 限制。
+      max-file-size: 200MB
+      max-request-size: 210MB
 server:
   servlet:
     context-path: /leapmotor/pcb_review

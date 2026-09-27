@@ -95,6 +95,9 @@ public class TaskCheckItemApplicationService {
         validateCommand(command);
         ReviewOpinionRecord opinion = command.result() == CheckResult.FAIL
                 ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), currentUser) : null;
+        if (command.result() == CheckResult.PASS) {
+            withdrawUnresolvedMutualOpinion(taskId, record);
+        }
         record.setCheckResult(command.result().name());
         record.setComment(command.comment());
         record.setRichText(command.richText());
@@ -126,6 +129,9 @@ public class TaskCheckItemApplicationService {
             requireLeafCheckItem(record);
             validateBatchCommand(command);
             ReviewOpinionRecord opinion = command.result() == CheckResult.FAIL ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), currentUser) : null;
+            if (command.result() == CheckResult.PASS) {
+                withdrawUnresolvedMutualOpinion(taskId, record);
+            }
             record.setCheckResult(command.result().name()); record.setComment(command.comment()); record.setRichText(command.richText());
             record.setStatus(CheckItemStatus.COMPLETED.name());
             if (taskCheckItemMapper.submit(record) != 1) { throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务"); }
@@ -244,6 +250,21 @@ public class TaskCheckItemApplicationService {
             if (opinionMapper.updateContent(opinion) != 1) { throw new BusinessException(ErrorCode.VERSION_CONFLICT, "关联互检意见已被其他操作更新，请刷新后重试"); }
         }
         return opinion;
+    }
+
+    /**
+     * 检查项由不合格改回合格时，原问题已不再需要设计者答复或专家确认。
+     * 仅撤回尚未确认通过的同源意见，保留已经闭环的历史记录。
+     */
+    private void withdrawUnresolvedMutualOpinion(long taskId, TaskCheckItemRecord item) {
+        ReviewOpinionRecord opinion = opinionMapper.findActiveMutualCheckItemOpinion(taskId, item.getId());
+        if (opinion == null || OpinionStatus.CONFIRMED_PASS.name().equals(opinion.getStatus())) {
+            return;
+        }
+        opinion.setStatus(OpinionStatus.WITHDRAWN.name());
+        if (opinionMapper.updateStatus(opinion) != 1) {
+            throw new BusinessException(ErrorCode.VERSION_CONFLICT, "关联互检意见状态更新失败，请刷新后重试");
+        }
     }
 
     private Map<Long, CheckItemTemplateRecord> templatesByItemId(List<TaskCheckItemRecord> records,

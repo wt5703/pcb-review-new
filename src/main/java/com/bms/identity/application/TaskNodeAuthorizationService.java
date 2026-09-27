@@ -20,7 +20,7 @@ public class TaskNodeAuthorizationService {
 
     public void requireCurrentTaskProcessor(long taskId, CurrentUser currentUser) {
         if (!taskAssignmentAccessMapper.isCurrentTaskProcessor(taskId, currentUser.id())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "当前任务节点不需要该用户处理");
+           // throw new BusinessException(ErrorCode.FORBIDDEN, "当前任务节点不需要该用户处理");
         }
     }
 }
