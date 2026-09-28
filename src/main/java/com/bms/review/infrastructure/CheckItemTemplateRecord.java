@@ -10,6 +10,7 @@ public class CheckItemTemplateRecord {
     private String reviewType;
     private Long parentId;
     private String itemName;
+    private String itemRichText;
     private Integer sortNo;
     private Boolean enabled;
     private Long version;
@@ -22,6 +23,8 @@ public class CheckItemTemplateRecord {
     public void setParentId(Long parentId) { this.parentId = parentId; }
     public String getItemName() { return itemName; }
     public void setItemName(String itemName) { this.itemName = itemName; }
+    public String getItemRichText() { return itemRichText; }
+    public void setItemRichText(String itemRichText) { this.itemRichText = itemRichText; }
     public Integer getSortNo() { return sortNo; }
     public void setSortNo(Integer sortNo) { this.sortNo = sortNo; }
     public Boolean getEnabled() { return enabled; }

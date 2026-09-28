@@ -13,12 +13,16 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.xssf.usermodel.XSSFPicture;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFShape;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -141,8 +145,8 @@ public class CheckItemTemplateApplicationService {
     }
 
     /**
-     * 导入正式 Excel 的“类别、检查项”列。一个检查项单元格中可使用换行开头的 1)、2) 编号表达多个子项。
-     * 文件中不再使用或保存检查项编码。
+     * 按评审类型导入互检单 Excel：PCB 读取“类别、检查项”，原理图读取“检查项类别、检查内容”。
+     * PCB 的检查项可按换行编号拆分，且会保留 .xlsx 检查项单元格内嵌的示例图片。
      */
     @Transactional
     public ImportResult importWorkbook(byte[] workbookBytes, ReviewType reviewType, CurrentUser currentUser) {
@@ -165,22 +169,23 @@ public class CheckItemTemplateApplicationService {
                 templateMapper.update(category);
                 updated++;
             }
-            for (int index = 0; index < imported.itemNames().size(); index++) {
-                String itemName = imported.itemNames().get(index);
-                CheckItemTemplateRecord item = templateMapper.findChildByParentIdAndName(category.getId(), itemName);
+            for (int index = 0; index < imported.items().size(); index++) {
+                ImportItem importedItem = imported.items().get(index);
+                CheckItemTemplateRecord item = templateMapper.findChildByParentIdAndName(category.getId(), importedItem.itemName());
                 if (item == null) {
-                    item = newTemplate(imported.reviewType(), category.getId(), itemName, index + 1, true);
+                    item = newTemplate(imported.reviewType(), category.getId(), importedItem.itemName(), importedItem.itemRichText(), index + 1, true);
                     templateMapper.insert(item);
                     created++;
                 } else {
                     item.setSortNo(index + 1);
+                    item.setItemRichText(importedItem.itemRichText());
                     item.setEnabled(true);
                     templateMapper.update(item);
                     updated++;
                 }
             }
         }
-        int totalRows = categories.stream().mapToInt(category -> 1 + category.itemNames().size()).sum();
+        int totalRows = categories.stream().mapToInt(category -> 1 + category.items().size()).sum();
         return new ImportResult(totalRows, created, updated);
     }
 
@@ -193,34 +198,32 @@ public class CheckItemTemplateApplicationService {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Excel 不包含工作表");
             }
             Sheet sheet = workbook.getSheetAt(0);
-            Map<String, Integer> headers = readHeaders(sheet);
+            ImportColumns columns = readHeaders(sheet, reviewType);
             DataFormatter formatter = new DataFormatter();
+            Map<Integer, List<String>> imagesByRow = embeddedImagesByRow(sheet);
             Map<String, ImportCategoryBuilder> categories = new LinkedHashMap<>();
             String previousCategoryName = null;
-            int startRow = headers.remove("__HEADER_ROW__") + 1;
-            for (int rowIndex = startRow; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+            for (int rowIndex = columns.headerRow() + 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
                 Row row = sheet.getRow(rowIndex);
-                if (row == null || isBlankRow(row, formatter)) {
-                    continue;
-                }
-                int displayRow = rowIndex + 1;
-                String categoryName = cell(row, headers, "类别", formatter);
-                if (!categoryName.isBlank()) {
-                    previousCategoryName = categoryName;
-                } else {
-                    categoryName = previousCategoryName;
-                }
+                if (row == null || isBlankRow(row, formatter)) continue;
+                String itemCell = cell(row, columns.itemColumn(), formatter);
+                if (itemCell.isBlank() && !imagesByRow.containsKey(rowIndex)) continue;
+                String categoryName = cell(row, columns.categoryColumn(), formatter);
+                if (!categoryName.isBlank()) previousCategoryName = categoryName;
+                else categoryName = previousCategoryName;
                 if (categoryName == null || categoryName.isBlank()) {
-                    throw new BusinessException(ErrorCode.VALIDATION_ERROR, "第 " + displayRow + " 行检查项缺少类别；合并类别单元格仅可继承上一条非空类别");
+                    throw new BusinessException(ErrorCode.VALIDATION_ERROR, "第 " + (rowIndex + 1) + " 行检查项缺少类别；合并类别单元格仅可继承上一条非空类别");
                 }
                 String normalizedCategoryName = categoryName.trim();
                 ImportCategoryBuilder category = categories.computeIfAbsent(normalizedCategoryName,
                         ignored -> new ImportCategoryBuilder(reviewType, normalizedCategoryName, categories.size() + 1));
-                String items = cell(row, headers, "检查项", formatter);
-                for (String itemName : splitEmbeddedItems(items)) {
-                    if (!category.itemNames.add(itemName)) {
-                        throw new BusinessException(ErrorCode.VALIDATION_ERROR, "第 " + displayRow + " 行存在重复检查项：" + itemName);
-                    }
+                List<String> itemNames = columns.splitItemCell() ? splitEmbeddedItems(itemCell) : List.of(itemCell.trim());
+                List<String> images = imagesByRow.getOrDefault(rowIndex, List.of());
+                for (int index = 0; index < itemNames.size(); index++) {
+                    String itemName = itemNames.get(index);
+                    if (itemName.isBlank()) continue;
+                    String itemRichText = toItemRichText(itemName, index == itemNames.size() - 1 ? images : List.of());
+                    category.add(itemName, itemRichText, rowIndex + 1);
                 }
             }
             if (categories.isEmpty()) {
@@ -234,21 +237,28 @@ public class CheckItemTemplateApplicationService {
         }
     }
 
-    private Map<String, Integer> readHeaders(Sheet sheet) {
+    private ImportColumns readHeaders(Sheet sheet, ReviewType reviewType) {
+        String categoryHeader = reviewType == ReviewType.PCB ? "类别" : "检查项类别";
+        String itemHeader = reviewType == ReviewType.PCB ? "检查项" : "检查内容";
         DataFormatter formatter = new DataFormatter();
-        for (int rowIndex = sheet.getFirstRowNum(); rowIndex <= Math.min(sheet.getLastRowNum(), sheet.getFirstRowNum() + 20); rowIndex++) {
+        for (int rowIndex = sheet.getFirstRowNum(); rowIndex <= Math.min(sheet.getLastRowNum(), sheet.getFirstRowNum() + 30); rowIndex++) {
             Row header = sheet.getRow(rowIndex);
             if (header == null) continue;
             Map<String, Integer> headers = new HashMap<>();
             for (int cellIndex = header.getFirstCellNum(); cellIndex < header.getLastCellNum(); cellIndex++) {
                 headers.put(formatter.formatCellValue(header.getCell(cellIndex)).trim(), cellIndex);
             }
-            if (headers.containsKey("类别") && headers.containsKey("检查项")) {
-                headers.put("__HEADER_ROW__", rowIndex);
-                return headers;
+            if (headers.containsKey(categoryHeader) && headers.containsKey(itemHeader)) {
+                return new ImportColumns(rowIndex, headers.get(categoryHeader), headers.get(itemHeader), reviewType == ReviewType.PCB);
+            }
+            // 兼容历史上按 PCB 列名维护、但选择了原理图类型的通用模板；新原理图模板优先使用专属列名。
+            if (reviewType == ReviewType.SCHEMATIC && headers.containsKey("类别") && headers.containsKey("检查项")) {
+                return new ImportColumns(rowIndex, headers.get("类别"), headers.get("检查项"), true);
             }
         }
-        throw new BusinessException(ErrorCode.VALIDATION_ERROR, "未找到检查项模板表头；仅支持“类别、检查项”列");
+        throw new BusinessException(ErrorCode.VALIDATION_ERROR, reviewType == ReviewType.PCB
+                ? "未找到 PCB 模板表头；需要“类别、检查项”列"
+                : "未找到原理图模板表头；需要“检查项类别、检查内容”列");
     }
 
     private boolean isBlankRow(Row row, DataFormatter formatter) {
@@ -258,15 +268,42 @@ public class CheckItemTemplateApplicationService {
         return true;
     }
 
-    private String cell(Row row, Map<String, Integer> headers, String header, DataFormatter formatter) {
-        return formatter.formatCellValue(row.getCell(headers.get(header))).trim();
+    private String cell(Row row, int columnIndex, DataFormatter formatter) {
+        return row.getCell(columnIndex) == null ? "" : formatter.formatCellValue(row.getCell(columnIndex)).trim();
+    }
+
+    private Map<Integer, List<String>> embeddedImagesByRow(Sheet sheet) {
+        if (!(sheet instanceof XSSFSheet xssfSheet) || xssfSheet.getDrawingPatriarch() == null) return Map.of();
+        Map<Integer, List<String>> imagesByRow = new HashMap<>();
+        for (XSSFShape shape : xssfSheet.getDrawingPatriarch().getShapes()) {
+            if (!(shape instanceof XSSFPicture picture) || picture.getClientAnchor() == null) continue;
+            int rowIndex = picture.getClientAnchor().getRow1();
+            if (rowIndex < 0) continue;
+            String extension = picture.getPictureData().suggestFileExtension();
+            String mimeType = "jpg".equalsIgnoreCase(extension) || "jpeg".equalsIgnoreCase(extension) ? "image/jpeg" : "image/" + extension;
+            String dataUri = "data:" + mimeType + ";base64," + Base64.getEncoder().encodeToString(picture.getPictureData().getData());
+            imagesByRow.computeIfAbsent(rowIndex, ignored -> new ArrayList<>()).add(dataUri);
+        }
+        return imagesByRow;
+    }
+
+    private String toItemRichText(String itemName, List<String> images) {
+        StringBuilder richText = new StringBuilder(escapeHtml(itemName).replace("\n", "<br>"));
+        for (String image : images) richText.append("<br><img src=\"").append(image).append("\" alt=\"检查项示例图\" />");
+        return richText.toString();
+    }
+
+    private String escapeHtml(String value) {
+        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
     /** 仅按行首编号拆分，避免把 1.5mm、12.5mm 等正文数值当作检查项编号。 */
     private List<String> splitEmbeddedItems(String itemCell) {
         String normalized = itemCell == null ? "" : itemCell.replace(' ', ' ').trim();
         if (normalized.isBlank()) return List.of();
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(?m)^\\s*\\d{1,3}\\s*(?:\\\\?\\)|）)").matcher(normalized);
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
+                "(?m)^\\s*(?:\\d{1,3}\\s*(?:\\\\?\\)|）)|\\d{1,3}(?:\\.\\d{1,3})+(?!\\s*(?:mm|mil)\\b))")
+                .matcher(normalized);
         List<Integer> starts = new ArrayList<>();
         List<Integer> contents = new ArrayList<>();
         while (matcher.find()) {
@@ -289,11 +326,17 @@ public class CheckItemTemplateApplicationService {
     }
 
     private CheckItemTemplateRecord newTemplate(ReviewType reviewType, Long parentId, String itemName, int sortNo, boolean enabled) {
+        return newTemplate(reviewType, parentId, itemName, null, sortNo, enabled);
+    }
+
+    private CheckItemTemplateRecord newTemplate(ReviewType reviewType, Long parentId, String itemName,
+                                                String itemRichText, int sortNo, boolean enabled) {
         CheckItemTemplateRecord record = new CheckItemTemplateRecord();
         record.setId(templateMapper.nextId());
         record.setReviewType(reviewType.name());
         record.setParentId(parentId);
         record.setItemName(itemName.trim());
+        record.setItemRichText(itemRichText);
         record.setSortNo(sortNo);
         record.setEnabled(enabled);
         record.setVersion(0L);
@@ -317,32 +360,42 @@ public class CheckItemTemplateApplicationService {
     public enum DeleteTargetCategory { CATEGORY, ITEM }
     public record ImportResult(int totalRows, int createdCount, int updatedCount) { }
 
-    public record TemplateView(Long id, ReviewType reviewType, Long parentId, String itemName, int sortNo) {
+    public record TemplateView(Long id, ReviewType reviewType, Long parentId, String itemName, String itemRichText, int sortNo) {
         static TemplateView from(CheckItemTemplateRecord record) {
-            return new TemplateView(record.getId(), ReviewType.valueOf(record.getReviewType()), record.getParentId(), record.getItemName(), record.getSortNo());
+            return new TemplateView(record.getId(), ReviewType.valueOf(record.getReviewType()), record.getParentId(), record.getItemName(), record.getItemRichText(), record.getSortNo());
         }
     }
     public record TemplateCategoryView(TemplateView category, List<TemplateView> items) { }
     /** 统一修改接口的返回模型；小类修改时 items 为空，大类修改时返回本次处理的子项。 */
     public record TemplateUpdateView(TemplateView item, List<TemplateView> items) { }
     public record TemplateListCategoryView(TemplateListItemView category, List<TemplateListItemView> items) { }
-    public record TemplateListItemView(Long id, String itemName, int sortNo) {
+    public record TemplateListItemView(Long id, String itemName, String itemRichText, int sortNo) {
         static TemplateListItemView from(CheckItemTemplateRecord record) {
-            return new TemplateListItemView(record.getId(), record.getItemName(), record.getSortNo());
+            return new TemplateListItemView(record.getId(), record.getItemName(), record.getItemRichText(), record.getSortNo());
         }
     }
 
-    private record ImportCategory(ReviewType reviewType, String categoryName, List<String> itemNames, int sortNo) { }
+    private record ImportColumns(int headerRow, int categoryColumn, int itemColumn, boolean splitItemCell) { }
+    private record ImportItem(String itemName, String itemRichText) { }
+    private record ImportCategory(ReviewType reviewType, String categoryName, List<ImportItem> items, int sortNo) { }
     private static final class ImportCategoryBuilder {
         private final ReviewType reviewType;
         private final String categoryName;
         private final int sortNo;
         private final Set<String> itemNames = new java.util.LinkedHashSet<>();
+        private final List<ImportItem> items = new ArrayList<>();
         private ImportCategoryBuilder(ReviewType reviewType, String categoryName, int sortNo) {
             this.reviewType = reviewType;
             this.categoryName = categoryName;
             this.sortNo = sortNo;
         }
-        private ImportCategory toValue() { return new ImportCategory(reviewType, categoryName, List.copyOf(itemNames), sortNo); }
+        private void add(String itemName, String itemRichText, int displayRow) {
+            if (!itemNames.add(itemName)) {
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR,
+                        "第 " + displayRow + " 行存在重复检查项：" + itemName);
+            }
+            items.add(new ImportItem(itemName, itemRichText));
+        }
+        private ImportCategory toValue() { return new ImportCategory(reviewType, categoryName, List.copyOf(items), sortNo); }
     }
 }

@@ -10,7 +10,8 @@ import org.apache.ibatis.annotations.Select;
  */
 @Mapper
 public interface TaskAssignmentAccessMapper {
-    @Select("SELECT CASE WHEN EXISTS (SELECT 1 FROM review_task WHERE id=#{taskId} AND (designer_id=#{userId} OR expert_leader_id=#{userId})) "
+    @Select("SELECT CASE WHEN EXISTS (SELECT 1 FROM review_task WHERE id=#{taskId} AND (designer_id=#{userId} OR expert_leader_id=#{userId} "
+            + "OR CONCAT(',', COALESCE(assigned_reviewer_ids, ''), ',') LIKE CONCAT('%,', #{userId}, ',%'))) "
             + "THEN TRUE ELSE FALSE END")
     boolean isAssignedToTask(long taskId, long userId);
 

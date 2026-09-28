@@ -19,6 +19,8 @@ import com.bms.review.infrastructure.ReviewOpinionRecord;
 import com.bms.review.infrastructure.TaskCheckItemMapper;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
+import com.bms.task.domain.TaskReviewerAssignment;
+import com.bms.task.domain.TaskReviewerAssignmentCodec;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import org.springframework.stereotype.Service;
@@ -323,14 +325,14 @@ public class OpinionApplicationService {
         };
     }
 
-    /**
-     * 未提交人员仅由任务创建时指定的专家/组长和任务评审职责推导；某人提交对应来源的意见（含 PASS 无意见）即视为已提交。
-     * 不维护独立人员状态或流程分配快照。
-     */
+    /** 未提交人员由任务创建时保存的“角色—专家”映射推导；旧任务兼容历史组长作为唯一专家。 */
     private List<OutstandingReviewerView> unsubmittedReviewers(ReviewTaskRecord task, List<OpinionSourceType> sourceTypes) {
         List<ReviewOpinionRecord> opinions = opinionMapper.findByTaskId(task.getId());
         List<AssignedReviewer> assignments = new java.util.ArrayList<>();
-        if (task.getExpertLeaderId() != null && task.getReviewRoles() != null && !task.getReviewRoles().isBlank()) {
+        for (TaskReviewerAssignment assignment : TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments())) {
+            assignment.reviewerIds().forEach(reviewerId -> assignments.add(new AssignedReviewer(assignment.reviewRole().name(), reviewerId)));
+        }
+        if (assignments.isEmpty() && task.getExpertLeaderId() != null && task.getReviewRoles() != null && !task.getReviewRoles().isBlank()) {
             java.util.Arrays.stream(task.getReviewRoles().split(",")).filter(role -> !role.isBlank())
                     .forEach(role -> assignments.add(new AssignedReviewer(role.trim(), task.getExpertLeaderId())));
         }

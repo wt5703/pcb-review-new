@@ -3,14 +3,17 @@ package com.bms.task.application;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Role;
 import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
-import com.bms.notification.infrastructure.OutboxEventMapper;
 import com.bms.notification.infrastructure.NotificationSendRecordMapper;
 import com.bms.notification.infrastructure.NotificationSendRecord;
+import com.bms.notification.application.ReviewMailNotificationApplicationService;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import com.bms.workflow.infrastructure.TaskFlowMapper;
+import com.bms.review.application.ReviewerWhitelistApplicationService;
+import com.bms.review.domain.ReviewRole;
+import com.bms.task.domain.TaskReviewerAssignment;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -31,20 +34,26 @@ import static org.mockito.Mockito.when;
  */
 class TaskApplicationServiceTest {
     private final ReviewTaskMapper taskMapper = mock(ReviewTaskMapper.class);
-    private final OutboxEventMapper outboxEventMapper = mock(OutboxEventMapper.class);
     private final TaskAssignmentAccessMapper taskAssignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
     private final TaskFlowMapper flowMapper = mock(TaskFlowMapper.class);
     private final NotificationSendRecordMapper notificationSendRecordMapper = mock(NotificationSendRecordMapper.class);
-    private final TaskApplicationService service = new TaskApplicationService(taskMapper, outboxEventMapper,
-            taskAssignmentAccessMapper, flowMapper, notificationSendRecordMapper);
+    private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService = mock(ReviewerWhitelistApplicationService.class);
+    private final ReviewMailNotificationApplicationService reviewMailNotificationApplicationService = mock(ReviewMailNotificationApplicationService.class);
+    private final TaskApplicationService service = new TaskApplicationService(taskMapper,
+            taskAssignmentAccessMapper, flowMapper, notificationSendRecordMapper, reviewerWhitelistApplicationService,
+            reviewMailNotificationApplicationService);
     private final CurrentUser designer = new CurrentUser(10L, Set.of(Role.DESIGNER));
 
     @Test
     void shouldCreateTaskWithoutFlowRecord() {
         when(taskMapper.nextId()).thenReturn(101L);
+        when(reviewerWhitelistApplicationService.listAssignableUsers(List.of(ReviewRole.PCB_EXPERT))).thenReturn(List.of(
+                new ReviewerWhitelistApplicationService.AssignableReviewerView(10L, "BMS010", "设计者", "研发", ReviewRole.PCB_EXPERT)));
 
         TaskApplicationService.TaskView result = service.create(new TaskApplicationService.CreateTaskCommand(
-                ReviewType.PCB, "BMS PCB评审", "BMS", 10L, "BMS-P1", "BMU"), designer);
+                ReviewType.PCB, "BMS PCB评审", "BMS", 10L, "设计者", "BMS-P1", "BMU", java.time.LocalDate.now(),
+                10L, "设计者", List.of(ReviewRole.PCB_EXPERT),
+                List.of(new TaskReviewerAssignment(ReviewRole.PCB_EXPERT, List.of(10L))), null), designer);
 
         assertThat(result.id()).isEqualTo(101L);
         verify(taskMapper).insert(any(ReviewTaskRecord.class));
@@ -59,7 +68,7 @@ class TaskApplicationServiceTest {
 
         assertThat(result.status()).isEqualTo(TaskStatus.PCB_EXPERT_REVIEWING.name());
         verify(flowMapper).insert(any());
-        verify(outboxEventMapper).insert(any());
+        verify(reviewMailNotificationApplicationService).enqueueTaskCreated(any());
     }
 
     @Test

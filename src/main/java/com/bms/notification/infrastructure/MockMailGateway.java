@@ -1,6 +1,7 @@
 package com.bms.notification.infrastructure;
 
 import com.bms.notification.application.MailGateway;
+import com.bms.notification.domain.MailMessage;
 import org.springframework.stereotype.Component;
 
 /**
@@ -11,8 +12,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class MockMailGateway implements MailGateway {
     @Override
-    public void send(String recipient, String templateCode, String payload) {
-        if (payload != null && payload.contains("forceMailFailure")) {
+    public void send(MailMessage message) {
+        if (message != null && message.content() != null && message.content().contains("forceMailFailure")) {
             throw new IllegalStateException("本地邮件 Mock 模拟失败");
         }
     }

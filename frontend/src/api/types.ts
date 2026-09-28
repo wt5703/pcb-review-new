@@ -13,6 +13,8 @@ export interface Task {
   expertLeaderId: number
   expertLeaderName: string
   reviewRoles: string[]
+  /** 创建任务时按评审角色确定的白名单专家，作为各评审阶段待办与未提交校验依据。 */
+  reviewerAssignments: Array<{ reviewRole: string; reviewerIds: number[] }>
   reviewDescription?: string
   status: string
   /** 仅任务详情接口返回的邮件投递记录。 */
@@ -125,6 +127,8 @@ export interface CheckItemCategory {
 export interface CheckItemListItem {
   id: number
   itemName: string
+  /** 模板导入的富文本说明；PCB 模板可包含示例图片。 */
+  itemRichText?: string
   sortNo: number
   opinion?: {
     result: 'PASS' | 'FAIL' | 'NC'
@@ -212,6 +216,8 @@ export interface TemplateCategory {
 export interface TemplateListItem {
   id: number
   itemName: string
+  /** 模板导入的富文本说明；PCB 模板可包含示例图片。 */
+  itemRichText?: string
   sortNo: number
 }
 

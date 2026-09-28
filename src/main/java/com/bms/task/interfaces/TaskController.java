@@ -8,6 +8,7 @@ import com.bms.task.application.MyTaskApplicationService;
 import com.bms.task.application.TaskFileReferenceApplicationService;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
+import com.bms.task.domain.TaskReviewerAssignment;
 import com.bms.review.domain.ReviewRole;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.Operation;
@@ -109,7 +110,10 @@ public class TaskController {
         return new TaskApplicationService.CreateTaskCommand(request.reviewType(), request.taskName(), request.projectName(), request.designerId(),
                 defaultDesignerName(request), request.designName(), request.pcbType(), request.expectedCompletedDate() == null ? LocalDate.now() : request.expectedCompletedDate(),
                 request.expertLeaderId() == null ? request.designerId() : request.expertLeaderId(), defaultLeaderName(request),
-                request.reviewRoles() == null || request.reviewRoles().isEmpty() ? List.of(ReviewRole.PCB_EXPERT) : request.reviewRoles(), request.reviewDescription());
+                request.reviewRoles() == null || request.reviewRoles().isEmpty() ? List.of(ReviewRole.PCB_EXPERT) : request.reviewRoles(),
+                (request.reviewerAssignments() == null ? List.<ReviewerAssignmentRequest>of() : request.reviewerAssignments()).stream()
+                        .map(assignment -> new TaskReviewerAssignment(assignment.reviewRole(), assignment.reviewerIds())).toList(),
+                request.reviewDescription());
     }
     private String defaultDesignerName(CreateTaskRequest request) { return request.designerName() == null || request.designerName().isBlank() ? "设计者#" + request.designerId() : request.designerName(); }
     private String defaultLeaderName(CreateTaskRequest request) { return request.expertLeaderName() == null || request.expertLeaderName().isBlank() ? "专家/组长#" + request.designerId() : request.expertLeaderName(); }
@@ -126,7 +130,13 @@ public class TaskController {
             @Schema(description = "期望完成日期，格式 yyyy-MM-dd", example = "2026-09-30", requiredMode = Schema.RequiredMode.REQUIRED) @JsonFormat(pattern = "yyyy-MM-dd") LocalDate expectedCompletedDate,
             @Schema(description = "专家/组长用户 ID，用于后续人员定位", requiredMode = Schema.RequiredMode.REQUIRED) Long expertLeaderId,
             @Schema(description = "专家/组长显示姓名，会冗余保存到任务表", requiredMode = Schema.RequiredMode.REQUIRED) String expertLeaderName,
-            @Schema(description = "评审角色，可多选；使用字典接口返回的 ReviewRole 枚举值", requiredMode = Schema.RequiredMode.REQUIRED) List<ReviewRole> reviewRoles,
+            @Schema(description = "评审角色，可多选；PCB 仅支持硬件、EMC、PCB、工艺、结构，原理图仅支持硬件、EMC、PCB", requiredMode = Schema.RequiredMode.REQUIRED) List<ReviewRole> reviewRoles,
+            @Schema(description = "每个已选评审角色对应的白名单专家；每个角色至少选择一人", requiredMode = Schema.RequiredMode.REQUIRED) List<@Valid ReviewerAssignmentRequest> reviewerAssignments,
             @Schema(description = "评审描述，可不传") String reviewDescription,
             @Schema(description = "前端调用文件上传接口后返回的文件 UUID 列表；后端按 UUID 读取并保存文件元数据，同一任务不可重复传入相同 UUID") List<@NotBlank String> files) { }
+
+    @Schema(description = "一个评审角色及其已选专家")
+    record ReviewerAssignmentRequest(
+            @Schema(description = "评审角色", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull ReviewRole reviewRole,
+            @Schema(description = "该角色下的白名单专家用户 ID，至少一人", requiredMode = Schema.RequiredMode.REQUIRED) List<@NotNull Long> reviewerIds) { }
 }

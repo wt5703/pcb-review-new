@@ -20,6 +20,8 @@ public class ReviewTaskRecord {
     private Long expertLeaderId;
     private String expertLeaderName;
     private String reviewRoles;
+    private String reviewerAssignments;
+    private String assignedReviewerIds;
     private String reviewDescription;
     private String status;
     private String initialFileIds;
@@ -49,6 +51,10 @@ public class ReviewTaskRecord {
     public void setExpertLeaderName(String expertLeaderName) { this.expertLeaderName = expertLeaderName; }
     public String getReviewRoles() { return reviewRoles; }
     public void setReviewRoles(String reviewRoles) { this.reviewRoles = reviewRoles; }
+    public String getReviewerAssignments() { return reviewerAssignments; }
+    public void setReviewerAssignments(String reviewerAssignments) { this.reviewerAssignments = reviewerAssignments; }
+    public String getAssignedReviewerIds() { return assignedReviewerIds; }
+    public void setAssignedReviewerIds(String assignedReviewerIds) { this.assignedReviewerIds = assignedReviewerIds; }
     public String getReviewDescription() { return reviewDescription; }
     public void setReviewDescription(String reviewDescription) { this.reviewDescription = reviewDescription; }
     public String getStatus() { return status; }

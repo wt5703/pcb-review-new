@@ -18,38 +18,38 @@ public interface CheckItemTemplateMapper {
     @Select("SELECT COALESCE(MAX(id), 0) + 1 FROM check_item_template")
     long nextId();
 
-    @Insert("INSERT INTO check_item_template (id, review_type, parent_id, item_name, sort_no, enabled, version) "
-            + "VALUES (#{id}, #{reviewType}, #{parentId}, #{itemName}, #{sortNo}, #{enabled}, #{version})")
+    @Insert("INSERT INTO check_item_template (id, review_type, parent_id, item_name, item_rich_text, sort_no, enabled, version) "
+            + "VALUES (#{id}, #{reviewType}, #{parentId}, #{itemName}, #{itemRichText}, #{sortNo}, #{enabled}, #{version})")
     int insert(CheckItemTemplateRecord record);
 
-    @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, "
+    @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, "
             + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE review_type=#{reviewType} AND enabled=TRUE ORDER BY sort_no, id")
     List<CheckItemTemplateRecord> findEnabledByReviewType(String reviewType);
 
-    @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, "
+    @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, "
             + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE enabled=TRUE "
             + "AND (#{reviewType} IS NULL OR review_type=#{reviewType}) ORDER BY review_type, parent_id, sort_no, id")
     List<CheckItemTemplateRecord> findAll(String reviewType);
 
-    @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, "
+    @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, "
             + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE id=#{id}")
     CheckItemTemplateRecord findById(long id);
 
-    @Select("<script>SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, sort_no AS sortNo, enabled, version "
+    @Select("<script>SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, sort_no AS sortNo, enabled, version "
             + "FROM check_item_template WHERE id IN "
             + "<foreach collection='itemIds' item='itemId' open='(' separator=',' close=')'>#{itemId}</foreach>"
             + "</script>")
     List<CheckItemTemplateRecord> findByIds(@Param("itemIds") List<Long> itemIds);
 
-    @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, "
+    @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, "
             + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE review_type=#{reviewType} AND parent_id IS NULL AND item_name=#{itemName} LIMIT 1")
     CheckItemTemplateRecord findCategoryByReviewTypeAndName(String reviewType, String itemName);
 
-    @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, "
+    @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, "
             + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE parent_id=#{parentId} AND item_name=#{itemName} LIMIT 1")
     CheckItemTemplateRecord findChildByParentIdAndName(long parentId, String itemName);
 
-    @Update("UPDATE check_item_template SET parent_id=#{parentId}, item_name=#{itemName}, sort_no=#{sortNo}, "
+    @Update("UPDATE check_item_template SET parent_id=#{parentId}, item_name=#{itemName}, item_rich_text=#{itemRichText}, sort_no=#{sortNo}, "
             + "enabled=#{enabled}, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=#{id}")
     int update(CheckItemTemplateRecord record);
 

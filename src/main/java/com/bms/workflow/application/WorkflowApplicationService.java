@@ -10,6 +10,7 @@ import com.bms.identity.domain.PermissionPolicy;
 import com.bms.file.domain.FileCategory;
 import com.bms.notification.infrastructure.OutboxEventMapper;
 import com.bms.notification.infrastructure.OutboxEventRecord;
+import com.bms.notification.application.ReviewMailNotificationApplicationService;
 import com.bms.review.application.TaskCheckItemApplicationService;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.OpinionStatus;
@@ -18,6 +19,8 @@ import com.bms.review.domain.ReviewRole;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
+import com.bms.task.domain.TaskReviewerAssignment;
+import com.bms.task.domain.TaskReviewerAssignmentCodec;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import com.bms.workflow.domain.WorkflowAction;
@@ -44,13 +47,15 @@ public class WorkflowApplicationService {
     private final OutboxEventMapper outboxEventMapper;
     private final TaskArchiveApplicationService taskArchiveApplicationService;
     private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService;
+    private final ReviewMailNotificationApplicationService reviewMailNotificationApplicationService;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public WorkflowApplicationService(ReviewTaskMapper taskMapper, ReviewOpinionMapper opinionMapper,
                                       ReviewFileMapper fileMapper, TaskCheckItemApplicationService checkItemApplicationService, TaskFlowMapper flowMapper,
                                       OutboxEventMapper outboxEventMapper,
                                       TaskArchiveApplicationService taskArchiveApplicationService,
-                                      ReviewerWhitelistApplicationService reviewerWhitelistApplicationService) {
+                                      ReviewerWhitelistApplicationService reviewerWhitelistApplicationService,
+                                      ReviewMailNotificationApplicationService reviewMailNotificationApplicationService) {
         this.taskMapper = taskMapper;
         this.opinionMapper = opinionMapper;
         this.fileMapper = fileMapper;
@@ -59,6 +64,7 @@ public class WorkflowApplicationService {
         this.outboxEventMapper = outboxEventMapper;
         this.taskArchiveApplicationService = taskArchiveApplicationService;
         this.reviewerWhitelistApplicationService = reviewerWhitelistApplicationService;
+        this.reviewMailNotificationApplicationService = reviewMailNotificationApplicationService;
     }
 
     /**
@@ -115,6 +121,7 @@ public class WorkflowApplicationService {
                 command.comment(), null, List.of()), currentUser);
         WorkflowView processView = transition(taskId, new TransitionCommand(WorkflowAction.START_PCB_PROCESS_REVIEW,
                 command.comment(), null, List.of()), currentUser);
+        reviewMailNotificationApplicationService.enqueuePcbProcessStructureReview(requireTask(taskId));
         return new WorkflowView(taskId, structureView.fromStatus(), processView.toStatus(), List.of());
     }
 
@@ -164,6 +171,7 @@ public class WorkflowApplicationService {
                 "{\"taskId\":" + taskId + ",\"action\":\"" + action.name() + "\",\"toStatus\":\"" + target.name() + "\"}", "PENDING"));
         if (action == WorkflowAction.FINISH) {
             taskArchiveApplicationService.archive(task);
+            reviewMailNotificationApplicationService.enqueueTaskFinished(task);
         }
         List<AssignedReviewerView> assignedReviewers = command.assignedRole() == null ? List.of()
                 : command.reviewerIds().stream().distinct().map(reviewerId -> new AssignedReviewerView(command.assignedRole(), reviewerId)).toList();
@@ -300,9 +308,21 @@ public class WorkflowApplicationService {
      */
     private void requirePcbExpertsSubmitted(long taskId) {
         ReviewTaskRecord task = requireTask(taskId);
-        boolean allSubmitted = task.getExpertLeaderId() != null && opinionMapper.findByTaskId(taskId).stream()
-                .anyMatch(opinion -> OpinionSourceType.EXPERT_REVIEW.name().equals(opinion.getSourceType())
-                        && task.getExpertLeaderId().equals(opinion.getRaisedBy()));
+        List<Long> assignedExpertIds = TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments()).stream()
+                .filter(assignment -> assignment.reviewRole() == ReviewRole.HARDWARE_EXPERT
+                        || assignment.reviewRole() == ReviewRole.EMC_EXPERT
+                        || assignment.reviewRole() == ReviewRole.PCB_EXPERT)
+                .flatMap(assignment -> assignment.reviewerIds().stream())
+                .distinct()
+                .toList();
+        // 兼容旧任务：尚未保存“角色—专家”映射时仍沿用历史组长作为唯一专家。
+        if (assignedExpertIds.isEmpty() && task.getExpertLeaderId() != null) {
+            assignedExpertIds = List.of(task.getExpertLeaderId());
+        }
+        List<Long> requiredReviewerIds = assignedExpertIds;
+        boolean allSubmitted = !requiredReviewerIds.isEmpty() && requiredReviewerIds.stream().allMatch(reviewerId ->
+                opinionMapper.findByTaskId(taskId).stream().anyMatch(opinion -> OpinionSourceType.EXPERT_REVIEW.name().equals(opinion.getSourceType())
+                        && reviewerId.equals(opinion.getRaisedBy())));
         if (!allSubmitted) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT,
                     "仍有已分配专家未提交评审意见或确认无意见，不能开启工艺或结构评审");

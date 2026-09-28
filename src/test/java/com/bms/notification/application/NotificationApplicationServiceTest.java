@@ -4,6 +4,8 @@ import com.bms.notification.infrastructure.NotificationSendRecord;
 import com.bms.notification.infrastructure.NotificationSendRecordMapper;
 import com.bms.notification.infrastructure.OutboxEventEntity;
 import com.bms.notification.infrastructure.OutboxEventMapper;
+import com.bms.notification.domain.MailMessage;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -25,11 +27,11 @@ class NotificationApplicationServiceTest {
     private final NotificationSendRecordMapper sendRecordMapper = mock(NotificationSendRecordMapper.class);
     private final MailGateway mailGateway = mock(MailGateway.class);
     private final NotificationApplicationService service = new NotificationApplicationService(outboxEventMapper, sendRecordMapper,
-            mailGateway);
+            mailGateway, new ObjectMapper());
 
     @Test
     void shouldMarkClaimedEventPublishedAfterMockMailSuccess() {
-        OutboxEventEntity event = event(11L, "PCB_TASK_CREATED", "{}");
+        OutboxEventEntity event = event(11L, ReviewMailNotificationApplicationService.REVIEW_MAIL_EVENT, mailPayload("PCB_TASK_CREATED", "正常邮件"));
         when(outboxEventMapper.findDispatchable(20, 3)).thenReturn(List.of(event));
         when(outboxEventMapper.claimForDispatch(11L)).thenReturn(1);
 
@@ -43,10 +45,10 @@ class NotificationApplicationServiceTest {
 
     @Test
     void shouldRecordFailureAndLeaveEventRetryableWhenMailFails() {
-        OutboxEventEntity event = event(12L, "PCB_TASK_FINISHED", "{}");
+        OutboxEventEntity event = event(12L, ReviewMailNotificationApplicationService.REVIEW_MAIL_EVENT, mailPayload("PCB_TASK_FINISHED", "forceMailFailure"));
         when(outboxEventMapper.findDispatchable(20, 3)).thenReturn(List.of(event));
         when(outboxEventMapper.claimForDispatch(12L)).thenReturn(1);
-        doThrow(new IllegalStateException("邮件服务不可用")).when(mailGateway).send("TBD", "PCB_TASK_FINISHED", "{}");
+        doThrow(new IllegalStateException("邮件服务不可用")).when(mailGateway).send(any(MailMessage.class));
 
         NotificationApplicationService.DispatchResult result = service.dispatch(20, 3);
 
@@ -64,5 +66,14 @@ class NotificationApplicationServiceTest {
         event.setRetryCount(0);
         event.setStatus("PENDING");
         return event;
+    }
+
+    private String mailPayload(String notificationType, String content) {
+        try {
+            return new ObjectMapper().writeValueAsString(new MailMessage(notificationType, "测试标题", content,
+                    List.of(new MailMessage.MailRecipient("王工", "wang@bms.example.com")), List.of(), List.of()));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            throw new AssertionError(exception);
+        }
     }
 }

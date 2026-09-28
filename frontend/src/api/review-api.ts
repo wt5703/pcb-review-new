@@ -54,6 +54,7 @@ export const reviewApi = {
   transition: (taskId: number, body: { actions: string[]; comment?: string; assignedRole?: string; reviewerIds?: number[] }) =>
     request<{ taskId: number; fromStatus: string; toStatus: string; assignedReviewers: Reviewer[] }>(`/tasks/${taskId}/workflow/transitions`, { method: 'POST', body: JSON.stringify(body) }),
   getArchive: (taskId: number) => request<Archive>(`/tasks/${taskId}/archive`),
+  exportArchiveOpinions: (taskId: number) => requestBinary(`/tasks/${taskId}/archive/export`),
   importTemplate: (file: File, reviewType: ReviewType) => {
     const data = new FormData()
     data.set('file', file)

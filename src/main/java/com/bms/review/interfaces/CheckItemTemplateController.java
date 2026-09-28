@@ -44,7 +44,7 @@ public class CheckItemTemplateController {
     }
 
     @GetMapping
-    @Operation(summary = "查询互检检查项模板", description = "按可选评审类型返回 [{ category, items }] 的树形结构。category 与 items 均仅返回 id、itemName、sortNo")
+    @Operation(summary = "查询互检检查项模板", description = "按可选评审类型返回 [{ category, items }] 的树形结构。category 与 items 返回 id、itemName、itemRichText、sortNo；itemRichText 用于回显 PCB 模板中内嵌的示例图片。")
     ApiResponse<List<CheckItemTemplateApplicationService.TemplateListCategoryView>> list(
             @Parameter(description = "可选评审类型；不传时返回 PCB 与原理图模板") @RequestParam(required = false) ReviewType reviewType,
             HttpServletRequest servletRequest) {
@@ -62,7 +62,7 @@ public class CheckItemTemplateController {
     }
 
     @PostMapping(value = "/import", consumes = "multipart/form-data")
-    @Operation(summary = "Excel 批量导入互检检查项模板", description = "导入前必须通过 reviewType 选择 PCB 或 SCHEMATIC，首个工作表仅读取“类别、检查项”列。检查项单元格可按行首 1)、2) 编号拆分为多个子项；不读取或保存检查项编码。任一行错误则整体回滚。")
+    @Operation(summary = "Excel 批量导入互检检查项模板", description = "导入前必须通过 reviewType 选择 PCB 或 SCHEMATIC。PCB 模板读取“类别、检查项”列，检查项可按行首 1)、2) 或 1.1、1.2 编号拆分，并保留 .xlsx 检查项单元格内嵌示例图；原理图模板读取“检查项类别、检查内容”列，合并类别单元格自动继承上一行。任一行错误则整体回滚。")
     ApiResponse<CheckItemTemplateApplicationService.ImportResult> importWorkbook(@RequestPart("file") MultipartFile file,
                                                                                   @RequestParam("reviewType") @NotNull ReviewType reviewType,
                                                                                   HttpServletRequest servletRequest) throws IOException {

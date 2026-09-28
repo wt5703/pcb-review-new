@@ -26,13 +26,15 @@ public final class ReviewTask {
     private final Long expertLeaderId;
     private final String expertLeaderName;
     private final List<ReviewRole> reviewRoles;
+    private final List<TaskReviewerAssignment> reviewerAssignments;
     private final String reviewDescription;
     private final List<Long> initialFileIds = new ArrayList<>();
     private TaskStatus status = TaskStatus.DRAFT;
 
     private ReviewTask(Long id, ReviewType reviewType, String taskName, String projectName, Long designerId,
                        String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
-                       Long expertLeaderId, String expertLeaderName, List<ReviewRole> reviewRoles, String reviewDescription) {
+                       Long expertLeaderId, String expertLeaderName, List<ReviewRole> reviewRoles,
+                       List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription) {
         this.id = Objects.requireNonNull(id);
         this.reviewType = Objects.requireNonNull(reviewType);
         this.taskName = requireText(taskName, "任务名称不能为空");
@@ -46,14 +48,23 @@ public final class ReviewTask {
         this.expertLeaderName = requireText(expertLeaderName, "专家/组长姓名不能为空");
         this.reviewRoles = List.copyOf(Objects.requireNonNull(reviewRoles));
         if (this.reviewRoles.isEmpty()) { throw new IllegalArgumentException("评审角色不能为空"); }
+        this.reviewerAssignments = List.copyOf(reviewerAssignments == null ? List.of() : reviewerAssignments);
         this.reviewDescription = reviewDescription;
     }
 
     public static ReviewTask draft(Long id, ReviewType reviewType, String taskName, String projectName,
                                    Long designerId, String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
                                    Long expertLeaderId, String expertLeaderName, List<ReviewRole> reviewRoles, String reviewDescription) {
+        return draft(id, reviewType, taskName, projectName, designerId, designerName, designName, pcbType,
+                expectedCompletedDate, expertLeaderId, expertLeaderName, reviewRoles, List.of(), reviewDescription);
+    }
+
+    public static ReviewTask draft(Long id, ReviewType reviewType, String taskName, String projectName,
+                                   Long designerId, String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
+                                   Long expertLeaderId, String expertLeaderName, List<ReviewRole> reviewRoles,
+                                   List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription) {
         return new ReviewTask(id, reviewType, taskName, projectName, designerId, designerName, designName, pcbType,
-                expectedCompletedDate, expertLeaderId, expertLeaderName, reviewRoles, reviewDescription);
+                expectedCompletedDate, expertLeaderId, expertLeaderName, reviewRoles, reviewerAssignments, reviewDescription);
     }
 
     /**
@@ -71,8 +82,17 @@ public final class ReviewTask {
                                      String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
                                      Long expertLeaderId, String expertLeaderName, List<ReviewRole> reviewRoles, String reviewDescription,
                                      TaskStatus status, List<Long> initialFileIds) {
+        return restore(id, reviewType, taskName, projectName, designerId, designerName, designName, pcbType,
+                expectedCompletedDate, expertLeaderId, expertLeaderName, reviewRoles, List.of(), reviewDescription, status, initialFileIds);
+    }
+
+    public static ReviewTask restore(Long id, ReviewType reviewType, String taskName, String projectName, Long designerId,
+                                     String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
+                                     Long expertLeaderId, String expertLeaderName, List<ReviewRole> reviewRoles,
+                                     List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription,
+                                     TaskStatus status, List<Long> initialFileIds) {
         ReviewTask task = new ReviewTask(id, reviewType, taskName, projectName, designerId, designerName, designName, pcbType,
-                expectedCompletedDate, expertLeaderId, expertLeaderName, reviewRoles, reviewDescription);
+                expectedCompletedDate, expertLeaderId, expertLeaderName, reviewRoles, reviewerAssignments, reviewDescription);
         task.initialFileIds.addAll(initialFileIds);
         task.status = status;
         return task;
@@ -148,6 +168,7 @@ public final class ReviewTask {
     public Long expertLeaderId() { return expertLeaderId; }
     public String expertLeaderName() { return expertLeaderName; }
     public List<ReviewRole> reviewRoles() { return reviewRoles; }
+    public List<TaskReviewerAssignment> reviewerAssignments() { return reviewerAssignments; }
     public String reviewDescription() { return reviewDescription; }
     public List<Long> initialFileIds() { return List.copyOf(initialFileIds); }
     public TaskStatus status() { return status; }

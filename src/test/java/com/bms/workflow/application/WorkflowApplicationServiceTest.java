@@ -7,6 +7,7 @@ import com.bms.file.infrastructure.ReviewFileRecord;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Role;
 import com.bms.notification.infrastructure.OutboxEventMapper;
+import com.bms.notification.application.ReviewMailNotificationApplicationService;
 import com.bms.review.application.TaskCheckItemApplicationService;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.ReviewRole;
@@ -27,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,9 +46,10 @@ class WorkflowApplicationServiceTest {
     private final OutboxEventMapper outboxEventMapper = mock(OutboxEventMapper.class);
     private final TaskArchiveApplicationService taskArchiveApplicationService = mock(TaskArchiveApplicationService.class);
     private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService = mock(ReviewerWhitelistApplicationService.class);
+    private final ReviewMailNotificationApplicationService reviewMailNotificationApplicationService = mock(ReviewMailNotificationApplicationService.class);
     private final WorkflowApplicationService service = new WorkflowApplicationService(taskMapper, opinionMapper,
             fileMapper, checkItemApplicationService, flowMapper, outboxEventMapper, taskArchiveApplicationService,
-            reviewerWhitelistApplicationService);
+            reviewerWhitelistApplicationService, reviewMailNotificationApplicationService);
 
     @Test
     void shouldStartPcbProcessReviewForAuthorizedDesignerAfterExpertOpinionsPassed() {
@@ -65,7 +68,8 @@ class WorkflowApplicationServiceTest {
                 new CurrentUser(10L, Set.of(Role.DESIGNER)));
 
         assertThat(view.toStatus()).isEqualTo(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
-        verify(outboxEventMapper).insert(any());
+        verify(outboxEventMapper, times(2)).insert(any());
+        verify(reviewMailNotificationApplicationService).enqueuePcbProcessStructureReview(any());
     }
 
     @Test

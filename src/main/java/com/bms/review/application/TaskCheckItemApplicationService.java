@@ -74,7 +74,7 @@ public class TaskCheckItemApplicationService {
                         itemNameOf(category, templatesByItemId), category.getSortNo()),
                         itemsByParentId.getOrDefault(category.getId(), List.of()).stream()
                                 .sorted(java.util.Comparator.comparing(TaskCheckItemRecord::getSortNo))
-                                .map(item -> CheckItemListItemView.from(item, itemNameOf(item, templatesByItemId)))
+                                .map(item -> CheckItemListItemView.from(item, templateOf(item, templatesByItemId)))
                                 .toList()))
                 .toList();
     }
@@ -289,11 +289,15 @@ public class TaskCheckItemApplicationService {
     }
 
     private String itemNameOf(TaskCheckItemRecord record, Map<Long, CheckItemTemplateRecord> templatesByItemId) {
+        return templateOf(record, templatesByItemId).getItemName();
+    }
+
+    private CheckItemTemplateRecord templateOf(TaskCheckItemRecord record, Map<Long, CheckItemTemplateRecord> templatesByItemId) {
         CheckItemTemplateRecord template = templatesByItemId.get(record.getItemId());
         if (template == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "互检检查项模板不存在");
         }
-        return template.getItemName();
+        return template;
     }
 
     public record SubmitCheckItemCommand(CheckResult result, String comment, String richText) { }
@@ -304,11 +308,11 @@ public class TaskCheckItemApplicationService {
     /**
      * 互检单查询子项：检查结论、文字意见和富文本只存在于可空 opinion 内，避免把同一信息平铺在 items 中。
      */
-    public record CheckItemListItemView(Long id, String itemName, int sortNo, CheckItemListOpinionView opinion) {
-        static CheckItemListItemView from(TaskCheckItemRecord record, String itemName) {
+    public record CheckItemListItemView(Long id, String itemName, String itemRichText, int sortNo, CheckItemListOpinionView opinion) {
+        static CheckItemListItemView from(TaskCheckItemRecord record, CheckItemTemplateRecord template) {
             CheckItemListOpinionView opinion = record.getCheckResult() == null ? null
                     : new CheckItemListOpinionView(CheckResult.valueOf(record.getCheckResult()), record.getComment(), record.getRichText());
-            return new CheckItemListItemView(record.getId(), itemName, record.getSortNo(), opinion);
+            return new CheckItemListItemView(record.getId(), template.getItemName(), template.getItemRichText(), record.getSortNo(), opinion);
         }
     }
     public record CheckItemListOpinionView(CheckResult result, String comment, String richText) { }

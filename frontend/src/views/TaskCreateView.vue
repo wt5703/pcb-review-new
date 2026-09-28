@@ -16,16 +16,36 @@ const uploadedFiles = ref<TaskFileReference[]>([])
 const savedFiles = ref<TaskFile[]>([])
 const pcbTypes = ref<string[]>(['BMU板', 'BSU板', '分流器板', '高压板', '转接板', '储能板', '其他'])
 const reviewRoles = ref<Array<{ code: string; name: string }>>([])
-const mockUsers = ref<Array<{ id: number; displayName: string; roles: string[] }>>([])
+const mockUsers = ref<Array<{ id: number; employeeNo: string; displayName: string; roles: string[] }>>([])
+const whitelistMappings = ref<Array<{ reviewRole: string; employeeNo: string }>>([])
+const selectedReviewerIds = reactive<Record<string, number[]>>({})
 const saving = ref(false)
 const error = ref('')
+const allowedRoleCodes = computed(() => form.reviewType === 'PCB'
+  ? ['HARDWARE_EXPERT', 'EMC_EXPERT', 'PCB_EXPERT', 'PROCESS_EXPERT', 'STRUCTURE_EXPERT']
+  : ['HARDWARE_EXPERT', 'EMC_EXPERT', 'PCB_EXPERT'])
+const selectableReviewRoles = computed(() => reviewRoles.value.filter((role) => allowedRoleCodes.value.includes(role.code)))
 
-watch(() => form.reviewType, (type) => { if (type === 'SCHEMATIC') form.pcbType = '' })
-onMounted(async () => { try { const [options, users] = await Promise.all([reviewApi.getTaskOptions(), reviewApi.listMockUsers()]); pcbTypes.value = options.pcbTypes; reviewRoles.value = options.reviewRoles; mockUsers.value = users; const currentUser = users.find((user) => user.id === identity.userId); if (currentUser) form.designerName = currentUser.displayName
-  if (editing.value) { const task = await reviewApi.getTask(editTaskId.value); if (task.status !== 'DRAFT' || (task.designerId !== identity.userId && !isAdministrator.value)) { throw new Error('只有任务设计者或平台管理员可以编辑尚未提交的任务。') }; Object.assign(form, { reviewType: task.reviewType, taskName: task.taskName, projectName: task.projectName, designName: task.designName, designerId: task.designerId, designerName: task.designerName, expectedCompletedDate: task.expectedCompletedDate, pcbType: task.pcbType ?? '', expertLeaderId: task.expertLeaderId, expertLeaderName: task.expertLeaderName, reviewRoles: task.reviewRoles, reviewDescription: task.reviewDescription ?? '' }); savedFiles.value = await reviewApi.latestFiles(editTaskId.value, task.reviewType === 'PCB' ? 'PCB_REVIEW' : 'SCHEMATIC_REVIEW') }
+watch(() => form.reviewType, (type) => {
+  form.reviewRoles = form.reviewRoles.filter((role) => allowedRoleCodes.value.includes(role))
+  if (type === 'SCHEMATIC') { form.pcbType = ''; return }
+  // PCB 创建后直接进入专家评审，不需要选择原理图组长。
+  form.expertLeaderId = ''
+  form.expertLeaderName = ''
+})
+watch(() => form.reviewRoles, (roles) => {
+  roles.forEach((role) => { selectedReviewerIds[role] ??= [] })
+  Object.keys(selectedReviewerIds).filter((role) => !roles.includes(role)).forEach((role) => { delete selectedReviewerIds[role] })
+}, { deep: true })
+onMounted(async () => { try { const [options, users, mappings] = await Promise.all([reviewApi.getTaskOptions(), reviewApi.listMockUsers(), reviewApi.listReviewerWhitelists()]); pcbTypes.value = options.pcbTypes; reviewRoles.value = options.reviewRoles; mockUsers.value = users; whitelistMappings.value = mappings; const currentUser = users.find((user) => user.id === identity.userId); if (currentUser) form.designerName = currentUser.displayName
+  if (editing.value) { const task = await reviewApi.getTask(editTaskId.value); if (task.status !== 'DRAFT' || (task.designerId !== identity.userId && !isAdministrator.value)) { throw new Error('只有任务设计者或平台管理员可以编辑尚未提交的任务。') }; Object.assign(form, { reviewType: task.reviewType, taskName: task.taskName, projectName: task.projectName, designName: task.designName, designerId: task.designerId, designerName: task.designerName, expectedCompletedDate: task.expectedCompletedDate, pcbType: task.pcbType ?? '', expertLeaderId: task.expertLeaderId, expertLeaderName: task.expertLeaderName, reviewRoles: task.reviewRoles, reviewDescription: task.reviewDescription ?? '' }); Object.keys(selectedReviewerIds).forEach((role) => delete selectedReviewerIds[role]); task.reviewerAssignments?.forEach((assignment) => { selectedReviewerIds[assignment.reviewRole] = [...assignment.reviewerIds] }); savedFiles.value = await reviewApi.latestFiles(editTaskId.value, task.reviewType === 'PCB' ? 'PCB_REVIEW' : 'SCHEMATIC_REVIEW') }
 } catch (cause) { error.value = cause instanceof Error ? cause.message : '字典、用户目录或任务加载失败。' } })
 function selectDesigner(): void { const user = mockUsers.value.find((item) => item.id === Number(form.designerId)); if (user) form.designerName = user.displayName }
 function selectLeader(): void { const user = mockUsers.value.find((item) => item.id === Number(form.expertLeaderId)); if (user) form.expertLeaderName = user.displayName }
+function whitelistUsers(roleCode: string): Array<{ id: number; employeeNo: string; displayName: string }> {
+  const employeeNos = new Set(whitelistMappings.value.filter((item) => item.reviewRole === roleCode).map((item) => item.employeeNo))
+  return mockUsers.value.filter((user) => employeeNos.has(user.employeeNo))
+}
 function sourceFileKey(file: File): string { return `${file.name}:${file.size}:${file.lastModified}` }
 function selectFiles(event: Event): void {
   const input = event.target as HTMLInputElement
@@ -41,12 +61,18 @@ function removeSelectedFile(file: File): void {
 async function save(submitNow: boolean): Promise<void> {
   error.value = ''; saving.value = true
   try {
+    const missingReviewers = form.reviewRoles.filter((role) => !(selectedReviewerIds[role]?.length))
+    if (missingReviewers.length) {
+      throw new Error('请为每个已勾选的评审角色选择至少一名白名单专家。')
+    }
     if (sourceFiles.value.length) {
       const newFileIds = await reviewApi.uploadInitialFilesToCompany(sourceFiles.value, form.reviewType as 'PCB' | 'SCHEMATIC')
       uploadedFiles.value.push(...newFileIds)
       sourceFiles.value = []
     }
-    const body = { reviewType: form.reviewType as 'PCB' | 'SCHEMATIC', taskName: form.taskName, projectName: form.projectName, designerId: Number(form.designerId), designerName: form.designerName, designName: form.designName, pcbType: form.pcbType || undefined, expectedCompletedDate: form.expectedCompletedDate, expertLeaderId: Number(form.expertLeaderId), expertLeaderName: form.expertLeaderName, reviewRoles: form.reviewRoles, reviewDescription: form.reviewDescription || undefined, files: uploadedFiles.value }
+    const schematicLeader = form.reviewType === 'SCHEMATIC' ? Number(form.expertLeaderId) : 0
+    // 现有接口将 expertLeaderId 定义为必填；PCB 不要求用户选择，使用设计者作为兼容占位值。
+    const body = { reviewType: form.reviewType as 'PCB' | 'SCHEMATIC', taskName: form.taskName, projectName: form.projectName, designerId: Number(form.designerId), designerName: form.designerName, designName: form.designName, pcbType: form.pcbType || undefined, expectedCompletedDate: form.expectedCompletedDate, expertLeaderId: schematicLeader || Number(form.designerId), expertLeaderName: schematicLeader ? form.expertLeaderName : form.designerName, reviewRoles: form.reviewRoles, reviewerAssignments: form.reviewRoles.map((reviewRole) => ({ reviewRole, reviewerIds: selectedReviewerIds[reviewRole] ?? [] })), reviewDescription: form.reviewDescription || undefined, files: uploadedFiles.value }
     const task = submitNow
       ? await reviewApi.submitTask(body, editing.value ? editTaskId.value : undefined)
       : await reviewApi.saveTask(body, editing.value ? editTaskId.value : undefined)
@@ -64,9 +90,10 @@ async function save(submitNow: boolean): Promise<void> {
       <label>任务名称 *<input v-model.trim="form.taskName" placeholder="请输入任务名称" /></label><label>设计者 *<select v-model.number="form.designerId" @change="selectDesigner"><option v-for="user in mockUsers" :key="user.id" :value="user.id">{{ user.displayName }}</option></select><small>系统提交设计者 ID，页面显示姓名：{{ form.designerName }}</small></label>
       <label>项目名称 *<input v-model.trim="form.projectName" placeholder="请输入项目名称" /></label><label>期望完成日期 *<input v-model="form.expectedCompletedDate" type="date" /></label>
       <label v-if="form.reviewType === 'PCB'">PCB 类型 *<select v-model="form.pcbType"><option value="">请选择</option><option v-for="item in pcbTypes" :key="item" :value="item">{{ item }}</option></select></label><div v-else class="empty-field" />
-      <label>专家 / 组长 *<select v-model.number="form.expertLeaderId" @change="selectLeader"><option value="">请选择</option><option v-for="user in mockUsers.filter((item) => !item.roles.includes('DESIGNER'))" :key="user.id" :value="user.id">{{ user.displayName }}</option></select><small>{{ form.expertLeaderName || '请选择专家或组长' }}</small></label>
+      <label v-if="form.reviewType === 'SCHEMATIC'">组长 *<select v-model.number="form.expertLeaderId" @change="selectLeader"><option value="">请选择</option><option v-for="user in mockUsers.filter((item) => item.roles.includes('SCHEMATIC_LEADER'))" :key="user.id" :value="user.id">{{ user.displayName }}</option></select><small>{{ form.expertLeaderName || '仅原理图评审需要选择组长' }}</small></label>
     </div>
-    <label class="role-label">评审角色 *<div class="role-options"><label v-for="role in reviewRoles" :key="role.code" class="role-option"><input v-model="form.reviewRoles" type="checkbox" :value="role.code" /><span>{{ role.name }}</span><small>{{ role.code }}</small></label></div></label>
+    <label class="role-label">评审角色 *<small>PCB 可选择硬件、EMC、PCB、工艺、结构评审；原理图仅可选择硬件、EMC、PCB 评审。每个已勾选角色必须选择实际评审专家。</small><div class="role-options"><label v-for="role in selectableReviewRoles" :key="role.code" class="role-option"><input v-model="form.reviewRoles" type="checkbox" :value="role.code" /><span>{{ role.name }}</span><small>{{ role.code }}</small></label></div></label>
+    <section v-if="form.reviewRoles.length" class="role-whitelist-selection"><h3>评审专家分配</h3><p>每个已勾选角色都需要从该角色白名单中选择一位或多位专家；选择结果将作为对应评审阶段的人员依据。</p><details v-for="role in selectableReviewRoles.filter((item) => form.reviewRoles.includes(item.code))" :key="role.code" class="role-whitelist" open><summary><b>{{ role.name }}</b><span>已选 {{ selectedReviewerIds[role.code]?.length ?? 0 }} 人</span></summary><div class="whitelist-user-list"><label v-for="user in whitelistUsers(role.code)" :key="user.id" class="whitelist-user"><input v-model="selectedReviewerIds[role.code]" type="checkbox" :value="user.id" /><span><b>{{ user.displayName }}</b><small>{{ user.employeeNo }}</small></span></label><p v-if="!whitelistUsers(role.code).length" class="empty-whitelist">该角色暂未配置白名单人员，无法保存任务。</p></div></details></section>
     <label>评审文件 *<input type="file" multiple @change="selectFiles" /><small>支持多选；可多次选择，保存或提交时会将所有文件一并关联到任务。</small></label>
     <div v-if="savedFiles.length || sourceFiles.length || uploadedFiles.length" class="file-list">
       <div v-for="file in savedFiles" :key="file.id" class="file-row"><span class="file-state saved">已保存</span><b>{{ file.fileName }}</b><small>{{ file.fileSize }} B</small></div>
@@ -79,5 +106,5 @@ async function save(submitNow: boolean): Promise<void> {
 </template>
 
 <style scoped>
-.task-create-card{max-width:1400px}.create-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.inline-pair{display:grid;grid-template-columns:1fr 130px;gap:8px}.role-label{margin:5px 0 18px}.role-options{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.role-option{display:flex!important;flex-direction:column;gap:5px;border:1px solid #e1e2eb;border-radius:9px;padding:13px;background:#fff;min-height:80px}.role-option:has(input:checked){border-color:#7566db;background:#f6f4ff}.role-option input{width:auto}.role-option span{font-weight:700;color:#36394c}.role-option small{font-size:10px;color:#8b8e9d;word-break:break-all}.file-list{display:grid;gap:7px;margin:-7px 0 14px}.file-row{display:flex;align-items:center;gap:9px;min-height:34px;padding:7px 10px;border:1px solid #e3e5ee;border-radius:7px;background:#fafbfe}.file-row b{font-size:13px;color:#333b51}.file-row small{color:#7a8194;font-size:12px}.file-row .btn{margin-left:auto}.file-state{padding:3px 7px;border-radius:10px;font-size:11px;white-space:nowrap}.file-state.saved{color:#14834c;background:#e8faef}.file-state.pending{color:#b26a00;background:#fff5df}.file-state.uploaded{color:#4d5bc7;background:#eff0ff}@media(max-width:900px){.role-options{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.create-grid,.role-options{grid-template-columns:1fr}.inline-pair{grid-template-columns:1fr}.file-row{align-items:flex-start;flex-wrap:wrap}.file-row .btn{margin-left:0}}
+.task-create-card{max-width:1400px}.create-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.inline-pair{display:grid;grid-template-columns:1fr 130px;gap:8px}.role-label{margin:5px 0 18px}.role-options{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.role-option{display:flex!important;flex-direction:column;gap:5px;border:1px solid #e1e2eb;border-radius:9px;padding:13px;background:#fff;min-height:80px}.role-option:has(input:checked){border-color:#7566db;background:#f6f4ff}.role-option input{width:auto}.role-option span{font-weight:700;color:#36394c}.role-option small{font-size:10px;color:#8b8e9d;word-break:break-all}.role-whitelist-selection{margin:-6px 0 18px;padding:14px;border:1px solid #e3e0fb;border-radius:10px;background:#fbfaff}.role-whitelist-selection h3{margin:0;color:#34384d;font-size:14px}.role-whitelist-selection>p{margin:5px 0 10px;color:#83879a;font-size:12px}.role-whitelist{margin-top:8px;border:1px solid #e5e5ed;border-radius:8px;background:#fff}.role-whitelist summary{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;cursor:pointer;color:#383b50;font-size:13px}.role-whitelist summary span{color:#685bd2;font-size:12px}.whitelist-user-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid #eeeeF4}.whitelist-user{display:flex!important;align-items:center;gap:8px;padding:9px 12px;border-right:1px solid #eeeeF4}.whitelist-user input{width:auto}.whitelist-user span{display:grid;gap:2px}.whitelist-user b{font-size:13px;color:#373a4e}.whitelist-user small{font-size:11px;color:#8a8e9e}.empty-whitelist{grid-column:1/-1;margin:0;padding:11px 12px;color:#8a8e9e;font-size:12px}.file-list{display:grid;gap:7px;margin:-7px 0 14px}.file-row{display:flex;align-items:center;gap:9px;min-height:34px;padding:7px 10px;border:1px solid #e3e5ee;border-radius:7px;background:#fafbfe}.file-row b{font-size:13px;color:#333b51}.file-row small{color:#7a8194;font-size:12px}.file-row .btn{margin-left:auto}.file-state{padding:3px 7px;border-radius:10px;font-size:11px;white-space:nowrap}.file-state.saved{color:#14834c;background:#e8faef}.file-state.pending{color:#b26a00;background:#fff5df}.file-state.uploaded{color:#4d5bc7;background:#eff0ff}@media(max-width:900px){.role-options{grid-template-columns:repeat(2,minmax(0,1fr))}.whitelist-user-list{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.create-grid,.role-options,.whitelist-user-list{grid-template-columns:1fr}.inline-pair{grid-template-columns:1fr}.file-row{align-items:flex-start;flex-wrap:wrap}.file-row .btn{margin-left:0}}
 </style>
