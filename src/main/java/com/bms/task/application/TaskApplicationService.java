@@ -6,9 +6,7 @@ import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Permission;
 import com.bms.identity.domain.PermissionPolicy;
 import com.bms.identity.domain.Role;
-import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
-import com.bms.notification.infrastructure.NotificationSendRecord;
-import com.bms.notification.infrastructure.NotificationSendRecordMapper;
+import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.notification.application.ReviewMailNotificationApplicationService;
 import com.bms.task.domain.ReviewTask;
 import com.bms.task.domain.ReviewType;
@@ -48,20 +46,17 @@ public class TaskApplicationService {
     private final ReviewTaskMapper taskMapper;
     private final TaskAssignmentAccessMapper taskAssignmentAccessMapper;
     private final TaskFlowMapper flowMapper;
-    private final NotificationSendRecordMapper notificationSendRecordMapper;
     private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService;
     private final ReviewMailNotificationApplicationService reviewMailNotificationApplicationService;
 
     @Autowired
     public TaskApplicationService(ReviewTaskMapper taskMapper,
                                   TaskAssignmentAccessMapper taskAssignmentAccessMapper, TaskFlowMapper flowMapper,
-                                  NotificationSendRecordMapper notificationSendRecordMapper,
                                   ReviewerWhitelistApplicationService reviewerWhitelistApplicationService,
                                   ReviewMailNotificationApplicationService reviewMailNotificationApplicationService) {
         this.taskMapper = taskMapper;
         this.taskAssignmentAccessMapper = taskAssignmentAccessMapper;
         this.flowMapper = flowMapper;
-        this.notificationSendRecordMapper = notificationSendRecordMapper;
         this.reviewerWhitelistApplicationService = reviewerWhitelistApplicationService;
         this.reviewMailNotificationApplicationService = reviewMailNotificationApplicationService;
     }
@@ -139,10 +134,10 @@ public class TaskApplicationService {
         if (!canView(task, currentUser)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看该任务");
         }
-        List<NotificationRecordView> notificationRecords = notificationSendRecordMapper.findByTaskId(taskId).stream()
-                .map(NotificationRecordView::from)
+        List<TaskFlowRecordView> flowRecords = flowMapper.findByTaskId(taskId).stream()
+                .map(this::toFlowRecordView)
                 .toList();
-        return TaskView.from(task, notificationRecords);
+        return TaskView.from(task, flowRecords);
     }
 
     public List<TaskView> list(CurrentUser currentUser) {
@@ -183,6 +178,12 @@ public class TaskApplicationService {
         record.setOperateId(operateId);
         record.setComment(comment);
         flowMapper.insert(record);
+    }
+
+    private TaskFlowRecordView toFlowRecordView(TaskFlowRecord record) {
+        String operatorName = record.getOperateId() != null && record.getOperateId() == 1L ? "王鹏飞" : "用户#" + record.getOperateId();
+        return new TaskFlowRecordView(record.getId(), record.getAction(), record.getActionName(), record.getOperateId(),
+                operatorName, record.getComment(), record.getCreatedAt());
     }
 
     private boolean canView(ReviewTask task, CurrentUser currentUser) {
@@ -272,29 +273,25 @@ public class TaskApplicationService {
     public record TaskView(Long id, ReviewType reviewType, String taskName, String projectName, Long designerId, String designerName,
                            String designName, String pcbType, LocalDate expectedCompletedDate, Long expertLeaderId, String expertLeaderName,
                            List<ReviewRole> reviewRoles, List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription, String status,
-                           List<NotificationRecordView> notificationRecords) {
+                           List<TaskFlowRecordView> flowRecords) {
         static TaskView from(ReviewTask task) {
             return new TaskView(task.id(), task.reviewType(), task.taskName(), task.projectName(), task.designerId(), task.designerName(),
                     task.designName(), task.pcbType(), task.expectedCompletedDate(), task.expertLeaderId(), task.expertLeaderName(),
                     task.reviewRoles(), task.reviewerAssignments(), task.reviewDescription(), task.status().name(), List.of());
         }
 
-        static TaskView from(ReviewTask task, List<NotificationRecordView> notificationRecords) {
+        static TaskView from(ReviewTask task, List<TaskFlowRecordView> flowRecords) {
             TaskView taskView = from(task);
             return new TaskView(taskView.id(), taskView.reviewType(), taskView.taskName(), taskView.projectName(),
                     taskView.designerId(), taskView.designerName(), taskView.designName(), taskView.pcbType(),
                     taskView.expectedCompletedDate(), taskView.expertLeaderId(), taskView.expertLeaderName(),
-                    taskView.reviewRoles(), taskView.reviewerAssignments(), taskView.reviewDescription(), taskView.status(), List.copyOf(notificationRecords));
+                    taskView.reviewRoles(), taskView.reviewerAssignments(), taskView.reviewDescription(), taskView.status(), List.copyOf(flowRecords));
         }
     }
 
-    public record NotificationRecordView(String eventType, String recipient, String templateCode,
-                                         String deliveryStatus, String failureReason, java.time.LocalDateTime attemptedAt) {
-        static NotificationRecordView from(NotificationSendRecord record) {
-            return new NotificationRecordView(record.eventType(), record.recipient(), record.templateCode(),
-                    record.deliveryStatus(), record.failureReason(), record.attemptedAt());
-        }
-    }
+    /** 任务详情中的流程审计记录；邮件投递记录不属于任务详情返回范围。 */
+    public record TaskFlowRecordView(Long id, String action, String actionName, Long operatorId, String operatorName,
+                                     String comment, java.time.LocalDateTime operatedAt) { }
 
     public record TaskPage(long total, int pageNo, int pageSize, List<TaskView> items) {
         public TaskPage {
@@ -302,14 +299,9 @@ public class TaskApplicationService {
         }
     }
 
-    public record TaskQuery(String taskName, String projectName, String designerName, ReviewType reviewType, TaskStatus status,
-                            Integer pageNo, Integer pageSize, Long taskId) {
-        public TaskQuery(String taskName, String projectName, String designerName, ReviewType reviewType, int pageNo, int pageSize) {
-            this(taskName, projectName, designerName, reviewType, null, pageNo, pageSize, null);
-        }
-
+    public record TaskQuery(String keyword, ReviewType reviewType, List<TaskStatus> statuses, Integer pageNo, Integer pageSize, Long taskId) {
         static TaskQuery defaultQuery() {
-            return new TaskQuery(null, null, null, null, null, 1, 20, null);
+            return new TaskQuery(null, null, null, 1, 20, null);
         }
 
         TaskQuery normalized() {
@@ -318,15 +310,19 @@ public class TaskApplicationService {
             if (normalizedPageNo < 1 || normalizedPageSize < 1 || normalizedPageSize > 100) {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "分页参数不合法");
             }
-            return new TaskQuery(taskName, projectName, designerName, reviewType, status, normalizedPageNo, normalizedPageSize, taskId);
+            List<TaskStatus> normalizedStatuses = statuses == null ? List.of() : statuses.stream()
+                    .filter(java.util.Objects::nonNull)
+                    .distinct()
+                    .toList();
+            return new TaskQuery(keyword, reviewType, normalizedStatuses, normalizedPageNo, normalizedPageSize, taskId);
         }
 
         boolean matches(ReviewTask task) {
-            return contains(task.taskName(), taskName)
-                    && contains(task.projectName(), projectName)
-                    && contains(task.designerName(), designerName)
+            return (contains(task.taskName(), keyword)
+                    || contains(task.projectName(), keyword)
+                    || contains(task.designerName(), keyword))
                     && (reviewType == null || reviewType == task.reviewType())
-                    && (status == null || status == task.status())
+                    && (statuses == null || statuses.isEmpty() || statuses.contains(task.status()))
                     && (taskId == null || taskId == task.id());
         }
 

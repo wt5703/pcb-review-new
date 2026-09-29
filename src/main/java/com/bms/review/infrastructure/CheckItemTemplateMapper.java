@@ -60,6 +60,11 @@ public interface CheckItemTemplateMapper {
     @Update("UPDATE check_item_template SET enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=#{id}")
     int disableById(long id);
 
+    /** 确认重新导入时，逻辑停用该评审类型当前启用的整套模板。 */
+    @Update("UPDATE check_item_template SET enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 "
+            + "WHERE review_type=#{reviewType} AND enabled=TRUE")
+    int disableEnabledByReviewType(@Param("reviewType") String reviewType);
+
     @Update("UPDATE check_item_template SET sort_no=sort_no-1, updated_at=CURRENT_TIMESTAMP, version=version+1 "
             + "WHERE review_type=#{reviewType} AND parent_id IS NULL AND enabled=TRUE AND sort_no > #{sortNo}")
     int decrementCategorySortAfter(@Param("reviewType") String reviewType, @Param("sortNo") int sortNo);

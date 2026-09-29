@@ -104,7 +104,7 @@ public class TaskArchiveOpinionExportApplicationService {
     }
 
     private ExportRow row(ReviewOpinionRecord opinion, String handling, String confirmation) {
-        return new ExportRow(phaseName(opinion.getSourceType()), richTextToPlainText(opinion.getRichText()), opinion.getContent(),
+        return new ExportRow(phaseName(opinion.getSourceType()), richTextToPlainText(opinion.getRichText()), opinion.getComment(),
                 raisedByName(opinion), severityName(opinion.getSeverity()), handling, confirmation);
     }
 

@@ -4,6 +4,7 @@ import com.bms.archive.infrastructure.TaskArchiveSnapshotMapper;
 import com.bms.archive.infrastructure.TaskArchiveSnapshotRecord;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
+import com.bms.notification.infrastructure.NotificationSendRecord;
 import com.bms.notification.infrastructure.NotificationSendRecordMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import com.bms.workflow.infrastructure.TaskFlowMapper;
@@ -23,7 +24,7 @@ import static org.mockito.Mockito.when;
 /**
  * @author 王涛
  * @date 2026-09-18
- * @description 验证任务结束时冻结阶段文件和邮件记录，归档读取的流程节点来自 task_flow_record。
+ * @description 验证任务结束时冻结阶段文件、邮件和 task_flow_record 的流程节点，归档读取仅使用冻结快照。
  */
 class TaskArchiveApplicationServiceTest {
     private final TaskArchiveSnapshotMapper snapshotMapper = mock(TaskArchiveSnapshotMapper.class);
@@ -38,6 +39,7 @@ class TaskArchiveApplicationServiceTest {
         LocalDateTime time = LocalDateTime.of(2026, 9, 18, 10, 30);
         ReviewFileRecord file = new ReviewFileRecord();
         file.setId(101L);
+        file.setTaskId(1001L);
         file.setFileCategory("PCB_REVIEW");
         file.setFileName("BMU_Control_V2.PCB");
         file.setUploadedBy(9L);
@@ -56,6 +58,8 @@ class TaskArchiveApplicationServiceTest {
         task.setStatus("FINISHED");
         when(fileMapper.findLatestByTaskId(1001L)).thenReturn(List.of(file));
         when(flowMapper.findByTaskId(1001L)).thenReturn(List.of(flow));
+        when(notificationSendRecordMapper.findByTaskId(1001L)).thenReturn(List.of(new NotificationSendRecord(501L,
+                "REVIEW_MAIL", "expert@example.com", "TASK_CREATED", "SENT", null, time.plusHours(2))));
         service.archive(task);
 
         ArgumentCaptor<TaskArchiveSnapshotRecord> captured = ArgumentCaptor.forClass(TaskArchiveSnapshotRecord.class);
@@ -64,15 +68,19 @@ class TaskArchiveApplicationServiceTest {
         TaskArchiveApplicationService.ArchiveView view = service.get(1001L);
 
         assertThat(view.flowNodes()).singleElement().satisfies(value -> {
-            assertThat(value.stageName()).isEqualTo("互检单评审");
+            assertThat(value.stageName()).isEqualTo("开启互检单评审");
             assertThat(value.operatorName()).isEqualTo("用户#2");
             assertThat(value.content()).isEqualTo("互检人员已完成分配");
         });
         assertThat(view.stageFiles()).singleElement().satisfies(value -> {
             assertThat(value.stageName()).isEqualTo("专家评审");
             assertThat(value.fileName()).isEqualTo("BMU_Control_V2.PCB");
-            assertThat(value.downloadPath()).isEqualTo("/leapmotor/pcb_review/files/download?taskId=1001&fileId=101");
+            assertThat(value.downloadPath()).isEqualTo("/leapmotor/pcb_review/files/download?fileId=101");
         });
-        verify(flowMapper, org.mockito.Mockito.times(2)).findByTaskId(1001L);
+        assertThat(view.notificationRecords()).singleElement().satisfies(value -> {
+            assertThat(value.recipient()).isEqualTo("expert@example.com");
+            assertThat(value.deliveryStatus()).isEqualTo("SENT");
+        });
+        verify(flowMapper).findByTaskId(1001L);
     }
 }

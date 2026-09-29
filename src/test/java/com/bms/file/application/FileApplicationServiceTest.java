@@ -6,7 +6,7 @@ import com.bms.file.infrastructure.ReviewFileRecord;
 import com.bms.file.infrastructure.ResourceServiceClient;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Role;
-import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
+import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import com.bms.task.domain.TaskStatus;
@@ -63,11 +63,11 @@ class FileApplicationServiceTest {
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
         when(resourceServiceClient.download("BMS.pcb", "mock-file-1")).thenReturn(new byte[] { 1 });
 
-        FileApplicationService.DownloadContent download = service.downloadTaskFile(1L, 101L,
+        FileApplicationService.DownloadContent download = service.downloadFile(101L,
                 new CurrentUser(20L, Set.of(Role.EMC_EXPERT)));
 
         assertThat(download.fileName()).isEqualTo("BMS.pcb");
-        assertThatThrownBy(() -> service.downloadTaskFile(1L, 101L, new CurrentUser(21L, Set.of(Role.HARDWARE_EXPERT))))
+        assertThatThrownBy(() -> service.downloadFile(101L, new CurrentUser(21L, Set.of(Role.HARDWARE_EXPERT))))
                 .isInstanceOf(com.bms.common.BusinessException.class)
                 .hasMessage("无对应文件操作权限");
     }
@@ -94,7 +94,7 @@ class FileApplicationServiceTest {
     }
 
     @Test
-    void shouldRejectSavingSamePendingFileUuidToTaskAgain() {
+    void shouldReuseFileAlreadyBoundToCurrentTask() {
         String fileId = "b4466fe0-2c68-44b5-92d2-100000000001";
         ReviewFileRecord pending = new ReviewFileRecord();
         pending.setFileId(fileId); pending.setFileCategory(FileCategory.PCB_REVIEW.name()); pending.setFileName("BMS.pcb");
@@ -103,9 +103,9 @@ class FileApplicationServiceTest {
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
         when(fileMapper.findByFileId(fileId)).thenReturn(pending);
 
-        assertThatThrownBy(() -> service.bindPendingInitialFiles(1L, java.util.List.of(fileId), designer))
-                .isInstanceOf(com.bms.common.BusinessException.class)
-                .hasMessage("该任务已保存对应文件，不能重复保存");
+        assertThat(service.bindPendingInitialFiles(1L, java.util.List.of(fileId), designer))
+                .singleElement()
+                .satisfies(file -> assertThat(file.fileId()).isEqualTo(fileId));
     }
 
     private ReviewFileRecord record(long id, String md5) {

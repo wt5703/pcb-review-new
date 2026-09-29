@@ -2,6 +2,7 @@ package com.bms.workflow.application;
 
 import com.bms.archive.application.TaskArchiveApplicationService;
 import com.bms.common.BusinessException;
+import com.bms.file.domain.FileCategory;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
 import com.bms.identity.application.CurrentUser;
@@ -27,6 +28,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -64,12 +66,31 @@ class WorkflowApplicationServiceTest {
 
         WorkflowApplicationService.WorkflowView view = service.transition(1001L,
                 new WorkflowApplicationService.TransitionBatchCommand(List.of(
-                        WorkflowAction.START_PCB_STRUCTURE_REVIEW, WorkflowAction.START_PCB_PROCESS_REVIEW), null, null, List.of()),
+                        WorkflowAction.START_PCB_STRUCTURE_REVIEW, WorkflowAction.START_PCB_PROCESS_REVIEW), null, List.of()),
                 new CurrentUser(10L, Set.of(Role.DESIGNER)));
 
         assertThat(view.toStatus()).isEqualTo(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
         verify(outboxEventMapper, times(2)).insert(any());
-        verify(reviewMailNotificationApplicationService).enqueuePcbProcessStructureReview(any());
+        verify(reviewMailNotificationApplicationService).enqueuePcbStageReview(any(), eq(List.of(
+                FileCategory.PCB_STRUCTURE_REVIEW, FileCategory.PCB_PROCESS_REVIEW)));
+    }
+
+    @Test
+    void shouldStartPcbStructureReviewIndependently() {
+        when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PCB_EXPERT_REVIEWING));
+        ReviewOpinionRecord submitted = new ReviewOpinionRecord();
+        submitted.setSourceType("EXPERT_REVIEW"); submitted.setRaisedBy(10L); submitted.setStatus("CONFIRMED_PASS");
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(submitted));
+        when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_STRUCTURE_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
+        when(taskMapper.update(any())).thenReturn(1);
+        when(flowMapper.nextId()).thenReturn(2L);
+
+        WorkflowApplicationService.WorkflowView view = service.transition(1001L,
+                new WorkflowApplicationService.TransitionBatchCommand(List.of(WorkflowAction.START_PCB_STRUCTURE_REVIEW), null, List.of()),
+                new CurrentUser(10L, Set.of(Role.DESIGNER)));
+
+        assertThat(view.toStatus()).isEqualTo(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
+        verify(reviewMailNotificationApplicationService).enqueuePcbStageReview(any(), eq(List.of(FileCategory.PCB_STRUCTURE_REVIEW)));
     }
 
     @Test
@@ -79,7 +100,7 @@ class WorkflowApplicationServiceTest {
 
         assertThatThrownBy(() -> service.transition(1001L,
                 new WorkflowApplicationService.TransitionBatchCommand(List.of(
-                        WorkflowAction.START_PCB_STRUCTURE_REVIEW, WorkflowAction.START_PCB_PROCESS_REVIEW), null, null, List.of()),
+                        WorkflowAction.START_PCB_STRUCTURE_REVIEW, WorkflowAction.START_PCB_PROCESS_REVIEW), null, List.of()),
                 new CurrentUser(10L, Set.of(Role.DESIGNER))))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("仍有已分配专家未提交评审意见或确认无意见，不能开启工艺或结构评审");

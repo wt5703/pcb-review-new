@@ -80,6 +80,11 @@ public class ReviewerWhitelistApplicationService {
                 ReviewerWhitelistRecord record = new ReviewerWhitelistRecord();
                 record.setReviewRole(roleEmployeeNo.reviewRole().name());
                 record.setEmployeeNo(employeeNo);
+                ReviewerWhitelistRecord existingPerson = whitelistMapper.findActiveByEmployeeNo(employeeNo);
+                record.setDisplayName(existingPerson == null ? employeeNo : existingPerson.getDisplayName());
+                record.setEmail(existingPerson == null ? null : existingPerson.getEmail());
+                record.setMobile(existingPerson == null ? null : existingPerson.getMobile());
+                record.setDepartmentName(existingPerson == null ? null : existingPerson.getDepartmentName());
                 record.setCreatedBy(currentUser.id());
                 whitelistMapper.insert(record);
                 createdCount++;
@@ -115,18 +120,22 @@ public class ReviewerWhitelistApplicationService {
                 .toList();
     }
 
-    /** 返回当前启用的白名单映射，供白名单管理页面按主键精确删除。 */
-    public List<ReviewerWhitelistView> list(CurrentUser currentUser) {
+    /** 按工号或姓名关键字分页返回当前启用白名单，供管理页面按主键精确删除。 */
+    public ReviewerWhitelistPage listPage(ReviewerWhitelistQuery query, CurrentUser currentUser) {
         requireManagePermission(currentUser);
-        return whitelistMapper.findAll().stream()
+        String keyword = query.keyword() == null ? "" : query.keyword().trim();
+        int pageNo = normalizePageNo(query.pageNo());
+        int pageSize = normalizePageSize(query.pageSize());
+        long total = whitelistMapper.countByKeyword(keyword);
+        List<ReviewerWhitelistView> items = whitelistMapper.findPageByKeyword(keyword, (pageNo - 1) * pageSize, pageSize).stream()
                 .map(record -> new ReviewerWhitelistView(record.getId(), ReviewerWhitelistRole.valueOf(record.getReviewRole()), record.getEmployeeNo(),
-                        record.getDisplayName(), record.getEmail(), record.getMobile(), record.getCreatedAt()))
+                        record.getDisplayName(), record.getEmail(), record.getMobile(), record.getDepartmentName(), record.getCreatedAt()))
                 .toList();
+        return new ReviewerWhitelistPage(total, pageNo, pageSize, items);
     }
 
     /**
-     * 返回指定白名单职责下可被实际分配的用户。白名单工号必须能解析到启用的用户账号，
-     * 否则不会出现在人员选择器中，避免前端拿到无法用于 reviewerIds 的数据。
+     * 返回指定白名单职责下可被实际分配的人员。白名单自身即为人员目录，不再关联本地用户表。
      */
     public List<AssignableReviewerView> listAssignableUsers(List<ReviewerWhitelistRole> whitelistRoles) {
         if (whitelistRoles == null || whitelistRoles.isEmpty()) {
@@ -144,10 +153,20 @@ public class ReviewerWhitelistApplicationService {
         }
     }
 
+    private int normalizePageNo(Integer pageNo) {
+        return pageNo == null ? 1 : Math.max(pageNo, 1);
+    }
+
+    private int normalizePageSize(Integer pageSize) {
+        return pageSize == null ? 20 : Math.min(Math.max(pageSize, 1), 1000);
+    }
+
     public record RoleEmployeeNos(ReviewerWhitelistRole reviewRole, List<String> employeeNos) { }
     public record RoleEmployeeNosView(ReviewerWhitelistRole reviewRole, List<String> employeeNos) { }
     public record ReviewerWhitelistView(Long id, ReviewerWhitelistRole reviewRole, String employeeNo, String displayName,
-                                        String email, String mobile, java.time.LocalDateTime createdAt) { }
+                                        String email, String mobile, String departmentName, java.time.LocalDateTime createdAt) { }
+    public record ReviewerWhitelistQuery(String keyword, Integer pageNo, Integer pageSize) { }
+    public record ReviewerWhitelistPage(long total, int pageNo, int pageSize, List<ReviewerWhitelistView> items) { }
     public record AssignableReviewerView(Long userId, String employeeNo, String displayName, String departmentName,
                                          ReviewerWhitelistRole whitelistRole) {
         static AssignableReviewerView from(AssignableReviewerRecord record) {

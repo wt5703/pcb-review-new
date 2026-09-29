@@ -1,4 +1,4 @@
-package com.bms.identity.infrastructure;
+package com.bms.task.infrastructure;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Select;

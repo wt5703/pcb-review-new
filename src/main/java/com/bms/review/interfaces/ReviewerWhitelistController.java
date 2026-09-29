@@ -14,7 +14,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,14 +37,19 @@ public class ReviewerWhitelistController {
         this.whitelistApplicationService = whitelistApplicationService;
     }
 
-    @GetMapping
-    @Operation(summary = "查询评审人员白名单", description = "返回当前启用白名单的姓名、工号、邮箱、手机号、评审角色、创建时间及主键。前端使用主键精确删除单一角色映射。")
-    ApiResponse<List<ReviewerWhitelistApplicationService.ReviewerWhitelistView>> list(HttpServletRequest servletRequest) {
-        return ApiResponse.ok(whitelistApplicationService.list(CurrentUserHolder.require()), traceId(servletRequest));
+    @PostMapping("/query")
+    @Operation(summary = "分页查询评审人员白名单", description = "请求体中的 keyword 是唯一查询条件，可按员工工号或姓名模糊匹配")
+    ApiResponse<ReviewerWhitelistApplicationService.ReviewerWhitelistPage> list(
+            @RequestBody(required = false) ReviewerWhitelistQueryRequest request,
+            HttpServletRequest servletRequest) {
+        ReviewerWhitelistQueryRequest query = request == null ? new ReviewerWhitelistQueryRequest(null, null, null) : request;
+        return ApiResponse.ok(whitelistApplicationService.listPage(
+                new ReviewerWhitelistApplicationService.ReviewerWhitelistQuery(query.keyword(), query.pageNo(), query.pageSize()),
+                CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @PostMapping
-    @Operation(summary = "批量新增评审人员白名单", description = "支持 硬件评审=HARDWARE_EXPERT、EMC评审=EMC_EXPERT、结构评审=STRUCTURE_EXPERT、工艺评审=PROCESS_EXPERT、PCB评审=PCB_EXPERT、PCB互检=PCB_MUTUAL_CHECK、原理图互检=SCHEMATIC_MUTUAL_CHECK；同一角色与工号的重复映射会被忽略")
+    @Operation(summary = "批量新增评审人员白名单", description = "按角色批量新增白名单。硬件评审=HARDWARE_EXPERT、EMC评审=EMC_EXPERT、结构评审=STRUCTURE_EXPERT、工艺评审=PROCESS_EXPERT、PCB评审=PCB_EXPERT、PCB互检=PCB_MUTUAL_CHECK、原理图互检=SCHEMATIC_MUTUAL_CHECK")
     ApiResponse<ReviewerWhitelistApplicationService.SaveResult> add(
             @Valid @RequestBody AddReviewerWhitelistRequest request,
             HttpServletRequest servletRequest) {
@@ -56,7 +60,7 @@ public class ReviewerWhitelistController {
     }
 
     @DeleteMapping
-    @Operation(summary = "逻辑删除评审人员白名单", description = "必须且只能传 id 或 employeeNo。id 只删除该条角色—工号映射；employeeNo 删除该员工工号全部启用的白名单角色映射。删除后不物理删除数据，后续新增相同角色与工号会恢复映射。")
+    @Operation(summary = "逻辑删除评审人员白名单", description = "必须且只能传 id 或 employeeNo。id 只删除该条角色—工号映射；employeeNo 删除该员工工号全部启用的白名单角色映射。")
     ApiResponse<ReviewerWhitelistApplicationService.DeleteResult> remove(
             @RequestParam(required = false) @Schema(description = "白名单主键；与 employeeNo 二选一") Long id,
             @RequestParam(required = false) @Schema(description = "员工工号；与 id 二选一，传入后删除该工号下所有白名单角色映射") String employeeNo,
@@ -72,6 +76,12 @@ public class ReviewerWhitelistController {
     record AddReviewerWhitelistRequest(
             @Schema(description = "角色与员工工号映射；同一角色只能出现一次", requiredMode = Schema.RequiredMode.REQUIRED)
             @NotEmpty List<@Valid RoleEmployeeNosRequest> roleEmployeeNos) { }
+
+    @Schema(description = "白名单分页查询条件；keyword 同时匹配员工工号和姓名")
+    record ReviewerWhitelistQueryRequest(
+            @Schema(description = "查询关键词，按工号或姓名模糊匹配") String keyword,
+            @Schema(description = "页码，从 1 开始，默认 1") Integer pageNo,
+            @Schema(description = "每页条数，默认 20，最大 1000") Integer pageSize) { }
 
     @Schema(description = "单个评审角色与多个员工工号")
     record RoleEmployeeNosRequest(

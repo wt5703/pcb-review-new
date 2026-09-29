@@ -2,7 +2,7 @@ package com.bms.identity.application;
 
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
-import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
+import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import org.springframework.stereotype.Service;
 
 /**

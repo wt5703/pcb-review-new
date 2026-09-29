@@ -4,7 +4,7 @@ import com.bms.common.BusinessException;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.application.TaskNodeAuthorizationService;
 import com.bms.identity.domain.Role;
-import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
+import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.review.domain.CheckResult;
 import com.bms.review.infrastructure.CheckItemTemplateMapper;
 import com.bms.review.infrastructure.CheckItemTemplateRecord;
@@ -67,14 +67,13 @@ class TaskCheckItemApplicationServiceTest {
     void shouldRejectFailedCheckItemWithoutComment() {
         ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
         when(taskMapper.findById(1001L)).thenReturn(task);
-        when(templateMapper.findEnabledByReviewType(ReviewType.PCB.name())).thenReturn(List.of());
-        when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of());
         when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(item(51L, 31L));
 
         assertThatThrownBy(() -> service.submit(1001L, 51L,
                 new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.FAIL, null, null), pcbLeader))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("不合格或 NC 检查项必须填写意见");
+        verify(templateMapper, never()).findEnabledByReviewType(ReviewType.PCB.name());
     }
 
     @Test
@@ -85,7 +84,6 @@ class TaskCheckItemApplicationServiceTest {
         opinion.setId(71L);
         opinion.setStatus("PENDING_CONFIRMATION");
         when(taskMapper.findById(1001L)).thenReturn(task);
-        when(templateMapper.findEnabledByReviewType(ReviewType.PCB.name())).thenReturn(List.of());
         when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(checkItem);
         when(templateMapper.findById(31L)).thenReturn(template(31L, "线距检查"));
         when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
@@ -97,6 +95,24 @@ class TaskCheckItemApplicationServiceTest {
 
         assertThat(checkItem.getCheckResult()).isEqualTo(CheckResult.PASS.name());
         verify(opinionMapper).updateStatus(argThat(value -> "WITHDRAWN".equals(value.getStatus())));
+        verify(templateMapper, never()).findEnabledByReviewType(ReviewType.PCB.name());
+    }
+
+    @Test
+    void shouldNotSynchronizeTemplateWhenSubmittingBatch() {
+        ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
+        TaskCheckItemRecord checkItem = item(51L, 31L);
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(checkItem);
+        when(templateMapper.findById(31L)).thenReturn(template(31L, "线距检查"));
+        when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
+
+        List<TaskCheckItemApplicationService.CheckItemView> result = service.submitBatch(1001L,
+                List.of(new TaskCheckItemApplicationService.SubmitBatchItemCommand(51L, CheckResult.PASS, null, null)), pcbLeader);
+
+        assertThat(result).hasSize(1);
+        assertThat(checkItem.getCheckResult()).isEqualTo(CheckResult.PASS.name());
+        verify(templateMapper, never()).findEnabledByReviewType(ReviewType.PCB.name());
     }
 
     @Test

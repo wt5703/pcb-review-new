@@ -6,7 +6,7 @@ import TaskFlow from '@/components/TaskFlow.vue'
 import MutualCheckForm from '@/components/MutualCheckForm.vue'
 import { reviewApi } from '@/api/review-api'
 import { identity } from '@/stores/identity'
-import type { Archive, AssignableReviewerRole, CheckItemCategory, CheckItemListItem, Opinion, OpinionSummary, Task } from '@/api/types'
+import type { Archive, AssignableReviewer, CheckItemCategory, CheckItemListItem, Opinion, OpinionSummary, Task } from '@/api/types'
 
 const route = useRoute()
 const taskId = computed(() => Number(route.params.taskId))
@@ -26,9 +26,8 @@ const opinionSummary = ref<OpinionSummary>()
 const finishStageSummaries = ref<Record<string, OpinionSummary | undefined>>({})
 const checkItemCategories = ref<CheckItemCategory[]>([])
 const archive = ref<Archive>()
-const assignableReviewerGroups = ref<AssignableReviewerRole[]>([])
-const mockUsers = ref<Array<{ id: number; displayName: string; email: string; departmentName: string; roles: string[] }>>([])
-const reviewerRole = ref('PCB_EXPERT')
+const assignableReviewers = ref<AssignableReviewer[]>([])
+const whitelistPeople = ref<Array<{ id: number; employeeNo: string; displayName: string; email: string; departmentName: string; roles: string[] }>>([])
 const loading = ref(true)
 const error = ref('')
 const notice = ref('')
@@ -40,8 +39,8 @@ const screenshotEditor = ref<HTMLElement>()
 const opinionListSection = ref<HTMLElement>()
 const replyDrafts = reactive<Record<number, { replyNo: number; replyType: 'ACCEPT' | 'REJECT'; reason: string }>>({})
 const opinionImageIndexes = reactive<Record<number, number>>({})
-const reviewerIds = ref('')
-const selectedReviewerIds = ref<number[]>([])
+const reviewerEmployeeNos = ref('')
+const selectedReviewerEmployeeNos = ref<string[]>([])
 const structureFileInput = ref<HTMLInputElement>()
 const processFileInput = ref<HTMLInputElement>()
 const designerWorkflowFileInput = ref<HTMLInputElement>()
@@ -63,7 +62,7 @@ const pcbStageStartMessage = ref('')
 const designerWorkflowMessage = ref('')
 const pcbFirstReplyFileUploaded = reactive({ pcb: false, process: false, structure: false })
 const editingOpinionId = ref<number>()
-type OpinionEditDraft = { severity: Opinion['severity']; content: string; screenshots: string }
+type OpinionEditDraft = { severity: Opinion['severity']; comment: string; screenshots: string }
 const opinionEditDrafts = reactive<Record<number, OpinionEditDraft>>({})
 
 const statusText = computed(() => task.value?.status === 'FINISHED' ? '归档已经冻结，所有内容只读。' : '当前详情根据后端任务状态实时加载。')
@@ -171,34 +170,22 @@ const reviewerAssignmentAction = computed(() => {
   }
   return 'START_PCB_MATUAL_REVIEW'
 })
-const assignableReviewers = computed(() => assignableReviewerGroups.value
-  .find((group) => group.reviewRole === reviewerRole.value)?.reviewers ?? [])
-
-function syncReviewerRole(): void {
-  if (!task.value || !['reviewers', 'hardware-reviewers'].includes(activeTab.value)) return
-  if (task.value.reviewType === 'SCHEMATIC') {
-    reviewerRole.value = activeTab.value === 'hardware-reviewers' ? 'SCHEMATIC_HARDWARE_EXPERT' : 'SCHEMATIC_MUTUAL_CHECK'
-    return
-  }
-  reviewerRole.value = 'PCB_MUTUAL_CHECK'
-}
-
 async function load(): Promise<void> {
   loading.value = true; error.value = ''; notice.value = ''
   try {
     // 意见来源依赖任务类型；先取得任务，避免原理图首次加载误用 PCB 的 EXPERT_REVIEW。
     const taskData = await reviewApi.getTask(taskId.value)
     task.value = taskData
-    const [opinionsData, summaryData, checkItemsData, users] = await Promise.all([
+    const [opinionsData, summaryData, checkItemsData, whitelistPage] = await Promise.all([
       reviewApi.listOpinions(taskId.value, opinionFilters()),
       reviewApi.getOpinionSummary(taskId.value, opinionSourceTypes()),
       reviewApi.listCheckItems(taskId.value),
-      reviewApi.listMockUsers()
+      reviewApi.listReviewerWhitelists({ pageNo: 1, pageSize: 1000 })
     ])
-    opinions.value = normalizeOpinions(opinionsData.items); opinionSummary.value = summaryData; opinionPagination.total = opinionsData.total; opinionPagination.pageNo = opinionsData.pageNo; checkItemCategories.value = checkItemsData; mockUsers.value = users
+    const users = whitelistPage.items
+    opinions.value = normalizeOpinions(opinionsData.items); opinionSummary.value = summaryData; opinionPagination.total = opinionsData.total; opinionPagination.pageNo = opinionsData.pageNo; checkItemCategories.value = checkItemsData; whitelistPeople.value = users.map((user) => ({ id: user.id, employeeNo: user.employeeNo, displayName: user.displayName || user.employeeNo, email: user.email || '', departmentName: user.departmentName || '', roles: [user.reviewRole] })); identity.userId = 1
     syncActiveTabForTaskStatus()
     await refreshFinishStageSummaries()
-    syncReviewerRole()
     await refreshPcbFirstReplyFileUploadStates()
     if (taskData.status === 'FINISHED') archive.value = await reviewApi.getArchive(taskId.value)
     await loadAssignableReviewers()
@@ -221,15 +208,15 @@ function opinionFilters(): { severity?: string; status?: string; sourceType?: st
   if (activeTab.value === 'structure-review') return { ...filters, sourceType: 'STRUCTURE_REVIEW', scene: 'REVIEW_WORKSPACE' }
   return { ...filters, sourceType: task.value?.reviewType === 'SCHEMATIC' ? 'SCHEMATIC_REVIEW' : 'EXPERT_REVIEW', scene: 'REVIEW_WORKSPACE' }
 }
-function normalizeOpinions(items: Opinion[]): Opinion[] { return items.map((item) => ({ ...item, content: item.richText || item.content, replies: item.replies ?? [] })) }
+function normalizeOpinions(items: Opinion[]): Opinion[] { return items.map((item) => ({ ...item, comment: item.richText || item.comment, replies: item.replies ?? [] })) }
 function opinionImages(opinion: Opinion): string[] {
   const template = document.createElement('template')
-  template.innerHTML = opinion.richText || opinion.content || ''
+  template.innerHTML = opinion.richText || opinion.comment || ''
   return Array.from(template.content.querySelectorAll('img')).map((image) => image.getAttribute('src') || '').filter(Boolean)
 }
 function opinionText(opinion: Opinion): string {
   const template = document.createElement('template')
-  template.innerHTML = opinion.richText || opinion.content || ''
+  template.innerHTML = opinion.richText || opinion.comment || ''
   template.content.querySelectorAll('img').forEach((image) => image.remove())
   return template.innerHTML
 }
@@ -305,16 +292,13 @@ function filterOpinionsByStatus(status: string): void {
 function changeOpinionPage(pageNo: number): void { if (pageNo < 1 || pageNo > Math.ceil(opinionPagination.total / opinionPagination.pageSize)) return; opinionPagination.pageNo = pageNo; void refreshOpinions() }
 async function loadAssignableReviewers(): Promise<void> {
   if (!task.value || !['reviewers', 'hardware-reviewers'].includes(activeTab.value)) {
-    assignableReviewerGroups.value = []
+    assignableReviewers.value = []
     return
   }
   try {
-    assignableReviewerGroups.value = await reviewApi.listAssignableReviewers(task.value.reviewType, task.value.status)
-    if (!assignableReviewerGroups.value.some((group) => group.reviewRole === reviewerRole.value)) {
-      reviewerRole.value = assignableReviewerGroups.value[0]?.reviewRole || ''
-    }
+    assignableReviewers.value = await reviewApi.listAssignableReviewers(task.value.reviewType, task.value.status)
   } catch {
-    assignableReviewerGroups.value = []
+    assignableReviewers.value = []
   }
 }
 async function refreshPcbFirstReplyFileUploadStates(): Promise<void> {
@@ -332,8 +316,8 @@ async function refreshPcbFirstReplyFileUploadStates(): Promise<void> {
     // 文件状态查询失败不影响编辑或流程推进；最终以流程接口的服务端校验为准。
   }
 }
-watch(activeTab, async () => { syncActiveTabForTaskStatus(); syncReviewerRole(); await loadAssignableReviewers(); await refreshPcbFirstReplyFileUploadStates() })
-watch(activeTab, () => { syncReviewerRole(); opinionPagination.pageNo = 1; void refreshOpinions(); void refreshOpinionSummary() })
+watch(activeTab, async () => { syncActiveTabForTaskStatus(); await loadAssignableReviewers(); await refreshPcbFirstReplyFileUploadStates() })
+watch(activeTab, () => { opinionPagination.pageNo = 1; void refreshOpinions(); void refreshOpinionSummary() })
 watch(() => task.value?.status, () => {
   // 分配已完成时，旧分配页不再有候选人可查；进入真正的评审工作区。
   syncActiveTabForTaskStatus()
@@ -350,9 +334,9 @@ async function raiseOpinion(): Promise<void> {
   const opinionContent = opinionEditor.value?.innerHTML.trim() ?? ''
   const screenshots = screenshotEditor.value?.innerHTML.trim() ?? ''
   if (![opinionContent, screenshots].some((item) => item && item !== '<br>')) { setNotice('请填写具体评审意见或粘贴问题截图。'); return }
-  const content = `${opinionContent}${screenshots}`
+  const comment = `${opinionContent}${screenshots}`
   try {
-    await reviewApi.raiseOpinion(taskId.value, { ...opinionForm, sourceType: currentOpinionSource(), content, richText: content })
+    await reviewApi.raiseOpinion(taskId.value, { ...opinionForm, sourceType: currentOpinionSource(), comment, richText: comment })
     clearOpinionDraft()
     await refreshOpinions(); await refreshOpinionSummary(); setNotice('评审意见已提交。')
   } catch (cause) { setNotice(cause instanceof Error ? cause.message : '提交失败') }
@@ -368,8 +352,8 @@ function imageHtml(content: string): string {
 function editDraft(opinion: Opinion): OpinionEditDraft {
   return opinionEditDrafts[opinion.id] ??= {
     severity: opinion.severity === 'PASS' ? 'GENERAL' : opinion.severity,
-    content: opinionText(opinion),
-    screenshots: imageHtml(opinion.richText || opinion.content || '')
+    comment: opinionText(opinion),
+    screenshots: imageHtml(opinion.richText || opinion.comment || '')
   }
 }
 function editOpinion(opinion: Opinion): void {
@@ -380,7 +364,7 @@ function cancelOpinionEdit(): void {
   if (editingOpinionId.value) delete opinionEditDrafts[editingOpinionId.value]
   editingOpinionId.value = undefined
 }
-function updateEditContent(opinion: Opinion, event: Event): void { editDraft(opinion).content = (event.currentTarget as HTMLElement).innerHTML }
+function updateEditContent(opinion: Opinion, event: Event): void { editDraft(opinion).comment = (event.currentTarget as HTMLElement).innerHTML }
 function updateEditScreenshots(opinion: Opinion, event: Event): void { editDraft(opinion).screenshots = imageHtml((event.currentTarget as HTMLElement).innerHTML) }
 function handleEditScreenshotPaste(opinion: Opinion, event: ClipboardEvent): void {
   const files = Array.from(event.clipboardData?.files ?? []).filter((file) => file.type.startsWith('image/'))
@@ -391,10 +375,10 @@ function handleEditScreenshotPaste(opinion: Opinion, event: ClipboardEvent): voi
 }
 async function saveOpinionEdit(opinion: Opinion): Promise<void> {
   const draft = editDraft(opinion)
-  const content = `${draft.content}${draft.screenshots}`
-  if (!content || content === '<br>') { setNotice('请填写评审意见或问题截图。'); return }
+  const comment = `${draft.comment}${draft.screenshots}`
+  if (!comment || comment === '<br>') { setNotice('请填写评审意见或问题截图。'); return }
   try {
-    await reviewApi.updateOpinion(opinion.id, { severity: draft.severity, content, richText: content })
+    await reviewApi.updateOpinion(opinion.id, { severity: draft.severity, comment, richText: comment })
     cancelOpinionEdit()
     await refreshOpinions(); await refreshOpinionSummary(); setNotice('评审意见已修改。')
   } catch (cause) { setNotice(cause instanceof Error ? cause.message : '修改失败') }
@@ -481,21 +465,20 @@ async function prepareFinish(): Promise<void> {
 }
 async function saveReviewers(): Promise<void> {
   const assignmentTab = activeTab.value
-  const ids = selectedReviewerIds.value.length ? selectedReviewerIds.value : reviewerIds.value.split(',').map((value) => Number(value.trim())).filter((value) => value > 0)
-  if (!ids.length) {
+  const employeeNos = selectedReviewerEmployeeNos.value.length ? selectedReviewerEmployeeNos.value : reviewerEmployeeNos.value.split(',').map((value) => value.trim()).filter(Boolean)
+  if (!employeeNos.length) {
     setNotice(`请至少选择一名${assignmentTab === 'hardware-reviewers' ? '硬件专家' : '互检负责人'}。`)
     return
   }
   try {
     await reviewApi.transition(taskId.value, {
       actions: [reviewerAssignmentAction.value],
-      assignedRole: reviewerRole.value,
-      reviewerIds: ids,
+      reviewerEmployeeNos: employeeNos,
       comment: assignmentTab === 'hardware-reviewers' ? '已分配硬件专家并开始原理图评审' : '已分配互检负责人并开启互检'
     })
     await load()
-    selectedReviewerIds.value = []
-    reviewerIds.value = ''
+    selectedReviewerEmployeeNos.value = []
+    reviewerEmployeeNos.value = ''
     // 分配动作已把任务推进到评审节点；继续停留在分配页会按新状态查询候选人，因而必然为空。
     activeTab.value = assignmentTab === 'hardware-reviewers' ? 'opinions' : 'check-items'
     setNotice(assignmentTab === 'hardware-reviewers' ? '硬件专家已分配，已进入原理图评审。' : '互检负责人已分配，已进入互检单评审。')
@@ -503,7 +486,7 @@ async function saveReviewers(): Promise<void> {
     setNotice(cause instanceof Error ? cause.message : '分配或流程推进失败')
   }
 }
-function userName(userId: number): string { return mockUsers.value.find((item) => item.id === userId)?.displayName ?? `用户 #${userId}` }
+function userName(userId: number): string { return whitelistPeople.value.find((item) => item.id === userId)?.displayName ?? `白名单人员 #${userId}` }
 function reviewerRoleLabel(role: string): string {
   return ({
     HARDWARE_EXPERT: '硬件评审',
@@ -659,7 +642,7 @@ async function submitDesignerWorkflow(): Promise<void> {
     setNotice(message)
   }
 }
-async function download(fileId: number): Promise<void> { try { const blob = await reviewApi.downloadContent(taskId.value, fileId); const url = URL.createObjectURL(blob); const popup = window.open(url, '_blank', 'noopener'); if (!popup) { const anchor = document.createElement('a'); anchor.href = url; anchor.download = ''; anchor.click() }; window.setTimeout(() => URL.revokeObjectURL(url), 30_000) } catch (cause) { setNotice(cause instanceof Error ? cause.message : '下载失败') } }
+async function download(fileId: number): Promise<void> { try { const blob = await reviewApi.downloadContent(fileId); const url = URL.createObjectURL(blob); const popup = window.open(url, '_blank', 'noopener'); if (!popup) { const anchor = document.createElement('a'); anchor.href = url; anchor.download = ''; anchor.click() }; window.setTimeout(() => URL.revokeObjectURL(url), 30_000) } catch (cause) { setNotice(cause instanceof Error ? cause.message : '下载失败') } }
 async function exportArchiveOpinions(): Promise<void> { try { const blob = await reviewApi.exportArchiveOpinions(taskId.value); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `${task.value?.projectName ?? '评审任务'}_评审意见.xlsx`; anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 30_000) } catch (cause) { setNotice(cause instanceof Error ? cause.message : '导出评审意见失败') } }
 async function downloadLatestReviewFile(): Promise<void> {
   const category = activeTab.value === 'process-review' ? 'PCB_PROCESS_REVIEW' : activeTab.value === 'structure-review' ? 'PCB_STRUCTURE_REVIEW' : task.value?.reviewType === 'PCB' ? 'PCB_REVIEW' : 'SCHEMATIC_REVIEW'
@@ -682,7 +665,7 @@ function statusForCheck(item: CheckItemListItem): string { return item.opinion?.
     <section class="card task-summary"><div class="summary-grid"><div><span>项目</span><b>{{ task.projectName }}</b></div><div><span>评审类型</span><b>{{ task.reviewType === 'PCB' ? 'PCB布局布线评审' : '原理图评审' }}</b></div><div><span>设计者</span><b>{{ task.designerName }}</b></div><div><span>评审角色</span><b>{{ task.reviewRoles.map(reviewerRoleLabel).join(' / ') }}</b></div></div><p class="flow-status">流程状态　<b><StatusTag :value="task.status" /></b></p><TaskFlow :status="task.status" :review-type="task.reviewType" /></section>
     <p v-if="notice" class="toast-message">{{ notice }}</p>
     <div class="detail-tabs"><button v-for="item in visibleStageTabs" :key="item[0]" :class="{ active: activeTab === item[0] }" @click="openStageTab(item[0])">{{ item[1] }}</button></div>
-    <section v-if="activeTab === 'overview'" class="detail-grid"><div class="card"><div class="section-head"><h2>任务信息</h2><RouterLink v-if="task.status === 'DRAFT' && canActAsDesigner" :to="`/tasks/${task.id}/edit`" class="btn">编辑任务</RouterLink></div><div class="detail-list"><div><span>任务状态</span><StatusTag :value="task.status" /></div><div><span>设计名称</span><b>{{ task.designName }}</b></div><div><span>期望完成日期</span><b>{{ task.expectedCompletedDate }}</b></div><div><span>评审描述</span><b>{{ task.reviewDescription || '—' }}</b></div><div><span>意见总数</span><b>{{ opinions.length }}</b></div><div><span>互检项数量</span><b>{{ checkItems.length }}</b></div></div></div><div class="card"><h2>流程提示</h2><p class="notice">{{ statusText }}</p><p v-if="task.status !== 'FINISHED'" class="muted">流程动作需满足当前节点权限后方可提交。</p><p v-else class="success-text">任务已结束，已可在“归档记录”查看冻结的数据。</p></div></section>
+    <section v-if="activeTab === 'overview'" class="detail-grid"><div class="card"><div class="section-head"><h2>任务信息</h2><RouterLink v-if="task.status === 'DRAFT' && canActAsDesigner" :to="`/tasks/${task.id}/edit`" class="btn">编辑任务</RouterLink></div><div class="detail-list"><div><span>任务状态</span><StatusTag :value="task.status" /></div><div><span>设计名称</span><b>{{ task.designName }}</b></div><div><span>期望完成日期</span><b>{{ task.expectedCompletedDate }}</b></div><div><span>评审描述</span><b>{{ task.reviewDescription || '—' }}</b></div><div><span>意见总数</span><b>{{ opinions.length }}</b></div><div><span>互检项数量</span><b>{{ checkItems.length }}</b></div></div></div><div class="card"><h2>流程提示</h2><p class="notice">{{ statusText }}</p><p v-if="task.status !== 'FINISHED'" class="muted">流程动作需满足当前节点权限后方可提交。</p><p v-else class="success-text">任务已结束，已可在“归档记录”查看冻结的数据。</p></div><div class="card flow-record-card"><h2>流转记录</h2><table class="data-table"><thead><tr><th>操作时间</th><th>操作人</th><th>操作动作</th><th>说明</th></tr></thead><tbody><tr v-for="record in task.flowRecords || []" :key="record.id"><td>{{ format(record.operatedAt) }}</td><td>{{ record.operatorName }}</td><td>{{ record.actionName }}</td><td>{{ record.comment || '—' }}</td></tr><tr v-if="!(task.flowRecords || []).length"><td colspan="4" class="empty">暂无流转记录</td></tr></tbody></table></div></section>
     <section v-else-if="activeTab === 'finish'" class="tab-panel finish-panel">
       <div class="section-head"><div><h2>结束确认</h2><p>确认所有阶段人员均已处理，系统将冻结任务、意见、文件和邮件归档。</p></div><StatusTag :value="task.status" /></div>
       <div class="card finish-checklist">
@@ -746,7 +729,7 @@ function statusForCheck(item: CheckItemListItem): string { return item.opinion?.
               <div v-if="opinion.status === 'CONFIRMED_REJECTED'" class="retry-feedback"><b>专家未确认通过，请重新答复</b><span>退回原因：{{ latestConfirmation(opinion)?.comment || '专家未填写退回说明' }}</span></div>
               <section v-if="editingOpinionId === opinion.id" class="inline-opinion-editor">
                 <header><b>编辑评审意见</b><button type="button" class="btn compact" @click="cancelOpinionEdit">取消</button></header>
-                <div class="inline-opinion-edit-grid"><label>问题等级<select v-model="editDraft(opinion).severity"><option value="SERIOUS">严重</option><option value="GENERAL">一般</option><option value="MINOR">轻微</option></select></label><label>评审意见<div class="rich-opinion-editor" contenteditable="true" :innerHTML="editDraft(opinion).content" data-placeholder="请输入具体、可执行的评审意见" @input="updateEditContent(opinion, $event)" /></label><label class="inline-edit-screenshots">问题截图<div class="screenshot-paste" contenteditable="true" :innerHTML="editDraft(opinion).screenshots" data-placeholder="Ctrl + V 粘贴问题截图" @input="updateEditScreenshots(opinion, $event)" @paste="handleEditScreenshotPaste(opinion, $event)" /></label></div>
+                <div class="inline-opinion-edit-grid"><label>问题等级<select v-model="editDraft(opinion).severity"><option value="SERIOUS">严重</option><option value="GENERAL">一般</option><option value="MINOR">轻微</option></select></label><label>评审意见<div class="rich-opinion-editor" contenteditable="true" :innerHTML="editDraft(opinion).comment" data-placeholder="请输入具体、可执行的评审意见" @input="updateEditContent(opinion, $event)" /></label><label class="inline-edit-screenshots">问题截图<div class="screenshot-paste" contenteditable="true" :innerHTML="editDraft(opinion).screenshots" data-placeholder="Ctrl + V 粘贴问题截图" @input="updateEditScreenshots(opinion, $event)" @paste="handleEditScreenshotPaste(opinion, $event)" /></label></div>
                 <footer class="form-footer"><button type="button" class="btn primary" @click="saveOpinionEdit(opinion)">保存修改</button></footer>
               </section>
               <div v-if="isDesignerReplyPage && canActAsDesigner && requiresReply(opinion)" class="inline-form reply-editor"><select v-model="draft(opinion).replyType"><option value="ACCEPT">接受并修改</option><option value="REJECT">不接受</option></select><textarea v-model="draft(opinion).reason" rows="3" :placeholder="opinion.status === 'CONFIRMED_REJECTED' ? '请填写本次重新答复说明（必填）' : '请填写答复说明（可选）'" /><button class="btn primary reply-submit" @click="replyOpinion(opinion)">{{ opinion.status === 'CONFIRMED_REJECTED' ? '重新提交答复' : '提交答复' }}</button></div>
@@ -768,8 +751,8 @@ function statusForCheck(item: CheckItemListItem): string { return item.opinion?.
     <section v-else-if="activeTab === 'check-items'" class="tab-panel"><MutualCheckForm :task-id="taskId" :categories="checkItemCategories" @submitted="refreshMutualCheckWorkspace" /></section>
     <section v-else-if="activeTab === 'reviewers' && task.reviewType === 'PCB' && ['PCB_EXPERT_REVIEWING', 'PCB_PROCESS_STRUCTURE_REVIEWING'].includes(task.status)" class="tab-panel"><div class="section-head"><div><h2>互检单负责人分配</h2><p>前序专家、工艺和结构评审意见全部通过后，先开启互检单分配。</p></div><StatusTag :value="task.status" /></div><div class="card"><footer class="form-footer"><button class="btn primary" @click="startPcbMutualAssignment">开启互检单分配</button></footer></div></section>
     <section v-else-if="activeTab === 'hardware-reviewers' && task.reviewType === 'SCHEMATIC' && task.status === 'MUTUAL_CHECK_REVIEWING'" class="tab-panel"><div class="section-head"><div><h2>硬件专家分配</h2><p>互检单意见全部通过后，先开启硬件专家分配。</p></div><StatusTag :value="task.status" /></div><div class="card"><footer class="form-footer"><button class="btn primary" @click="startSchematicExpertAssignment">开启硬件专家分配</button></footer></div></section>
-    <section v-else-if="activeTab === 'reviewers' || activeTab === 'hardware-reviewers'" class="tab-panel"><div class="section-head"><div><h2>{{ activeTab === 'hardware-reviewers' ? '硬件专家分配' : '互检单负责人分配' }}</h2><p>{{ activeTab === 'hardware-reviewers' ? '由硬件开发部经理选择一名或多名硬件专家进行原理图评审。' : '选择一名或多名互检负责人；多人须全部完成后，阶段才算完成。' }}</p></div><StatusTag :value="task.status" /></div><div class="card"><div v-if="assignableReviewerGroups.length > 1" class="assignment-role-tabs"><button v-for="group in assignableReviewerGroups" :key="group.reviewRole" class="btn compact" :class="{ primary: reviewerRole === group.reviewRole }" @click="reviewerRole = group.reviewRole; selectedReviewerIds = []">{{ reviewerRoleLabel(group.reviewRole) }}</button></div><div class="reviewer-picker"><label v-for="user in assignableReviewers" :key="user.userId" class="reviewer-option"><input v-model="selectedReviewerIds" type="checkbox" :value="user.userId" /><span><b>{{ user.displayName }}</b><small>{{ user.employeeNo }} · {{ user.departmentName }}</small></span></label><div v-if="!assignableReviewers.length" class="empty">当前职责下暂无已配置且可用的白名单人员</div></div><footer class="form-footer"><button class="btn primary" :disabled="!assignableReviewers.length" @click="saveReviewers()">{{ activeTab === 'hardware-reviewers' ? '分配专家并开始评审' : '分配并开启互检' }}</button></footer></div></section>
-    <section v-else class="tab-panel"><div v-if="!archive" class="card unsupported"><div class="unsupported-icon">⌁</div><h2>任务尚未结束</h2><p>任务完成时，系统将冻结流程节点和阶段文件。</p></div><template v-else><div class="card"><div class="section-head"><div><h2>一、流程节点</h2><p>仅展示节点时间、节点名称、操作人姓名和流转意见，不包含评审意见。</p></div><button class="btn primary" @click="exportArchiveOpinions">导出评审意见 Excel</button></div><table class="data-table"><thead><tr><th>节点时间</th><th>节点名称</th><th>操作人姓名</th><th>流转意见</th></tr></thead><tbody><tr v-for="(item, index) in archive.flowNodes" :key="`${item.occurredAt}-${item.stageName}-${index}`"><td>{{ format(item.occurredAt) }}</td><td>{{ item.stageName }}</td><td>{{ item.operatorName }}</td><td>{{ item.content }}</td></tr><tr v-if="!archive.flowNodes.length"><td colspan="4" class="empty">暂无流程节点</td></tr></tbody></table></div><div class="card"><div class="section-head"><div><h2>二、阶段文件</h2><p>展示归档时冻结的各阶段文件记录。</p></div></div><table class="data-table"><thead><tr><th>流程节点</th><th>文件名称</th><th>格式</th><th>大小</th><th>上传人</th><th>上传时间</th><th>操作</th></tr></thead><tbody><tr v-for="file in archive.stageFiles" :key="file.fileId"><td>{{ file.stageName }}</td><td>{{ file.fileName }}</td><td>{{ file.fileFormat || '-' }}</td><td>{{ file.fileSize == null ? '-' : file.fileSize + ' B' }}</td><td>{{ file.uploaderName }}</td><td>{{ format(file.uploadedAt) }}</td><td><button class="btn mini primary" @click="download(file.fileId)">下载</button></td></tr><tr v-if="!archive.stageFiles.length"><td colspan="7" class="empty">暂无阶段文件</td></tr></tbody></table></div></template></section>
+    <section v-else-if="activeTab === 'reviewers' || activeTab === 'hardware-reviewers'" class="tab-panel"><div class="section-head"><div><h2>{{ activeTab === 'hardware-reviewers' ? '硬件专家分配' : '互检单负责人分配' }}</h2><p>{{ activeTab === 'hardware-reviewers' ? '由硬件开发部经理选择一名或多名硬件专家进行原理图评审。' : '选择一名或多名互检负责人；多人须全部完成后，阶段才算完成。' }}</p></div><StatusTag :value="task.status" /></div><div class="card"><div class="reviewer-picker"><label v-for="user in assignableReviewers" :key="user.employeeNo" class="reviewer-option"><input v-model="selectedReviewerEmployeeNos" type="checkbox" :value="user.employeeNo" /><span><b>{{ user.displayName }}</b><small>{{ user.employeeNo }} · {{ user.departmentName }}</small></span></label><div v-if="!assignableReviewers.length" class="empty">当前节点暂无已配置且可用的白名单人员</div></div><footer class="form-footer"><button class="btn primary" :disabled="!assignableReviewers.length" @click="saveReviewers()">{{ activeTab === 'hardware-reviewers' ? '分配专家并开始评审' : '分配并开启互检' }}</button></footer></div></section>
+    <section v-else class="tab-panel"><div v-if="!archive" class="card unsupported"><div class="unsupported-icon">⌁</div><h2>任务尚未结束</h2><p>任务完成时，系统将冻结流程节点和阶段文件。</p></div><template v-else><div class="card"><div class="section-head"><div><h2>一、流程节点</h2><p>仅展示节点时间、节点名称、操作人姓名和流转意见，不包含评审意见。</p></div><button class="btn primary" @click="exportArchiveOpinions">导出评审意见 Excel</button></div><table class="data-table"><thead><tr><th>节点时间</th><th>节点名称</th><th>操作人姓名</th><th>流转意见</th></tr></thead><tbody><tr v-for="(item, index) in archive.flowNodes" :key="`${item.occurredAt}-${item.stageName}-${index}`"><td>{{ format(item.occurredAt) }}</td><td>{{ item.stageName }}</td><td>{{ item.operatorName }}</td><td>{{ item.content }}</td></tr><tr v-if="!archive.flowNodes.length"><td colspan="4" class="empty">暂无流程节点</td></tr></tbody></table></div><div class="card"><div class="section-head"><div><h2>二、阶段文件</h2><p>展示归档时冻结的各阶段文件记录。</p></div></div><table class="data-table"><thead><tr><th>流程节点</th><th>文件名称</th><th>格式</th><th>大小</th><th>上传人</th><th>上传时间</th><th>操作</th></tr></thead><tbody><tr v-for="file in archive.stageFiles" :key="file.fileId"><td>{{ file.stageName }}</td><td>{{ file.fileName }}</td><td>{{ file.fileFormat || '-' }}</td><td>{{ file.fileSize == null ? '-' : file.fileSize + ' B' }}</td><td>{{ file.uploaderName }}</td><td>{{ format(file.uploadedAt) }}</td><td><button class="btn mini primary" @click="download(file.fileId)">下载</button></td></tr><tr v-if="!archive.stageFiles.length"><td colspan="7" class="empty">暂无阶段文件</td></tr></tbody></table></div><div class="card"><div class="section-head"><div><h2>三、邮件记录</h2><p>展示归档时冻结的邮件投递结果。</p></div></div><table class="data-table"><thead><tr><th>事件</th><th>收件人</th><th>邮件模板</th><th>投递状态</th><th>失败原因</th><th>尝试时间</th></tr></thead><tbody><tr v-for="(mail, index) in archive.notificationRecords" :key="`${mail.recipient}-${mail.attemptedAt}-${index}`"><td>{{ mail.eventType }}</td><td>{{ mail.recipient }}</td><td>{{ mail.templateCode }}</td><td>{{ mail.deliveryStatus }}</td><td>{{ mail.failureReason || '—' }}</td><td>{{ format(mail.attemptedAt) }}</td></tr><tr v-if="!archive.notificationRecords.length"><td colspan="6" class="empty">暂无邮件记录</td></tr></tbody></table></div></template></section>
   </template>
 </template>
 

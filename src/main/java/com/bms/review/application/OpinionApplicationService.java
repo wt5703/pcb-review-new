@@ -6,7 +6,7 @@ import com.bms.identity.application.CurrentUser;
 import com.bms.identity.application.TaskNodeAuthorizationService;
 import com.bms.identity.domain.Permission;
 import com.bms.identity.domain.PermissionPolicy;
-import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
+import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.notification.application.OutboxEventPublisher;
 import com.bms.review.domain.OpinionSourceType;
 import com.bms.review.domain.OpinionStatus;
@@ -82,8 +82,9 @@ public class OpinionApplicationService {
         record.setSourceType(command.sourceType().name());
         record.setSourceItemId(command.sourceItemId());
         record.setSeverity(command.severity() == null || command.severity().isBlank() ? "GENERAL" : command.severity());
-        String richText = requireContent(command.richText() == null ? command.content() : command.richText());
-        record.setContent(richText);
+        requireComment(command.comment());
+        String richText = requireComment(command.richText() == null ? command.comment() : command.richText());
+        record.setComment(command.comment());
         record.setRichText(richText);
         record.setRaisedBy(currentUser.id());
         record.setRaisedByName(currentUser.resolvedDisplayName());
@@ -114,7 +115,7 @@ public class OpinionApplicationService {
         record.setTaskId(taskId);
         record.setSourceType(sourceType.name());
         record.setSeverity("PASS");
-        record.setContent("无意见，确认提交");
+        record.setComment("无意见，确认提交");
         record.setRichText("无意见，确认提交");
         record.setRaisedBy(currentUser.id());
         record.setRaisedByName(currentUser.resolvedDisplayName());
@@ -130,11 +131,12 @@ public class OpinionApplicationService {
         ReviewOpinionRecord opinion = requireOpinion(opinionId);
         requireOpenTask(opinion.getTaskId());
         requirePendingReplyOwner(opinion, currentUser, "编辑");
-        String richText = requireContent(command.richText() == null ? command.content() : command.richText());
+        requireComment(command.comment());
+        String richText = requireComment(command.richText() == null ? command.comment() : command.richText());
         opinion.setSeverity(command.severity() == null || command.severity().isBlank() ? opinion.getSeverity() : command.severity());
-        opinion.setContent(richText);
+        opinion.setComment(command.comment());
         opinion.setRichText(richText);
-        if (opinionMapper.updateContent(opinion) != 1) {
+        if (opinionMapper.updateOpinion(opinion) != 1) {
             throw new BusinessException(ErrorCode.OPINION_STATUS_CONFLICT, "意见已被答复，不能编辑");
         }
         outboxEventPublisher.publishTaskEvent("OPINION_UPDATED", opinion.getTaskId(), currentUser.id());
@@ -282,7 +284,7 @@ public class OpinionApplicationService {
         return new OpinionSummary(opinions.size(), count(opinions, OpinionStatus.PENDING_REPLY), count(opinions, OpinionStatus.PENDING_CONFIRMATION),
                 count(opinions, OpinionStatus.CONFIRMED_PASS), count(opinions, OpinionStatus.CONFIRMED_REJECTED), count(opinions, OpinionStatus.WITHDRAWN),
                 opinions.stream().filter(item -> item.status() == OpinionStatus.PENDING_CONFIRMATION || item.status() == OpinionStatus.CONFIRMED_REJECTED)
-                        .map(item -> new OutstandingOpinionView(item.id(), item.content(), item.raisedBy(), item.raisedByName(), item.status())).toList(),
+                        .map(item -> new OutstandingOpinionView(item.id(), item.comment(), item.raisedBy(), item.raisedByName(), item.status())).toList(),
                 unsubmittedReviewers(task, sourceTypes));
     }
 
@@ -417,11 +419,11 @@ public class OpinionApplicationService {
         }
     }
 
-    private String requireContent(String content) {
-        if (content == null || content.isBlank()) {
+    private String requireComment(String comment) {
+        if (comment == null || comment.isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "意见内容不能为空");
         }
-        return content;
+        return comment;
     }
 
     private int count(List<OpinionView> opinions, OpinionStatus status) {
@@ -441,15 +443,15 @@ public class OpinionApplicationService {
         return OpinionView.from(record, replyViews);
     }
 
-    public record RaiseOpinionCommand(long taskId, OpinionSourceType sourceType, Long sourceItemId, String content, String richText, String severity) {
-        public RaiseOpinionCommand(long taskId, OpinionSourceType sourceType, Long sourceItemId, String content, String severity) {
-            this(taskId, sourceType, sourceItemId, content, null, severity);
+    public record RaiseOpinionCommand(long taskId, OpinionSourceType sourceType, Long sourceItemId, String comment, String richText, String severity) {
+        public RaiseOpinionCommand(long taskId, OpinionSourceType sourceType, Long sourceItemId, String comment, String severity) {
+            this(taskId, sourceType, sourceItemId, comment, null, severity);
         }
-        public RaiseOpinionCommand(long taskId, OpinionSourceType sourceType, Long sourceItemId, String content) {
-            this(taskId, sourceType, sourceItemId, content, null, "GENERAL");
+        public RaiseOpinionCommand(long taskId, OpinionSourceType sourceType, Long sourceItemId, String comment) {
+            this(taskId, sourceType, sourceItemId, comment, null, "GENERAL");
         }
     }
-    public record UpdateOpinionCommand(String content, String richText, String severity) { }
+    public record UpdateOpinionCommand(String comment, String richText, String severity) { }
     public record ReplyOpinionCommand(ReplyType replyType, String reason) {
         public ReplyOpinionCommand(ReplyType replyType, String reason, Long ignoredFileVersionId) {
             this(replyType, reason);
@@ -459,12 +461,12 @@ public class OpinionApplicationService {
     }
     public record WithdrawOpinionCommand(String reason) {
     }
-    public record OpinionView(Long id, Long taskId, OpinionSourceType sourceType, Long sourceItemId, String content, String richText,
+    public record OpinionView(Long id, Long taskId, OpinionSourceType sourceType, Long sourceItemId, String comment, String richText,
                               Long raisedBy, String raisedByName, String severity, java.time.LocalDateTime createdAt,
                               OpinionStatus status, List<ReplyView> replies) {
         static OpinionView from(ReviewOpinionRecord record, List<ReplyView> replies) {
             return new OpinionView(record.getId(), record.getTaskId(), OpinionSourceType.valueOf(record.getSourceType()), record.getSourceItemId(),
-                    record.getContent(), record.getRichText(), record.getRaisedBy(), record.getRaisedByName(), record.getSeverity(), record.getCreatedAt(),
+                    record.getComment(), record.getRichText(), record.getRaisedBy(), record.getRaisedByName(), record.getSeverity(), record.getCreatedAt(),
                     OpinionStatus.valueOf(record.getStatus()), replies);
         }
     }
@@ -497,7 +499,7 @@ public class OpinionApplicationService {
     public record OpinionSummary(int total, int pendingReply, int pendingConfirmation, int confirmedPass, int confirmedRejected, int withdrawn,
                                  List<OutstandingOpinionView> unconfirmedOpinions, List<OutstandingReviewerView> unsubmittedReviewers) {
     }
-    public record OutstandingOpinionView(Long opinionId, String content, Long expertId, String expertName, OpinionStatus status) { }
+    public record OutstandingOpinionView(Long opinionId, String comment, Long expertId, String expertName, OpinionStatus status) { }
     public record OutstandingReviewerView(Long reviewerId, String reviewerName, String reviewRole, String processStatus) { }
 
 }

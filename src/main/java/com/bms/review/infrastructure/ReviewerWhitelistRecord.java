@@ -19,6 +19,7 @@ public class ReviewerWhitelistRecord {
     private String displayName;
     private String email;
     private String mobile;
+    private String departmentName;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -42,4 +43,6 @@ public class ReviewerWhitelistRecord {
     public void setEmail(String email) { this.email = email; }
     public String getMobile() { return mobile; }
     public void setMobile(String mobile) { this.mobile = mobile; }
+    public String getDepartmentName() { return departmentName; }
+    public void setDepartmentName(String departmentName) { this.departmentName = departmentName; }
 }

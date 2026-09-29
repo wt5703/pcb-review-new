@@ -3,7 +3,7 @@ package com.bms.review.infrastructure;
 /**
  * @author 王涛
  * @date 2026-09-22
- * @description 白名单与本地用户目录关联后的可分配人员读取模型，不承载任务实际分配状态。
+ * @description 从白名单直接读取的可分配人员模型，不承载任务实际分配状态。
  */
 public class AssignableReviewerRecord {
     private String whitelistRole;

@@ -17,17 +17,18 @@ export interface Task {
   reviewerAssignments: Array<{ reviewRole: string; reviewerIds: number[] }>
   reviewDescription?: string
   status: string
-  /** 仅任务详情接口返回的邮件投递记录。 */
-  notificationRecords?: NotificationRecord[]
+  /** 仅任务详情接口返回的流程记录。 */
+  flowRecords?: TaskFlowRecord[]
 }
 
-export interface NotificationRecord {
-  eventType: string
-  recipient: string
-  templateCode: string
-  deliveryStatus: string
-  failureReason?: string
-  attemptedAt?: string
+export interface TaskFlowRecord {
+  id: number
+  action: string
+  actionName: string
+  operatorId?: number
+  operatorName: string
+  comment?: string
+  operatedAt?: string
 }
 
 /** 文件上传接口返回的 UUID；任务保存/提交时 files 仅传多个 UUID。 */
@@ -58,7 +59,7 @@ export interface Opinion {
   taskId: number
   sourceType: 'EXPERT_REVIEW' | 'SCHEMATIC_REVIEW' | 'PROCESS_REVIEW' | 'STRUCTURE_REVIEW' | 'MUTUAL_CHECK_ITEM' | 'MUTUAL_EXTRA'
   sourceItemId?: number
-  content: string
+  comment: string
   richText?: string
   raisedBy: number
   raisedByName: string
@@ -110,14 +111,13 @@ export interface CheckItem {
   result?: 'PASS' | 'FAIL' | 'NC'
   comment?: string
   richText?: string
-  opinion?: { id: number; content: string; richText?: string; raisedBy: number; raisedByName: string; severity: string; status: string; createdAt?: string } | null
+  opinion?: { id: number; comment: string; richText?: string; raisedBy: number; raisedByName: string; severity: string; status: string; createdAt?: string } | null
   status: string
 }
 
 export interface CheckItemCategory {
   category: {
     id: number
-    reviewType: ReviewType
     itemName: string
     sortNo: number
   }
@@ -127,8 +127,6 @@ export interface CheckItemCategory {
 export interface CheckItemListItem {
   id: number
   itemName: string
-  /** 模板导入的富文本说明；PCB 模板可包含示例图片。 */
-  itemRichText?: string
   sortNo: number
   opinion?: {
     result: 'PASS' | 'FAIL' | 'NC'
@@ -142,18 +140,13 @@ export interface Reviewer {
   role: string
 }
 
-/** 当前流程节点按职责归组的可分配人员；userId 可直接提交为 reviewerIds。 */
+/** 当前流程节点按职责归组的可分配人员；提交流程时使用 employeeNo。 */
 export interface AssignableReviewer {
   userId: number
   employeeNo: string
   displayName: string
   departmentName: string
   whitelistRole: string
-}
-
-export interface AssignableReviewerRole {
-  reviewRole: string
-  reviewers: AssignableReviewer[]
 }
 
 export interface ArchiveFile {
@@ -196,6 +189,16 @@ export interface FlowNode {
 export interface Archive {
   flowNodes: FlowNode[]
   stageFiles: ArchiveFile[]
+  notificationRecords: ArchiveNotificationRecord[]
+}
+
+export interface ArchiveNotificationRecord {
+  eventType: string
+  recipient: string
+  templateCode: string
+  deliveryStatus: string
+  failureReason?: string
+  attemptedAt?: string
 }
 
 export interface TemplateItem {
@@ -224,4 +227,17 @@ export interface TemplateListItem {
 export interface TemplateListCategory {
   category: TemplateListItem
   items: TemplateListItem[]
+}
+
+/** PCB 或原理图各自唯一的一套互检单模板。 */
+export interface TemplateList {
+  reviewType: ReviewType
+  categories: TemplateListCategory[]
+}
+
+export interface TemplateExistence {
+  reviewType: ReviewType
+  exists: boolean
+  categoryCount: number
+  itemCount: number
 }

@@ -5,8 +5,8 @@ import com.bms.common.ErrorCode;
 import com.bms.file.domain.FileCategory;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
-import com.bms.identity.infrastructure.MockUserAccountMapper;
-import com.bms.identity.infrastructure.MockUserAccountRecord;
+import com.bms.review.infrastructure.ReviewerWhitelistMapper;
+import com.bms.review.infrastructure.ReviewerWhitelistRecord;
 import com.bms.notification.domain.MailMessage;
 import com.bms.notification.infrastructure.OutboxEventMapper;
 import com.bms.notification.infrastructure.OutboxEventRecord;
@@ -40,16 +40,16 @@ public class ReviewMailNotificationApplicationService {
 
     private final OutboxEventMapper outboxEventMapper;
     private final ReviewFileMapper fileMapper;
-    private final MockUserAccountMapper userAccountMapper;
+    private final ReviewerWhitelistMapper whitelistMapper;
     private final ObjectMapper objectMapper;
     private final String hardwareDepartmentMailbox;
 
     public ReviewMailNotificationApplicationService(OutboxEventMapper outboxEventMapper, ReviewFileMapper fileMapper,
-                                                    MockUserAccountMapper userAccountMapper, ObjectMapper objectMapper,
+                                                    ReviewerWhitelistMapper whitelistMapper, ObjectMapper objectMapper,
                                                     @Value("${notification.hardware-department-mail:bms-hardware-development@bms.example.com}") String hardwareDepartmentMailbox) {
         this.outboxEventMapper = outboxEventMapper;
         this.fileMapper = fileMapper;
-        this.userAccountMapper = userAccountMapper;
+        this.whitelistMapper = whitelistMapper;
         this.objectMapper = objectMapper;
         this.hardwareDepartmentMailbox = hardwareDepartmentMailbox;
     }
@@ -71,19 +71,22 @@ public class ReviewMailNotificationApplicationService {
                 recipients(receivers), initialAttachments(task.initialFileIds()));
     }
 
-    /** PCB 设计者同时开启工艺、结构评审后通知创建任务时选定的对应专家。 */
-    public void enqueuePcbProcessStructureReview(ReviewTaskRecord task) {
-        List<TaskReviewerAssignment> receivers = filter(assignments(task), assignment -> assignment.reviewRole() == ReviewRole.PROCESS_EXPERT
-                || assignment.reviewRole() == ReviewRole.STRUCTURE_EXPERT);
+    /** PCB 设计者开启工艺和/或结构评审后，只通知本次实际开启阶段的对应专家。 */
+    public void enqueuePcbStageReview(ReviewTaskRecord task, Collection<FileCategory> requestedCategories) {
+        List<FileCategory> categories = requestedCategories.stream()
+                .filter(category -> category == FileCategory.PCB_PROCESS_REVIEW || category == FileCategory.PCB_STRUCTURE_REVIEW)
+                .distinct().toList();
+        if (categories.isEmpty()) {
+            return;
+        }
+        boolean hasProcess = categories.contains(FileCategory.PCB_PROCESS_REVIEW);
+        boolean hasStructure = categories.contains(FileCategory.PCB_STRUCTURE_REVIEW);
+        List<TaskReviewerAssignment> receivers = filter(assignments(task), assignment -> (hasProcess && assignment.reviewRole() == ReviewRole.PROCESS_EXPERT)
+                || (hasStructure && assignment.reviewRole() == ReviewRole.STRUCTURE_EXPERT));
         if (receivers.isEmpty()) {
             return;
         }
-        boolean hasProcess = receivers.stream().anyMatch(item -> item.reviewRole() == ReviewRole.PROCESS_EXPERT);
-        boolean hasStructure = receivers.stream().anyMatch(item -> item.reviewRole() == ReviewRole.STRUCTURE_EXPERT);
         String reviewTypeName = hasProcess && hasStructure ? "工艺与结构评审" : hasProcess ? "工艺评审" : "结构评审";
-        List<FileCategory> categories = hasProcess && hasStructure
-                ? List.of(FileCategory.PCB_PROCESS_REVIEW, FileCategory.PCB_STRUCTURE_REVIEW)
-                : hasProcess ? List.of(FileCategory.PCB_PROCESS_REVIEW) : List.of(FileCategory.PCB_STRUCTURE_REVIEW);
         enqueue(task.getId(), "PCB_PROCESS_STRUCTURE_REVIEW", task.getProjectName() + reviewTypeName,
                 greeting(receivers) + "\n附件为" + task.getProjectName() + reviewTypeName + "文件，请进行" + reviewTypeName,
                 recipients(receivers), latestAttachments(task.getId(), categories));
@@ -148,9 +151,9 @@ public class ReviewMailNotificationApplicationService {
     }
 
     private List<MailMessage.MailRecipient> recipients(List<TaskReviewerAssignment> assignments) {
-        Map<Long, MockUserAccountRecord> accounts = new LinkedHashMap<>();
+        Map<Long, ReviewerWhitelistRecord> accounts = new LinkedHashMap<>();
         assignments.stream().flatMap(item -> item.reviewerIds().stream()).distinct().forEach(userId -> {
-            MockUserAccountRecord account = userAccountMapper.findEnabledById(userId);
+            ReviewerWhitelistRecord account = whitelistMapper.findById(userId);
             if (account != null && account.getEmail() != null && !account.getEmail().isBlank()) {
                 accounts.put(userId, account);
             }
@@ -159,14 +162,14 @@ public class ReviewMailNotificationApplicationService {
     }
 
     private String greeting(List<TaskReviewerAssignment> assignments) {
-        Map<Long, MockUserAccountRecord> accounts = new LinkedHashMap<>();
+        Map<Long, ReviewerWhitelistRecord> accounts = new LinkedHashMap<>();
         assignments.stream().flatMap(item -> item.reviewerIds().stream()).distinct().forEach(userId -> {
-            MockUserAccountRecord account = userAccountMapper.findEnabledById(userId);
+            ReviewerWhitelistRecord account = whitelistMapper.findById(userId);
             if (account != null) {
                 accounts.put(userId, account);
             }
         });
-        String names = accounts.values().stream().map(MockUserAccountRecord::getDisplayName)
+        String names = accounts.values().stream().map(ReviewerWhitelistRecord::getDisplayName)
                 .filter(name -> name != null && !name.isBlank()).map(this::surnameWithTitle).collect(Collectors.joining("，"));
         return names.isBlank() ? "各位专家你们好" : names + "你们好";
     }

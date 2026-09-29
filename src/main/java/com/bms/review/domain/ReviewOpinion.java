@@ -14,22 +14,22 @@ import java.util.Objects;
 public final class ReviewOpinion {
     private final Long taskId;
     private final String sourceType;
-    private final String content;
+    private final String comment;
     private final Long raisedBy;
     private final List<OpinionReply> replies = new ArrayList<>();
     private final List<OpinionConfirmation> confirmations = new ArrayList<>();
     private OpinionStatus status;
 
-    private ReviewOpinion(Long taskId, String sourceType, String content, Long raisedBy) {
+    private ReviewOpinion(Long taskId, String sourceType, String comment, Long raisedBy) {
         this.taskId = Objects.requireNonNull(taskId);
         this.sourceType = Objects.requireNonNull(sourceType);
-        this.content = requireText(content, "意见内容不能为空");
+        this.comment = requireText(comment, "意见内容不能为空");
         this.raisedBy = Objects.requireNonNull(raisedBy);
         this.status = OpinionStatus.PENDING_REPLY;
     }
 
-    public static ReviewOpinion raise(Long taskId, String sourceType, String content, Long raisedBy) {
-        return new ReviewOpinion(taskId, sourceType, content, raisedBy);
+    public static ReviewOpinion raise(Long taskId, String sourceType, String comment, Long raisedBy) {
+        return new ReviewOpinion(taskId, sourceType, comment, raisedBy);
     }
 
     public void reply(Long replierId, ReplyType replyType, String reason) {

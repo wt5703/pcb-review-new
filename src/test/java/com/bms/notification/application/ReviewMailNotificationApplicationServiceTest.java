@@ -2,8 +2,8 @@ package com.bms.notification.application;
 
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
-import com.bms.identity.infrastructure.MockUserAccountMapper;
-import com.bms.identity.infrastructure.MockUserAccountRecord;
+import com.bms.review.infrastructure.ReviewerWhitelistMapper;
+import com.bms.review.infrastructure.ReviewerWhitelistRecord;
 import com.bms.notification.domain.MailMessage;
 import com.bms.notification.infrastructure.OutboxEventMapper;
 import com.bms.notification.infrastructure.OutboxEventRecord;
@@ -32,16 +32,16 @@ import static org.mockito.Mockito.when;
 class ReviewMailNotificationApplicationServiceTest {
     private final OutboxEventMapper outboxEventMapper = mock(OutboxEventMapper.class);
     private final ReviewFileMapper fileMapper = mock(ReviewFileMapper.class);
-    private final MockUserAccountMapper userAccountMapper = mock(MockUserAccountMapper.class);
+    private final ReviewerWhitelistMapper whitelistMapper = mock(ReviewerWhitelistMapper.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ReviewMailNotificationApplicationService service = new ReviewMailNotificationApplicationService(outboxEventMapper,
-            fileMapper, userAccountMapper, objectMapper, "bms-hardware-development@bms.example.com");
+            fileMapper, whitelistMapper, objectMapper, "bms-hardware-development@bms.example.com");
 
     @Test
     void shouldNotifyOnlyInitialPcbExpertsWhenTaskSubmitted() throws Exception {
-        when(userAccountMapper.findEnabledById(1L)).thenReturn(user(1L, "王鹏飞", "wang@bms.example.com"));
-        when(userAccountMapper.findEnabledById(2L)).thenReturn(user(2L, "刘满红", "liu@bms.example.com"));
-        when(userAccountMapper.findEnabledById(3L)).thenReturn(user(3L, "章俊", "zhang@bms.example.com"));
+        when(whitelistMapper.findById(1L)).thenReturn(user(1L, "王鹏飞", "wang@bms.example.com"));
+        when(whitelistMapper.findById(2L)).thenReturn(user(2L, "刘满红", "liu@bms.example.com"));
+        when(whitelistMapper.findById(3L)).thenReturn(user(3L, "章俊", "zhang@bms.example.com"));
         when(fileMapper.findById(101L)).thenReturn(file(101L, "初版PCB.zip", "PCB_REVIEW"));
         ReviewTask task = ReviewTask.draft(10L, ReviewType.PCB, "任务", "BMS", 9L, "设计者", "P1", "BMU", LocalDate.now(),
                 9L, "组长", List.of(ReviewRole.HARDWARE_EXPERT, ReviewRole.PCB_EXPERT, ReviewRole.PROCESS_EXPERT),
@@ -64,13 +64,14 @@ class ReviewMailNotificationApplicationServiceTest {
 
     @Test
     void shouldAttachOnlyProcessAndStructureFilesWhenOpeningTheirReviews() throws Exception {
-        when(userAccountMapper.findEnabledById(3L)).thenReturn(user(3L, "章俊", "zhang@bms.example.com"));
-        when(userAccountMapper.findEnabledById(4L)).thenReturn(user(4L, "陈远杰", "chen@bms.example.com"));
+        when(whitelistMapper.findById(3L)).thenReturn(user(3L, "章俊", "zhang@bms.example.com"));
+        when(whitelistMapper.findById(4L)).thenReturn(user(4L, "陈远杰", "chen@bms.example.com"));
         when(fileMapper.findLatestByTaskIdAndCategory(20L, "PCB_PROCESS_REVIEW")).thenReturn(List.of(file(201L, "工艺.zip", "PCB_PROCESS_REVIEW")));
         when(fileMapper.findLatestByTaskIdAndCategory(20L, "PCB_STRUCTURE_REVIEW")).thenReturn(List.of(file(202L, "结构.zip", "PCB_STRUCTURE_REVIEW")));
         ReviewTaskRecord task = task(20L, "PCB", "BMS", "PROCESS_EXPERT:3;STRUCTURE_EXPERT:4");
 
-        service.enqueuePcbProcessStructureReview(task);
+        service.enqueuePcbStageReview(task, List.of(com.bms.file.domain.FileCategory.PCB_PROCESS_REVIEW,
+                com.bms.file.domain.FileCategory.PCB_STRUCTURE_REVIEW));
 
         MailMessage message = payload();
         assertThat(message.subject()).isEqualTo("BMS工艺与结构评审");
@@ -79,9 +80,24 @@ class ReviewMailNotificationApplicationServiceTest {
     }
 
     @Test
+    void shouldNotifyOnlyStructureExpertsWhenOnlyStructureReviewIsOpened() throws Exception {
+        when(whitelistMapper.findById(4L)).thenReturn(user(4L, "陈远杰", "chen@bms.example.com"));
+        when(fileMapper.findLatestByTaskIdAndCategory(20L, "PCB_STRUCTURE_REVIEW"))
+                .thenReturn(List.of(file(202L, "结构.zip", "PCB_STRUCTURE_REVIEW")));
+        ReviewTaskRecord task = task(20L, "PCB", "BMS", "PROCESS_EXPERT:3;STRUCTURE_EXPERT:4");
+
+        service.enqueuePcbStageReview(task, List.of(com.bms.file.domain.FileCategory.PCB_STRUCTURE_REVIEW));
+
+        MailMessage message = payload();
+        assertThat(message.subject()).isEqualTo("BMS结构评审");
+        assertThat(message.recipients()).extracting(MailMessage.MailRecipient::email).containsExactly("chen@bms.example.com");
+        assertThat(message.attachments()).extracting(MailMessage.MailAttachment::fileName).containsExactly("结构.zip");
+    }
+
+    @Test
     void shouldNotifyAllSchematicExpertsWithAllLatestFilesWhenFinished() throws Exception {
-        when(userAccountMapper.findEnabledById(1L)).thenReturn(user(1L, "王鹏飞", "wang@bms.example.com"));
-        when(userAccountMapper.findEnabledById(2L)).thenReturn(user(2L, "刘满红", "liu@bms.example.com"));
+        when(whitelistMapper.findById(1L)).thenReturn(user(1L, "王鹏飞", "wang@bms.example.com"));
+        when(whitelistMapper.findById(2L)).thenReturn(user(2L, "刘满红", "liu@bms.example.com"));
         for (com.bms.file.domain.FileCategory category : com.bms.file.domain.FileCategory.values()) {
             when(fileMapper.findLatestByTaskIdAndCategory(30L, category.name())).thenReturn(List.of(file(300L + category.ordinal(), category.name() + ".zip", category.name())));
         }
@@ -102,8 +118,8 @@ class ReviewMailNotificationApplicationServiceTest {
         return objectMapper.readValue(captor.getValue().payload(), MailMessage.class);
     }
 
-    private MockUserAccountRecord user(long id, String name, String email) {
-        MockUserAccountRecord record = new MockUserAccountRecord();
+    private ReviewerWhitelistRecord user(long id, String name, String email) {
+        ReviewerWhitelistRecord record = new ReviewerWhitelistRecord();
         record.setId(id); record.setDisplayName(name); record.setEmail(email);
         return record;
     }

@@ -10,15 +10,15 @@ const route = useRoute()
 const editTaskId = computed(() => Number(route.params.taskId) || 0)
 const editing = computed(() => editTaskId.value > 0)
 const isAdministrator = computed(() => identity.roles.split(',').map((role) => role.trim()).includes('HARDWARE_DEPARTMENT_MANAGER'))
-const form = reactive({ reviewType: 'PCB', taskName: '', projectName: '', designName: '', designerId: identity.userId, designerName: `设计者#${identity.userId}`, expectedCompletedDate: '', pcbType: '', expertLeaderId: '', expertLeaderName: '', reviewRoles: [] as string[], reviewDescription: '' })
+const form = reactive({ reviewType: 'PCB', taskName: '', projectName: '', designName: '', expectedCompletedDate: '', pcbType: '', expertLeaderEmployeeNo: '', reviewRoles: [] as string[], reviewDescription: '' })
 const sourceFiles = ref<File[]>([])
 const uploadedFiles = ref<TaskFileReference[]>([])
 const savedFiles = ref<TaskFile[]>([])
 const pcbTypes = ref<string[]>(['BMU板', 'BSU板', '分流器板', '高压板', '转接板', '储能板', '其他'])
 const reviewRoles = ref<Array<{ code: string; name: string }>>([])
-const mockUsers = ref<Array<{ id: number; employeeNo: string; displayName: string; roles: string[] }>>([])
-const whitelistMappings = ref<Array<{ reviewRole: string; employeeNo: string }>>([])
-const selectedReviewerIds = reactive<Record<string, number[]>>({})
+const whitelistPeople = ref<Array<{ id: number; employeeNo: string; displayName: string; roles: string[] }>>([])
+const whitelistMappings = ref<Array<{ id: number; reviewRole: string; employeeNo: string; displayName?: string; email?: string; mobile?: string; departmentName?: string }>>([])
+const selectedReviewerEmployeeNos = reactive<Record<string, string[]>>({})
 const saving = ref(false)
 const error = ref('')
 const allowedRoleCodes = computed(() => form.reviewType === 'PCB'
@@ -30,21 +30,18 @@ watch(() => form.reviewType, (type) => {
   form.reviewRoles = form.reviewRoles.filter((role) => allowedRoleCodes.value.includes(role))
   if (type === 'SCHEMATIC') { form.pcbType = ''; return }
   // PCB 创建后直接进入专家评审，不需要选择原理图组长。
-  form.expertLeaderId = ''
-  form.expertLeaderName = ''
+  form.expertLeaderEmployeeNo = ''
 })
 watch(() => form.reviewRoles, (roles) => {
-  roles.forEach((role) => { selectedReviewerIds[role] ??= [] })
-  Object.keys(selectedReviewerIds).filter((role) => !roles.includes(role)).forEach((role) => { delete selectedReviewerIds[role] })
+  roles.forEach((role) => { selectedReviewerEmployeeNos[role] ??= [] })
+  Object.keys(selectedReviewerEmployeeNos).filter((role) => !roles.includes(role)).forEach((role) => { delete selectedReviewerEmployeeNos[role] })
 }, { deep: true })
-onMounted(async () => { try { const [options, users, mappings] = await Promise.all([reviewApi.getTaskOptions(), reviewApi.listMockUsers(), reviewApi.listReviewerWhitelists()]); pcbTypes.value = options.pcbTypes; reviewRoles.value = options.reviewRoles; mockUsers.value = users; whitelistMappings.value = mappings; const currentUser = users.find((user) => user.id === identity.userId); if (currentUser) form.designerName = currentUser.displayName
-  if (editing.value) { const task = await reviewApi.getTask(editTaskId.value); if (task.status !== 'DRAFT' || (task.designerId !== identity.userId && !isAdministrator.value)) { throw new Error('只有任务设计者或平台管理员可以编辑尚未提交的任务。') }; Object.assign(form, { reviewType: task.reviewType, taskName: task.taskName, projectName: task.projectName, designName: task.designName, designerId: task.designerId, designerName: task.designerName, expectedCompletedDate: task.expectedCompletedDate, pcbType: task.pcbType ?? '', expertLeaderId: task.expertLeaderId, expertLeaderName: task.expertLeaderName, reviewRoles: task.reviewRoles, reviewDescription: task.reviewDescription ?? '' }); Object.keys(selectedReviewerIds).forEach((role) => delete selectedReviewerIds[role]); task.reviewerAssignments?.forEach((assignment) => { selectedReviewerIds[assignment.reviewRole] = [...assignment.reviewerIds] }); savedFiles.value = await reviewApi.latestFiles(editTaskId.value, task.reviewType === 'PCB' ? 'PCB_REVIEW' : 'SCHEMATIC_REVIEW') }
-} catch (cause) { error.value = cause instanceof Error ? cause.message : '字典、用户目录或任务加载失败。' } })
-function selectDesigner(): void { const user = mockUsers.value.find((item) => item.id === Number(form.designerId)); if (user) form.designerName = user.displayName }
-function selectLeader(): void { const user = mockUsers.value.find((item) => item.id === Number(form.expertLeaderId)); if (user) form.expertLeaderName = user.displayName }
+onMounted(async () => { try { const [options, mappingPage] = await Promise.all([reviewApi.getTaskOptions(), reviewApi.listReviewerWhitelists({ pageNo: 1, pageSize: 1000 })]); const mappings = mappingPage.items; pcbTypes.value = options.pcbTypes; reviewRoles.value = options.reviewRoles; whitelistMappings.value = mappings; const users = [...new Map(mappings.map((item) => [item.employeeNo, { id: item.id, employeeNo: item.employeeNo, displayName: item.displayName || item.employeeNo, roles: mappings.filter((mapping) => mapping.employeeNo === item.employeeNo).map((mapping) => mapping.reviewRole) }])).values()]; whitelistPeople.value = users; identity.userId = 1
+  if (editing.value) { const task = await reviewApi.getTask(editTaskId.value); if (task.status !== 'DRAFT' || (task.designerId !== identity.userId && !isAdministrator.value)) { throw new Error('只有任务设计者或平台管理员可以编辑尚未提交的任务。') }; Object.assign(form, { reviewType: task.reviewType, taskName: task.taskName, projectName: task.projectName, designName: task.designName, expectedCompletedDate: task.expectedCompletedDate, pcbType: task.pcbType ?? '', expertLeaderEmployeeNo: users.find((user) => user.id === task.expertLeaderId)?.employeeNo ?? '', reviewRoles: task.reviewRoles, reviewDescription: task.reviewDescription ?? '' }); Object.keys(selectedReviewerEmployeeNos).forEach((role) => delete selectedReviewerEmployeeNos[role]); task.reviewerAssignments?.forEach((assignment) => { selectedReviewerEmployeeNos[assignment.reviewRole] = assignment.reviewerIds.map((id) => users.find((user) => user.id === id)?.employeeNo).filter((employeeNo): employeeNo is string => Boolean(employeeNo)) }); savedFiles.value = await reviewApi.latestFiles(editTaskId.value, task.reviewType === 'PCB' ? 'PCB_REVIEW' : 'SCHEMATIC_REVIEW') }
+} catch (cause) { error.value = cause instanceof Error ? cause.message : '字典、白名单或任务加载失败。' } })
 function whitelistUsers(roleCode: string): Array<{ id: number; employeeNo: string; displayName: string }> {
   const employeeNos = new Set(whitelistMappings.value.filter((item) => item.reviewRole === roleCode).map((item) => item.employeeNo))
-  return mockUsers.value.filter((user) => employeeNos.has(user.employeeNo))
+  return whitelistPeople.value.filter((user) => employeeNos.has(user.employeeNo))
 }
 function sourceFileKey(file: File): string { return `${file.name}:${file.size}:${file.lastModified}` }
 function selectFiles(event: Event): void {
@@ -61,7 +58,7 @@ function removeSelectedFile(file: File): void {
 async function save(submitNow: boolean): Promise<void> {
   error.value = ''; saving.value = true
   try {
-    const missingReviewers = form.reviewRoles.filter((role) => !(selectedReviewerIds[role]?.length))
+    const missingReviewers = form.reviewRoles.filter((role) => !(selectedReviewerEmployeeNos[role]?.length))
     if (missingReviewers.length) {
       throw new Error('请为每个已勾选的评审角色选择至少一名白名单专家。')
     }
@@ -70,9 +67,7 @@ async function save(submitNow: boolean): Promise<void> {
       uploadedFiles.value.push(...newFileIds)
       sourceFiles.value = []
     }
-    const schematicLeader = form.reviewType === 'SCHEMATIC' ? Number(form.expertLeaderId) : 0
-    // 现有接口将 expertLeaderId 定义为必填；PCB 不要求用户选择，使用设计者作为兼容占位值。
-    const body = { reviewType: form.reviewType as 'PCB' | 'SCHEMATIC', taskName: form.taskName, projectName: form.projectName, designerId: Number(form.designerId), designerName: form.designerName, designName: form.designName, pcbType: form.pcbType || undefined, expectedCompletedDate: form.expectedCompletedDate, expertLeaderId: schematicLeader || Number(form.designerId), expertLeaderName: schematicLeader ? form.expertLeaderName : form.designerName, reviewRoles: form.reviewRoles, reviewerAssignments: form.reviewRoles.map((reviewRole) => ({ reviewRole, reviewerIds: selectedReviewerIds[reviewRole] ?? [] })), reviewDescription: form.reviewDescription || undefined, files: uploadedFiles.value }
+    const body = { reviewType: form.reviewType as 'PCB' | 'SCHEMATIC', taskName: form.taskName, projectName: form.projectName, designName: form.designName, pcbType: form.pcbType || undefined, expectedCompletedDate: form.expectedCompletedDate, expertLeaderEmployeeNo: form.reviewType === 'SCHEMATIC' ? form.expertLeaderEmployeeNo : undefined, reviewRoles: form.reviewRoles, reviewerAssignments: form.reviewRoles.map((reviewRole) => ({ reviewRole, reviewerEmployeeNos: selectedReviewerEmployeeNos[reviewRole] ?? [] })), reviewDescription: form.reviewDescription || undefined, files: uploadedFiles.value }
     const task = submitNow
       ? await reviewApi.submitTask(body, editing.value ? editTaskId.value : undefined)
       : await reviewApi.saveTask(body, editing.value ? editTaskId.value : undefined)
@@ -87,13 +82,13 @@ async function save(submitNow: boolean): Promise<void> {
     <div class="form-grid create-grid">
       <label>评审类型 *<select v-model="form.reviewType"><option value="PCB">PCB布局布线评审</option><option value="SCHEMATIC">原理图评审</option></select></label>
       <label>{{ form.reviewType === 'PCB' ? 'PCB 名称 *' : '原理图名称 *' }}<input v-model.trim="form.designName" placeholder="根据评审类型填写" /></label>
-      <label>任务名称 *<input v-model.trim="form.taskName" placeholder="请输入任务名称" /></label><label>设计者 *<select v-model.number="form.designerId" @change="selectDesigner"><option v-for="user in mockUsers" :key="user.id" :value="user.id">{{ user.displayName }}</option></select><small>系统提交设计者 ID，页面显示姓名：{{ form.designerName }}</small></label>
+      <label>任务名称 *<input v-model.trim="form.taskName" placeholder="请输入任务名称" /></label><label>设计者 *<input :value="whitelistPeople.find((item) => item.employeeNo === identity.employeeNo)?.displayName ?? identity.employeeNo" disabled /><small>使用当前登录人的员工工号识别，不需要在表单中传用户 ID。</small></label>
       <label>项目名称 *<input v-model.trim="form.projectName" placeholder="请输入项目名称" /></label><label>期望完成日期 *<input v-model="form.expectedCompletedDate" type="date" /></label>
       <label v-if="form.reviewType === 'PCB'">PCB 类型 *<select v-model="form.pcbType"><option value="">请选择</option><option v-for="item in pcbTypes" :key="item" :value="item">{{ item }}</option></select></label><div v-else class="empty-field" />
-      <label v-if="form.reviewType === 'SCHEMATIC'">组长 *<select v-model.number="form.expertLeaderId" @change="selectLeader"><option value="">请选择</option><option v-for="user in mockUsers.filter((item) => item.roles.includes('SCHEMATIC_LEADER'))" :key="user.id" :value="user.id">{{ user.displayName }}</option></select><small>{{ form.expertLeaderName || '仅原理图评审需要选择组长' }}</small></label>
+      <label v-if="form.reviewType === 'SCHEMATIC'">组长 *<select v-model="form.expertLeaderEmployeeNo"><option value="">请选择</option><option v-for="user in whitelistPeople" :key="user.employeeNo" :value="user.employeeNo">{{ user.displayName }} · {{ user.employeeNo }}</option></select><small>仅原理图评审需要选择组长，候选人员来自评审白名单。</small></label>
     </div>
     <label class="role-label">评审角色 *<small>PCB 可选择硬件、EMC、PCB、工艺、结构评审；原理图仅可选择硬件、EMC、PCB 评审。每个已勾选角色必须选择实际评审专家。</small><div class="role-options"><label v-for="role in selectableReviewRoles" :key="role.code" class="role-option"><input v-model="form.reviewRoles" type="checkbox" :value="role.code" /><span>{{ role.name }}</span><small>{{ role.code }}</small></label></div></label>
-    <section v-if="form.reviewRoles.length" class="role-whitelist-selection"><h3>评审专家分配</h3><p>每个已勾选角色都需要从该角色白名单中选择一位或多位专家；选择结果将作为对应评审阶段的人员依据。</p><details v-for="role in selectableReviewRoles.filter((item) => form.reviewRoles.includes(item.code))" :key="role.code" class="role-whitelist" open><summary><b>{{ role.name }}</b><span>已选 {{ selectedReviewerIds[role.code]?.length ?? 0 }} 人</span></summary><div class="whitelist-user-list"><label v-for="user in whitelistUsers(role.code)" :key="user.id" class="whitelist-user"><input v-model="selectedReviewerIds[role.code]" type="checkbox" :value="user.id" /><span><b>{{ user.displayName }}</b><small>{{ user.employeeNo }}</small></span></label><p v-if="!whitelistUsers(role.code).length" class="empty-whitelist">该角色暂未配置白名单人员，无法保存任务。</p></div></details></section>
+    <section v-if="form.reviewRoles.length" class="role-whitelist-selection"><h3>评审专家分配</h3><p>每个已勾选角色都需要从该角色白名单中选择一位或多位专家；提交时只传对应员工工号。</p><details v-for="role in selectableReviewRoles.filter((item) => form.reviewRoles.includes(item.code))" :key="role.code" class="role-whitelist" open><summary><b>{{ role.name }}</b><span>已选 {{ selectedReviewerEmployeeNos[role.code]?.length ?? 0 }} 人</span></summary><div class="whitelist-user-list"><label v-for="user in whitelistUsers(role.code)" :key="user.employeeNo" class="whitelist-user"><input v-model="selectedReviewerEmployeeNos[role.code]" type="checkbox" :value="user.employeeNo" /><span><b>{{ user.displayName }}</b><small>{{ user.employeeNo }}</small></span></label><p v-if="!whitelistUsers(role.code).length" class="empty-whitelist">该角色暂未配置白名单人员，无法保存任务。</p></div></details></section>
     <label>评审文件 *<input type="file" multiple @change="selectFiles" /><small>支持多选；可多次选择，保存或提交时会将所有文件一并关联到任务。</small></label>
     <div v-if="savedFiles.length || sourceFiles.length || uploadedFiles.length" class="file-list">
       <div v-for="file in savedFiles" :key="file.id" class="file-row"><span class="file-state saved">已保存</span><b>{{ file.fileName }}</b><small>{{ file.fileSize }} B</small></div>

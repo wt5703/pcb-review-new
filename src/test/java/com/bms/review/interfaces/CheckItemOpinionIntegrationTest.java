@@ -18,7 +18,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.hamcrest.Matchers.nullValue;
 
 /**
  * @author 王涛
@@ -47,12 +46,12 @@ class CheckItemOpinionIntegrationTest {
 
         String itemsResponse = mockMvc.perform(get("/tasks/{taskId}/check-items", taskId)
                         .header("X-Mock-User-Id", "20")
-                        .header("X-Mock-Roles", "HARDWARE_EXPERT"))
+                .header("X-Mock-Roles", "HARDWARE_EXPERT"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].category.itemName").value("集成测试类别"))
-                .andExpect(jsonPath("$.data[0].items[0].opinion").value(nullValue()))
+                .andExpect(jsonPath("$.data[?(@.category.itemName == '集成测试类别')].items[0].opinion").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
-        long itemId = ((java.util.List<Number>) JsonPath.read(itemsResponse, "$.data[0].items[*].id")).get(0).longValue();
+        long itemId = ((java.util.List<Number>) JsonPath.read(itemsResponse,
+                "$.data[?(@.category.itemName == '集成测试类别')].items[0].id")).get(0).longValue();
 
         mockMvc.perform(put("/tasks/{taskId}/check-items/batch", taskId)
                         .header("X-Mock-User-Id", "20")
@@ -66,13 +65,13 @@ class CheckItemOpinionIntegrationTest {
 
         mockMvc.perform(get("/tasks/{taskId}/check-items", taskId)
                         .header("X-Mock-User-Id", "20")
-                        .header("X-Mock-Roles", "HARDWARE_EXPERT"))
+                .header("X-Mock-Roles", "HARDWARE_EXPERT"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].items[0].opinion.result").value("FAIL"))
-                .andExpect(jsonPath("$.data[0].items[0].opinion.comment").value("线距不足"))
-                .andExpect(jsonPath("$.data[0].items[0].opinion.richText").value("线距不满足要求"))
-                .andExpect(jsonPath("$.data[0].items[0].opinion.content").doesNotExist())
-                .andExpect(jsonPath("$.data[0].items[0].opinion.status").doesNotExist());
+                .andExpect(jsonPath("$.data[?(@.category.itemName == '集成测试类别')].items[0].opinion.result").value("FAIL"))
+                .andExpect(jsonPath("$.data[?(@.category.itemName == '集成测试类别')].items[0].opinion.comment").value("线距不足"))
+                .andExpect(jsonPath("$.data[?(@.category.itemName == '集成测试类别')].items[0].opinion.richText").value("线距不满足要求"))
+                .andExpect(jsonPath("$.data[?(@.category.itemName == '集成测试类别')].items[0].opinion.content").doesNotExist())
+                .andExpect(jsonPath("$.data[?(@.category.itemName == '集成测试类别')].items[0].opinion.status").doesNotExist());
     }
 
     @Test
@@ -94,7 +93,8 @@ class CheckItemOpinionIntegrationTest {
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[?(@.category.id == " + categoryId + ")].items[0].itemName").value("模板树检查项"));
+                .andExpect(jsonPath("$.data.reviewType").value("PCB"))
+                .andExpect(jsonPath("$.data.categories[?(@.category.id == " + categoryId + ")].items[0].itemName").value("模板树检查项"));
 
         mockMvc.perform(put("/check-item-templates")
                         .header("X-Mock-User-Id", "1")
@@ -122,9 +122,9 @@ class CheckItemOpinionIntegrationTest {
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[?(@.category.id == " + categoryId + ")].items[0].enabled").doesNotExist())
-                .andExpect(jsonPath("$.data[?(@.category.id == " + categoryId + ")].items[0].reviewType").doesNotExist())
-                .andExpect(jsonPath("$.data[?(@.category.id == " + categoryId + ")].items[0].opinion").doesNotExist());
+                .andExpect(jsonPath("$.data.categories[?(@.category.id == " + categoryId + ")].items[0].enabled").doesNotExist())
+                .andExpect(jsonPath("$.data.categories[?(@.category.id == " + categoryId + ")].items[0].reviewType").doesNotExist())
+                .andExpect(jsonPath("$.data.categories[?(@.category.id == " + categoryId + ")].items[0].opinion").doesNotExist());
 
         mockMvc.perform(delete("/check-item-templates/{id}", categoryId)
                         .param("category", "CATEGORY")
@@ -133,11 +133,11 @@ class CheckItemOpinionIntegrationTest {
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/check-item-templates")
-                        .param("reviewType", "PCB")
-                        .header("X-Mock-User-Id", "1")
-                        .header("X-Mock-Roles", "PCB_LEADER"))
+                .param("reviewType", "PCB")
+                .header("X-Mock-User-Id", "1")
+                .header("X-Mock-Roles", "PCB_LEADER"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[?(@.category.id == " + categoryId + ")].category.enabled").value(false));
+                .andExpect(jsonPath("$.data.categories[?(@.category.id == " + categoryId + ")]").isEmpty());
     }
 
     @Test

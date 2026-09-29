@@ -9,7 +9,7 @@ import com.bms.file.infrastructure.ReviewFileRecord;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.PermissionPolicy;
 import com.bms.identity.domain.Role;
-import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
+import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import com.bms.task.domain.TaskStatus;
@@ -73,9 +73,16 @@ public class FileApplicationService {
                 throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "初始文件 UUID 不存在或不可用于创建任务");
             }
             if (pending.getTaskId() != null) {
-                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "该任务已保存对应文件，不能重复保存");
+                // 编辑草稿时，前端会连同已回显文件一起提交。该文件已绑定到当前任务即视为幂等成功，
+                // 直接返回既有记录，既不重复更新，也不再创建任何文件关联。
+                if (Long.valueOf(taskId).equals(pending.getTaskId())) {
+                    result.add(FileView.from(pending));
+                    continue;
+                }
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "该文件已绑定到其他任务，不能重复关联");
             }
-            if (!currentUser.id().equals(pending.getUploadedBy())) {
+            if (!currentUser.id().equals(pending.getUploadedBy())
+                    && !currentUser.roles().contains(Role.HARDWARE_DEPARTMENT_MANAGER)) {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "仅文件上传人可以将该文件关联到任务");
             }
             pending.setTaskId(taskId);
@@ -139,13 +146,13 @@ public class FileApplicationService {
         return FileView.from(record);
     }
 
-    public DownloadContent downloadTaskFile(long taskId, long fileId, CurrentUser currentUser) {
+    /**
+     * 按文件主键下载。任务归属由文件记录决定，调用方不需要、也不能重复传 taskId。
+     */
+    public DownloadContent downloadFile(long fileId, CurrentUser currentUser) {
         ReviewFileRecord file = fileMapper.findById(fileId);
         if (file == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "文件不存在");
-        }
-        if (!Long.valueOf(taskId).equals(file.getTaskId())) {
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务文件不存在");
         }
         requireTaskAccess(file.getTaskId(), currentUser, FileCategory.valueOf(file.getFileCategory()), false);
         byte[] content = resourceServiceClient.download(file.getFileName(), file.getResourcePath());
@@ -237,7 +244,7 @@ public class FileApplicationService {
         static FileView from(ReviewFileRecord record) {
             return new FileView(record.getId(), record.getTaskId(), FileCategory.valueOf(record.getFileCategory()), record.getFileName(),
                     record.getFileFormat(), record.getFileSize(), record.getMd5(), record.getFileId(), record.getResourcePath(), record.getUploadedBy(),
-                    record.getUploadedAt(), record.getUploadedStage(), record.getLatest());
+                    record.getUploadedAt(), record.getUploadedStage(), Boolean.TRUE.equals(record.getLatest()));
         }
     }
 

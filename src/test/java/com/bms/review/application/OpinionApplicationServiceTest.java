@@ -3,7 +3,7 @@ package com.bms.review.application;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.application.TaskNodeAuthorizationService;
 import com.bms.identity.domain.Role;
-import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
+import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.notification.application.OutboxEventPublisher;
 import com.bms.review.domain.OpinionSourceType;
 import com.bms.review.domain.OpinionStatus;
@@ -18,6 +18,7 @@ import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.Set;
 import java.util.List;
@@ -50,12 +51,15 @@ class OpinionApplicationServiceTest {
         CurrentUser mutualReviewer = new CurrentUser(20L, Set.of(Role.PCB_LEADER));
 
         OpinionApplicationService.OpinionView view = service.raise(new OpinionApplicationService.RaiseOpinionCommand(1001L,
-                OpinionSourceType.MUTUAL_EXTRA, null, "补充检查发现的问题"), mutualReviewer);
+                OpinionSourceType.MUTUAL_EXTRA, null, "补充检查发现的问题", "<p>补充检查发现的问题</p>", "GENERAL"), mutualReviewer);
 
         assertThat(view.id()).isEqualTo(31L);
         assertThat(view.status()).isEqualTo(OpinionStatus.PENDING_REPLY);
         assertThat(view.raisedByName()).isEqualTo("用户#20");
-        verify(opinionMapper).insert(any(ReviewOpinionRecord.class));
+        ArgumentCaptor<ReviewOpinionRecord> recordCaptor = ArgumentCaptor.forClass(ReviewOpinionRecord.class);
+        verify(opinionMapper).insert(recordCaptor.capture());
+        assertThat(recordCaptor.getValue().getComment()).isEqualTo("补充检查发现的问题");
+        assertThat(recordCaptor.getValue().getRichText()).isEqualTo("<p>补充检查发现的问题</p>");
     }
 
     @Test
@@ -159,7 +163,7 @@ class OpinionApplicationServiceTest {
         opinion.setId(id);
         opinion.setTaskId(taskId);
         opinion.setSourceType(OpinionSourceType.MUTUAL_EXTRA.name());
-        opinion.setContent("问题");
+        opinion.setComment("问题");
         opinion.setRaisedBy(raisedBy);
         opinion.setStatus(status.name());
         return opinion;

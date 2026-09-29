@@ -25,7 +25,7 @@ import java.util.List;
 /**
  * @author 王涛
  * @date 2026-09-18
- * @description 在任务结束事务内冻结阶段文件和邮件投递记录；流程节点统一从 task_flow_record 查询，避免重复维护流程快照。
+ * @description 在任务结束事务内冻结阶段文件、邮件投递记录和 task_flow_record 中的流程流转记录，归档读取不依赖后续实时数据。
  */
 @Service
 public class TaskArchiveApplicationService {
@@ -52,9 +52,10 @@ public class TaskArchiveApplicationService {
         }
         long taskId = task.getId();
         List<StageFileView> stageFiles = fileMapper.findLatestByTaskId(taskId).stream().map(this::toStageFile).toList();
+        List<FlowNodeView> flowNodes = flowMapper.findByTaskId(taskId).stream().map(this::toFlowNode).toList();
         List<NotificationRecordView> notificationRecords = notificationSendRecordMapper.findByTaskId(taskId).stream()
                 .map(NotificationRecordView::from).toList();
-        snapshotMapper.insert(new TaskArchiveSnapshotRecord(taskId, json(stageFiles), json(notificationRecords)));
+        snapshotMapper.insert(new TaskArchiveSnapshotRecord(taskId, json(stageFiles), json(flowNodes), json(notificationRecords)));
     }
 
     public ArchiveView get(long taskId) {
@@ -62,15 +63,16 @@ public class TaskArchiveApplicationService {
         if (snapshot == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务尚未结束归档");
         }
-        return new ArchiveView(flowMapper.findByTaskId(taskId).stream().map(this::toFlowNode).toList(),
-                readList(snapshot.fileSnapshot(), StageFileView.class));
+        return new ArchiveView(readList(snapshot.flowSnapshot(), FlowNodeView.class),
+                readList(snapshot.fileSnapshot(), StageFileView.class),
+                readList(snapshot.notificationSnapshot(), NotificationRecordView.class));
     }
 
     private StageFileView toStageFile(ReviewFileRecord file) {
         return new StageFileView(file.getId(), stageNameForFile(file), file.getFileCategory(), file.getFileName(),
                 file.getUploadedBy(), displayName(file.getUploadedBy()), file.getUploadedAt(),
                 file.getResourcePath(), file.getFileFormat(), file.getFileSize(), file.getMd5(),
-                "/leapmotor/pcb_review/files/download?taskId=" + file.getTaskId() + "&fileId=" + file.getId());
+                "/leapmotor/pcb_review/files/download?fileId=" + file.getId());
     }
 
     private FlowNodeView toFlowNode(TaskFlowRecord flow) {
@@ -129,7 +131,8 @@ public class TaskArchiveApplicationService {
         }
     }
 
-    public record ArchiveView(List<FlowNodeView> flowNodes, List<StageFileView> stageFiles) {
+    public record ArchiveView(List<FlowNodeView> flowNodes, List<StageFileView> stageFiles,
+                              List<NotificationRecordView> notificationRecords) {
     }
 
     public record StageFileView(Long fileId, String stageName, String fileCategory, String fileName,

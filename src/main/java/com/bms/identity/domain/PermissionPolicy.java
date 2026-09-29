@@ -38,7 +38,7 @@ public final class PermissionPolicy {
                 Permission.UPLOAD_PCB_SCHEMATIC_FILE, Permission.DOWNLOAD_PCB_SCHEMATIC_FILE,
                 Permission.UPLOAD_PROCESS_FILE, Permission.DOWNLOAD_PROCESS_FILE, Permission.UPLOAD_STRUCTURE_FILE,
                 Permission.DOWNLOAD_STRUCTURE_FILE, Permission.UPLOAD_MUTUAL_CHECK_FILE, Permission.DOWNLOAD_MUTUAL_CHECK_FILE,
-                Permission.ASSIGN_PCB_EXPERT, Permission.ASSIGN_PCB_MUTUAL_CHECK, Permission.ASSIGN_SCHEMATIC_OTHER_EXPERT));
+                Permission.ASSIGN_PCB_EXPERT, Permission.ASSIGN_PCB_MUTUAL_CHECK));
         permissions.put(Role.PROCESS_EXPERT, EnumSet.of(Permission.VIEW_CURRENT_TASK, Permission.FILL_OPINION,
                 Permission.CONFIRM_OPINION, Permission.VIEW_OPINION, Permission.DOWNLOAD_PROCESS_FILE,
                 Permission.UPLOAD_MUTUAL_CHECK_FILE, Permission.DOWNLOAD_MUTUAL_CHECK_FILE));

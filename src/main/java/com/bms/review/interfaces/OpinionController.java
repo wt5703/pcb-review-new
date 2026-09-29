@@ -32,7 +32,7 @@ import java.util.List;
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 对外提供统一评审意见、设计者答复、提出人确认和撤回接口；设计版本重新上传后只需通过对应意见答复再次确认，不会重启完整评审。
+ * @description 对外提供统一评审意见、设计者答复、提出人确认和撤回接口
  */
 @RestController
 @Validated
@@ -45,15 +45,15 @@ public class OpinionController {
     }
 
     @PostMapping("/tasks/{taskId}/opinions")
-    @Operation(summary = "提出评审意见", description = "在当前任务节点提交一条具体意见。richText 为前端编辑器生成的完整富文本字符串（可内嵌图片），后端按字符串原样保存并随意见列表回显；content 保留为兼容字段。接口不接收图片 URL、附件文件 ID 或独立图片上传参数。")
+    @Operation(summary = "提出评审意见", description = "在当前任务节点提交一条具体意见。comment 保存问题描述；richText 富文本信息")
     ApiResponse<OpinionApplicationService.OpinionView> raise(@PathVariable long taskId, @Valid @RequestBody RaiseOpinionRequest request,
                                                                HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.raise(new OpinionApplicationService.RaiseOpinionCommand(taskId, request.sourceType(),
-                request.sourceItemId(), request.content(), request.richText(), request.severity()), CurrentUserHolder.require()), traceId(servletRequest));
+                request.sourceItemId(), request.comment(), request.richText(), request.severity()), CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     @PostMapping("/tasks/{taskId}/opinions/no-opinion")
-    @Operation(summary = "无意见确认提交", description = "专家、工艺或结构评审人在当前评审节点确认无意见。接口不推进流程，而是新增一条 severity=PASS、status=CONFIRMED_PASS 的 review_opinion 审计记录，并标记该评审人已提交；同一人员、同一阶段不能重复提交，也不能在已提出实际意见后提交无意见。")
+    @Operation(summary = "无意见确认提交", description = "专家、工艺或结构评审人在当前评审节点确认无意见。接口不推进流程。")
     ApiResponse<OpinionApplicationService.OpinionView> submitNoOpinion(@PathVariable long taskId,
                                                                          @Valid @RequestBody SubmitNoOpinionRequest request,
                                                                          HttpServletRequest servletRequest) {
@@ -66,7 +66,7 @@ public class OpinionController {
                                                                 @Valid @RequestBody UpdateOpinionRequest request,
                                                                 HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.update(opinionId,
-                new OpinionApplicationService.UpdateOpinionCommand(request.content(), request.richText(), request.severity()),
+                new OpinionApplicationService.UpdateOpinionCommand(request.comment(), request.richText(), request.severity()),
                 CurrentUserHolder.require()), traceId(servletRequest));
     }
 
@@ -133,16 +133,16 @@ public class OpinionController {
     @Schema(description = "提出评审意见请求")
     record RaiseOpinionRequest(@Schema(description = "意见来源：EXPERT_REVIEW PCB专家评审、SCHEMATIC_REVIEW 原理图评审、PROCESS_REVIEW 工艺评审、STRUCTURE_REVIEW 结构评审、MUTUAL_CHECK_ITEM 互检固定项、MUTUAL_EXTRA 互检额外项", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull OpinionSourceType sourceType,
                                @Schema(description = "来源检查项 ID；固定互检检查项意见时必填") Long sourceItemId,
-                               @Schema(description = "具体、可执行的评审意见内容", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String content,
-                               @Schema(description = "富文本提取意见，支持文字与内嵌 data URI 图片；为空时使用 content", requiredMode = Schema.RequiredMode.NOT_REQUIRED) String richText,
+                               @Schema(description = "问题描述，原样保存到 review_opinion.comment", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String comment,
+                               @Schema(description = "富文本意见，支持文字与内嵌 data URI 图片；为空时使用 comment 保存到 rich_text", requiredMode = Schema.RequiredMode.NOT_REQUIRED) String richText,
                                @Schema(description = "问题等级：SERIOUS 严重、GENERAL 一般、MINOR 轻微") String severity) {
     }
     @Schema(description = "无意见确认提交请求")
     record SubmitNoOpinionRequest(@Schema(description = "当前评审来源，仅允许 EXPERT_REVIEW、PROCESS_REVIEW 或 STRUCTURE_REVIEW", requiredMode = Schema.RequiredMode.REQUIRED)
                                   @NotNull OpinionSourceType sourceType) { }
     @Schema(description = "编辑评审意见请求")
-    record UpdateOpinionRequest(@Schema(description = "具体、可执行的评审意见内容", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String content,
-                                @Schema(description = "富文本意见，支持文字和内嵌截图；为空时使用 content") String richText,
+    record UpdateOpinionRequest(@Schema(description = "具体、可执行的评审意见内容", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String comment,
+                                @Schema(description = "富文本意见，支持文字和内嵌截图；为空时使用 comment") String richText,
                                 @Schema(description = "问题等级：SERIOUS 严重、GENERAL 一般、MINOR 轻微") String severity) { }
     @Schema(description = "设计者答复意见请求")
     record ReplyOpinionRequest(@Schema(description = "答复结论", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull ReplyType replyType,

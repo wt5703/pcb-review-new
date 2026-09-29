@@ -35,6 +35,13 @@ public interface ReviewTaskMapper {
             "status, initial_file_ids AS initialFileIds, version FROM review_task ORDER BY id")
     List<ReviewTaskRecord> findAll();
 
+    /** 我的待办只需要处理中任务，避免将已结束任务加载到应用层再过滤。 */
+    @Select("SELECT id, review_type AS reviewType, task_name AS taskName, project_name AS projectName, designer_id AS designerId, "
+            + "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, "
+            + "expert_leader_id AS expertLeaderId, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_ids AS assignedReviewerIds, review_description AS reviewDescription, "
+            + "status, initial_file_ids AS initialFileIds, version FROM review_task WHERE status <> 'FINISHED' ORDER BY id")
+    List<ReviewTaskRecord> findAllUnfinished();
+
     @Update("UPDATE review_task SET pcb_type=#{pcbType}, status=#{status}, initial_file_ids=#{initialFileIds}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
     int update(ReviewTaskRecord record);
 

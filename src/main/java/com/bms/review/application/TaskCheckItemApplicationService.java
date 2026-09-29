@@ -6,7 +6,7 @@ import com.bms.identity.application.CurrentUser;
 import com.bms.identity.application.TaskNodeAuthorizationService;
 import com.bms.identity.domain.Permission;
 import com.bms.identity.domain.PermissionPolicy;
-import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
+import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.review.domain.CheckItemStatus;
 import com.bms.review.domain.CheckResult;
 import com.bms.review.domain.OpinionStatus;
@@ -57,7 +57,7 @@ public class TaskCheckItemApplicationService {
     @Transactional
     public List<CheckItemCategoryView> list(long taskId, CurrentUser currentUser) {
         ReviewTaskRecord task = requireVisibleTask(taskId, currentUser);
-        List<CheckItemTemplateRecord> templates = synchronizeIfActive(task);
+        List<CheckItemTemplateRecord> templates = materializeSingleTemplateIfActive(task);
         List<TaskCheckItemRecord> records = taskCheckItemMapper.findByTaskId(taskId);
         if (!isFinished(task)) {
             Set<Long> activeTemplateIds = templates.stream().map(CheckItemTemplateRecord::getId).collect(java.util.stream.Collectors.toSet());
@@ -70,7 +70,7 @@ public class TaskCheckItemApplicationService {
         return records.stream()
                 .filter(record -> record.getParentId() == null)
                 .sorted(java.util.Comparator.comparing(TaskCheckItemRecord::getSortNo))
-                .map(category -> new CheckItemCategoryView(new CheckItemCategoryInfo(category.getId(), task.getReviewType(),
+                .map(category -> new CheckItemCategoryView(new CheckItemCategoryInfo(category.getId(),
                         itemNameOf(category, templatesByItemId), category.getSortNo()),
                         itemsByParentId.getOrDefault(category.getId(), List.of()).stream()
                                 .sorted(java.util.Comparator.comparing(TaskCheckItemRecord::getSortNo))
@@ -81,23 +81,29 @@ public class TaskCheckItemApplicationService {
 
     @Transactional
     public CheckItemView submit(long taskId, long itemId, SubmitCheckItemCommand command, CurrentUser currentUser) {
+        // 1. 只校验任务状态与当前节点处理权限；提交时绝不重新同步互检单模板。
         ReviewTaskRecord task = requireTaskExists(taskId);
         if (isFinished(task)) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许修改检查项");
         }
         taskNodeAuthorizationService.requireCurrentTaskProcessor(taskId, currentUser);
-        synchronizeIfActive(task);
+
+        // 2. 仅定位任务已经生成的检查项快照，防止模板修改影响本次保存。
         TaskCheckItemRecord record = taskCheckItemMapper.findByTaskIdAndId(taskId, itemId);
         if (record == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务");
         }
         requireLeafCheckItem(record);
         validateCommand(command);
+
+        // 3. 不合格创建/更新同源意见；改为合格则撤回尚未闭环的旧意见。
         ReviewOpinionRecord opinion = command.result() == CheckResult.FAIL
                 ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), currentUser) : null;
         if (command.result() == CheckResult.PASS) {
             withdrawUnresolvedMutualOpinion(taskId, record);
         }
+
+        // 4. 将结论、文字和富文本原样写入任务快照，再返回最新结果。
         record.setCheckResult(command.result().name());
         record.setComment(command.comment());
         record.setRichText(command.richText());
@@ -115,11 +121,13 @@ public class TaskCheckItemApplicationService {
      */
     @Transactional
     public List<CheckItemView> submitBatch(long taskId, List<SubmitBatchItemCommand> commands, CurrentUser currentUser) {
+        // 1. 批量提交同样只处理既有任务快照，不在保存过程中读取或同步模板。
         ReviewTaskRecord task = requireTaskExists(taskId);
         if (isFinished(task)) { throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许修改检查项"); }
         taskNodeAuthorizationService.requireCurrentTaskProcessor(taskId, currentUser);
-        synchronizeIfActive(task);
         if (commands == null || commands.isEmpty()) { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "互检单至少需要提交一条检查项结果"); }
+
+        // 2. 先逐项校验归属和重复提交；任一项失败会由事务整体回滚。
         Set<Long> duplicateGuard = new LinkedHashSet<>();
         List<CheckItemView> views = new java.util.ArrayList<>();
         for (SubmitBatchItemCommand command : commands) {
@@ -128,10 +136,14 @@ public class TaskCheckItemApplicationService {
             if (record == null) { throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务"); }
             requireLeafCheckItem(record);
             validateBatchCommand(command);
+
+            // 3. 结论与同源意见保持一致：FAIL 创建/更新，PASS 撤回未闭环意见。
             ReviewOpinionRecord opinion = command.result() == CheckResult.FAIL ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), currentUser) : null;
             if (command.result() == CheckResult.PASS) {
                 withdrawUnresolvedMutualOpinion(taskId, record);
             }
+
+            // 4. 持久化当前任务检查项的结论和说明，不影响同任务的其他子项。
             record.setCheckResult(command.result().name()); record.setComment(command.comment()); record.setRichText(command.richText());
             record.setStatus(CheckItemStatus.COMPLETED.name());
             if (taskCheckItemMapper.submit(record) != 1) { throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务"); }
@@ -144,21 +156,24 @@ public class TaskCheckItemApplicationService {
     public void materializeActiveTaskItems(long taskId) {
         ReviewTaskRecord task = requireTaskExists(taskId);
         if (!isFinished(task)) {
-            synchronizeIfActive(task);
+            materializeSingleTemplateIfActive(task);
         }
     }
 
-    private List<CheckItemTemplateRecord> synchronizeIfActive(ReviewTaskRecord task) {
+    /**
+     * 任务只会从其 PCB 或原理图类型对应的一套模板生成检查项快照，
+     * 不提供模板 ID 选择，也不允许混入另一种评审类型的检查项。
+     */
+    private List<CheckItemTemplateRecord> materializeSingleTemplateIfActive(ReviewTaskRecord task) {
         if (isFinished(task)) {
             return List.of();
         }
-        List<CheckItemTemplateRecord> allTemplates = templateMapper.findEnabledByReviewType(task.getReviewType());
-        List<CheckItemTemplateRecord> templates = allTemplates;
+        List<CheckItemTemplateRecord> templates = templateMapper.findEnabledByReviewType(task.getReviewType());
         Map<Long, TaskCheckItemRecord> existing = new HashMap<>();
         for (TaskCheckItemRecord item : taskCheckItemMapper.findByTaskId(task.getId())) {
             existing.put(item.getItemId(), item);
         }
-        Map<Long, CheckItemTemplateRecord> templateById = allTemplates.stream()
+        Map<Long, CheckItemTemplateRecord> templateById = templates.stream()
                 .collect(java.util.stream.Collectors.toMap(CheckItemTemplateRecord::getId, template -> template, (left, right) -> left));
         for (CheckItemTemplateRecord template : templates.stream().filter(item -> item.getParentId() == null).toList()) {
             materializeSnapshot(task.getId(), template, null, existing);
@@ -243,11 +258,11 @@ public class TaskCheckItemApplicationService {
         if (opinion == null) {
             opinion = new ReviewOpinionRecord(); opinion.setId(opinionMapper.nextOpinionId()); opinion.setTaskId(taskId);
             opinion.setSourceType("MUTUAL_CHECK_ITEM"); opinion.setSourceItemId(item.getId()); opinion.setSeverity("GENERAL");
-            opinion.setContent(opinionContent); opinion.setRichText(opinionContent); opinion.setRaisedBy(currentUser.id()); opinion.setRaisedByName(currentUser.resolvedDisplayName());
+            opinion.setComment(opinionContent); opinion.setRichText(opinionContent); opinion.setRaisedBy(currentUser.id()); opinion.setRaisedByName(currentUser.resolvedDisplayName());
             opinion.setStatus("PENDING_REPLY"); opinionMapper.insert(opinion);
         } else {
-            opinion.setContent(opinionContent); opinion.setRichText(opinionContent);
-            if (opinionMapper.updateContent(opinion) != 1) { throw new BusinessException(ErrorCode.VERSION_CONFLICT, "关联互检意见已被其他操作更新，请刷新后重试"); }
+            opinion.setComment(opinionContent); opinion.setRichText(opinionContent);
+            if (opinionMapper.updateOpinion(opinion) != 1) { throw new BusinessException(ErrorCode.VERSION_CONFLICT, "关联互检意见已被其他操作更新，请刷新后重试"); }
         }
         return opinion;
     }
@@ -304,15 +319,16 @@ public class TaskCheckItemApplicationService {
     public record SubmitBatchItemCommand(long itemId, CheckResult result, String comment, String richText) { }
 
     public record CheckItemCategoryView(CheckItemCategoryInfo category, List<CheckItemListItemView> items) { }
-    public record CheckItemCategoryInfo(Long id, String reviewType, String itemName, int sortNo) { }
+    public record CheckItemCategoryInfo(Long id, String itemName, int sortNo) { }
     /**
      * 互检单查询子项：检查结论、文字意见和富文本只存在于可空 opinion 内，避免把同一信息平铺在 items 中。
+     * 模板富文本不属于任务检查项列表响应，页面只使用检查项名称。
      */
-    public record CheckItemListItemView(Long id, String itemName, String itemRichText, int sortNo, CheckItemListOpinionView opinion) {
+    public record CheckItemListItemView(Long id, String itemName, int sortNo, CheckItemListOpinionView opinion) {
         static CheckItemListItemView from(TaskCheckItemRecord record, CheckItemTemplateRecord template) {
             CheckItemListOpinionView opinion = record.getCheckResult() == null ? null
                     : new CheckItemListOpinionView(CheckResult.valueOf(record.getCheckResult()), record.getComment(), record.getRichText());
-            return new CheckItemListItemView(record.getId(), template.getItemName(), template.getItemRichText(), record.getSortNo(), opinion);
+            return new CheckItemListItemView(record.getId(), template.getItemName(), record.getSortNo(), opinion);
         }
     }
     public record CheckItemListOpinionView(CheckResult result, String comment, String richText) { }
@@ -325,10 +341,10 @@ public class TaskCheckItemApplicationService {
                     opinion == null ? null : CheckItemOpinionView.from(opinion), CheckItemStatus.valueOf(record.getStatus()));
         }
     }
-    public record CheckItemOpinionView(Long id, String content, String richText, Long raisedBy, String raisedByName, String severity,
+    public record CheckItemOpinionView(Long id, String comment, String richText, Long raisedBy, String raisedByName, String severity,
                                        OpinionStatus status, java.time.LocalDateTime createdAt) {
         static CheckItemOpinionView from(ReviewOpinionRecord opinion) {
-            return new CheckItemOpinionView(opinion.getId(), opinion.getContent(), opinion.getRichText(), opinion.getRaisedBy(),
+            return new CheckItemOpinionView(opinion.getId(), opinion.getComment(), opinion.getRichText(), opinion.getRaisedBy(),
                     opinion.getRaisedByName(), opinion.getSeverity(), OpinionStatus.valueOf(opinion.getStatus()), opinion.getCreatedAt());
         }
     }

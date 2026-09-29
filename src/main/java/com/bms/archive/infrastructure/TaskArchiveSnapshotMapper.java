@@ -11,14 +11,15 @@ import org.apache.ibatis.annotations.Select;
  */
 @Mapper
 public interface TaskArchiveSnapshotMapper {
-    @Insert("INSERT INTO task_archive_snapshot (task_id, file_snapshot, notification_snapshot) "
-            + "VALUES (#{taskId}, #{fileSnapshot}, #{notificationSnapshot})")
+    @Insert("INSERT INTO task_archive_snapshot (task_id, file_snapshot, flow_snapshot, notification_snapshot) "
+            + "VALUES (#{taskId}, #{fileSnapshot}, #{flowSnapshot}, #{notificationSnapshot})")
     int insert(TaskArchiveSnapshotRecord record);
 
     @Select("SELECT CASE WHEN EXISTS (SELECT 1 FROM task_archive_snapshot WHERE task_id=#{taskId}) THEN TRUE ELSE FALSE END")
     boolean existsByTaskId(long taskId);
 
-    @Select("SELECT task_id AS taskId, file_snapshot AS fileSnapshot, notification_snapshot AS notificationSnapshot "
+    @Select("SELECT task_id AS taskId, file_snapshot AS fileSnapshot, flow_snapshot AS flowSnapshot, "
+            + "notification_snapshot AS notificationSnapshot "
             + "FROM task_archive_snapshot WHERE task_id=#{taskId}")
     TaskArchiveSnapshotRecord findByTaskId(long taskId);
 }

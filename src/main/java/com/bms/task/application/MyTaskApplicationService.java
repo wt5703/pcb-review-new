@@ -3,7 +3,7 @@ package com.bms.task.application;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Permission;
 import com.bms.identity.domain.PermissionPolicy;
-import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
+import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.task.domain.MyTaskAction;
 import com.bms.task.domain.ReviewType;
@@ -44,7 +44,8 @@ public class MyTaskApplicationService {
         Set<Long> pendingReplyTaskIds = Set.copyOf(opinionMapper.findPendingReplyTaskIdsForDesigner(currentUser.id()));
         Set<Long> pendingConfirmationTaskIds = Set.copyOf(opinionMapper.findPendingConfirmationTaskIdsForRaiser(currentUser.id()));
         Map<Long, EnumSet<MyTaskAction>> actions = new HashMap<>();
-        for (ReviewTaskRecord task : taskMapper.findAll()) {
+        List<ReviewTaskRecord> unfinishedTasks = taskMapper.findAllUnfinished();
+        for (ReviewTaskRecord task : unfinishedTasks) {
             EnumSet<MyTaskAction> taskActions = EnumSet.noneOf(MyTaskAction.class);
             if (assignmentAccessMapper.isCurrentTaskProcessor(task.getId(), currentUser.id())) {
                 taskActions.add(MyTaskAction.REVIEW);
@@ -60,7 +61,7 @@ public class MyTaskApplicationService {
                 actions.put(task.getId(), taskActions);
             }
         }
-        return taskMapper.findAll().stream().filter(task -> actions.containsKey(task.getId()))
+        return unfinishedTasks.stream().filter(task -> actions.containsKey(task.getId()))
                 .map(task -> MyTaskView.from(task, actions.get(task.getId()))).toList();
     }
 

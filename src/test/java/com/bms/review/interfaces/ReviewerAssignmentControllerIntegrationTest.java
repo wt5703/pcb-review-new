@@ -40,23 +40,21 @@ class ReviewerAssignmentControllerIntegrationTest {
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].reviewRole").value("PCB_MUTUAL_CHECK"));
+                .andExpect(jsonPath("$.data[0].whitelistRole").value("PCB_MUTUAL_CHECK"));
 
         mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"actions\":[\"START_PCB_MATUAL_REVIEW\"],\"assignedRole\":\"PCB_MUTUAL_CHECK\",\"reviewerIds\":[20,21]}"))
+                        .content("{\"actions\":[\"START_PCB_MATUAL_REVIEW\"],\"reviewerEmployeeNos\":[\"BMS006\"]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.toStatus").value("MUTUAL_CHECK_REVIEWING"))
-                .andExpect(jsonPath("$.data.assignedReviewers.length()").value(2))
-                .andExpect(jsonPath("$.data.assignedReviewers[0].role").value("PCB_MUTUAL_CHECK"))
-                .andExpect(jsonPath("$.data.assignedReviewers[0].reviewerId").value(20));
+                .andExpect(jsonPath("$.data.assignedReviewerIds.length()").value(1));
 
     }
 
     @Test
-    void shouldRejectRoleWithoutCurrentNodeAssignmentPermission() throws Exception {
+    void shouldReturnCandidatesForTheDefaultMockCurrentUser() throws Exception {
         long taskId = 8402L;
         taskMapper.insert(task(taskId));
 
@@ -65,8 +63,8 @@ class ReviewerAssignmentControllerIntegrationTest {
                         .param("taskStatus", "MUTUAL_CHECK_PENDING_ASSIGNMENT")
                         .header("X-Mock-User-Id", "88")
                         .header("X-Mock-Roles", "PROCESS_EXPERT"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].whitelistRole").value("PCB_MUTUAL_CHECK"));
     }
 
     private ReviewTaskRecord task(long taskId) {

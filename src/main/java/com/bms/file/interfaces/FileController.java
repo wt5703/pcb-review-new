@@ -23,7 +23,7 @@ import org.springframework.web.multipart.MultipartFile;
 /**
  * @author 王涛
  * @date 2026-09-22
- * @description 统一处理公司资源服务代理、任务文件元数据登记、当前文件查询及授权下载。
+ * @description 调用公司现有api实现文件的上传与下载。
  */
 @RestController
 @Tag(name = "文件", description = "文件的上传与下载")
@@ -35,7 +35,7 @@ public class FileController {
     }
 
     @PostMapping(value = "/files/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "上传文件", description = "前端仅传 file、可选 taskId 和必填 fileCategory。fileCategory 仅允许 PCB_REVIEW、PCB_PROCESS_REVIEW、PCB_STRUCTURE_REVIEW、SCHEMATIC_REVIEW。后端从环境配置读取基础目录并追加 UUID，调用公司资源服务 /upload；没有 taskId 时仅允许 PCB_REVIEW 或 SCHEMATIC_REVIEW，供创建任务保存或提交时绑定。")
+    @Operation(summary = "上传文件", description = "上传文件统一调用该接口 创建任务的时候上传文件，此时taskId可不传")
     ApiResponse<UploadFileView> upload(@RequestPart("file") MultipartFile multipartFile,
                                        @RequestParam(required = false) Long taskId,
                                        @RequestParam @NotNull @Schema(description = "PCB评审=PCB_REVIEW，PCB工艺评审=PCB_PROCESS_REVIEW，PCB结构评审=PCB_STRUCTURE_REVIEW，原理图评审=SCHEMATIC_REVIEW", requiredMode = Schema.RequiredMode.REQUIRED) FileCategory fileCategory,
@@ -49,19 +49,19 @@ public class FileController {
         return ApiResponse.ok(new UploadFileView(storedFile.fileId(), storedFile.id(), storedFile.fileName(), storedFile.fileSize(), storedFile.category()), traceId(servletRequest));
     }
 
+    @PostMapping("/files/download")
+    @Operation(summary = "下载文件", description = "只传 review_file 主键 fileId。后端从文件记录取得任务归属和文件类别，完成权限校验后代理公司资源服务下载。")
+    ResponseEntity<byte[]> downloadContent(@RequestParam long fileId) {
+        FileApplicationService.DownloadContent content = fileApplicationService.downloadFile(fileId, CurrentUserHolder.require());
+        return ResponseEntity.ok().header("Content-Disposition", ContentDisposition.attachment().filename(content.fileName()).build().toString())
+                .contentType(MediaType.APPLICATION_OCTET_STREAM).body(content.content());
+    }
+
     @GetMapping("/files/latest")
     @Operation(summary = "查询任务当前节点的最新文件", description = "按任务和文件类别查询当前有效文件；类别仅支持四类 FileCategory。")
     ApiResponse<java.util.List<FileApplicationService.FileView>> latest(@RequestParam long taskId,
-            @RequestParam FileCategory fileCategory, HttpServletRequest servletRequest) {
+                                                                        @RequestParam FileCategory fileCategory, HttpServletRequest servletRequest) {
         return ApiResponse.ok(fileApplicationService.listLatestByCategory(taskId, fileCategory, CurrentUserHolder.require()), traceId(servletRequest));
-    }
-
-    @PostMapping("/files/download")
-    @Operation(summary = "下载文件", description = "只传 taskId 和唯一 fileId。后端读取已登记文件的类别并完成权限校验，再代理公司资源服务下载。")
-    ResponseEntity<byte[]> downloadContent(@RequestParam long taskId, @RequestParam long fileId) {
-        FileApplicationService.DownloadContent content = fileApplicationService.downloadTaskFile(taskId, fileId, CurrentUserHolder.require());
-        return ResponseEntity.ok().header("Content-Disposition", ContentDisposition.attachment().filename(content.fileName()).build().toString())
-                .contentType(MediaType.APPLICATION_OCTET_STREAM).body(content.content());
     }
 
     private String traceId(HttpServletRequest request) { return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString(); }

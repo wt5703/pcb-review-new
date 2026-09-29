@@ -24,19 +24,19 @@ public interface ReviewOpinionMapper {
     @Select("SELECT COALESCE(MAX(id), 0) + 1 FROM opinion_confirmation")
     long nextConfirmationId();
 
-    @Insert("INSERT INTO review_opinion (id, task_id, source_type, source_item_id, severity, content, rich_text_content, raised_by, raised_by_name, status) "
-            + "VALUES (#{id}, #{taskId}, #{sourceType}, #{sourceItemId}, #{severity}, #{content}, #{richText}, #{raisedBy}, #{raisedByName}, #{status})")
+    @Insert("INSERT INTO review_opinion (id, task_id, source_type, source_item_id, severity, comment, rich_text_content, raised_by, raised_by_name, status) "
+            + "VALUES (#{id}, #{taskId}, #{sourceType}, #{sourceItemId}, #{severity}, #{comment}, #{richText}, #{raisedBy}, #{raisedByName}, #{status})")
     int insert(ReviewOpinionRecord record);
 
-    @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, content, rich_text_content AS richText, raised_by AS raisedBy, raised_by_name AS raisedByName, "
+    @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, comment, rich_text_content AS richText, raised_by AS raisedBy, raised_by_name AS raisedByName, "
             + "status, created_at AS createdAt FROM review_opinion WHERE id=#{id}")
     ReviewOpinionRecord findById(long id);
 
-    @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, content, rich_text_content AS richText, raised_by AS raisedBy, raised_by_name AS raisedByName, "
+    @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, comment, rich_text_content AS richText, raised_by AS raisedBy, raised_by_name AS raisedByName, "
             + "status, created_at AS createdAt FROM review_opinion WHERE task_id=#{taskId} ORDER BY id")
     List<ReviewOpinionRecord> findByTaskId(long taskId);
 
-    @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, content, rich_text_content AS richText, raised_by AS raisedBy, raised_by_name AS raisedByName, " +
+    @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, comment, rich_text_content AS richText, raised_by AS raisedBy, raised_by_name AS raisedByName, " +
             "status, created_at AS createdAt FROM review_opinion " +
             "WHERE task_id=#{taskId} AND source_type='MUTUAL_CHECK_ITEM' AND source_item_id=#{sourceItemId} AND status <> 'WITHDRAWN' ORDER BY id DESC LIMIT 1")
     ReviewOpinionRecord findActiveMutualCheckItemOpinion(long taskId, long sourceItemId);
@@ -54,8 +54,8 @@ public interface ReviewOpinionMapper {
     @Update("UPDATE review_opinion SET status=#{status}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
     int updateStatus(ReviewOpinionRecord record);
 
-    @Update("UPDATE review_opinion SET severity=#{severity}, content=#{content}, rich_text_content=#{richText}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
-    int updateContent(ReviewOpinionRecord record);
+    @Update("UPDATE review_opinion SET severity=#{severity}, comment=#{comment}, rich_text_content=#{richText}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
+    int updateOpinion(ReviewOpinionRecord record);
 
     @Delete("DELETE FROM review_opinion WHERE id=#{id} AND status='PENDING_REPLY'")
     int deletePendingReply(long id);

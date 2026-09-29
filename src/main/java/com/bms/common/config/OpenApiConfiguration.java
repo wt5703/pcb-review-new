@@ -14,10 +14,6 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 @OpenAPIDefinition(info = @Info(title = "PCB评审平台后端 API", version = "v1",
-        description = "本地 Mock 身份通过 X-Mock-User-Id 与 X-Mock-Roles 请求头传入；多角色使用英文逗号分隔。"))
-@SecurityScheme(name = "mockUserId", type = SecuritySchemeType.APIKEY, in = SecuritySchemeIn.HEADER,
-        paramName = "X-Mock-User-Id", description = "本地 Mock 当前用户 ID")
-@SecurityScheme(name = "mockRoles", type = SecuritySchemeType.APIKEY, in = SecuritySchemeIn.HEADER,
-        paramName = "X-Mock-Roles", description = "本地 Mock 角色，例如 DESIGNER 或 PCB_LEADER")
+        description = "当前登录用户由后端调用用户中心当前用户接口获取；未配置或调用失败时使用默认 Mock 用户。"))
 public class OpenApiConfiguration {
 }

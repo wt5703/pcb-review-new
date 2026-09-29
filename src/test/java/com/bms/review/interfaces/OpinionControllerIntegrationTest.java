@@ -41,10 +41,10 @@ class OpinionControllerIntegrationTest {
                         .header("X-Mock-User-Id", "20")
                         .header("X-Mock-Roles", "HARDWARE_EXPERT")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sourceType\":\"EXPERT_REVIEW\",\"content\":\"<p>请调整走线</p><img src='data:image/png;base64,AA==' alt='问题截图' />\"}"))
+                        .content("{\"sourceType\":\"EXPERT_REVIEW\",\"comment\":\"<p>请调整走线</p><img src='data:image/png;base64,AA==' alt='问题截图' />\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PENDING_REPLY"))
-                .andExpect(jsonPath("$.data.content").value("<p>请调整走线</p><img src='data:image/png;base64,AA==' alt='问题截图' />"))
+                .andExpect(jsonPath("$.data.comment").value("<p>请调整走线</p><img src='data:image/png;base64,AA==' alt='问题截图' />"))
                 .andReturn().getResponse().getContentAsString();
         long opinionId = ((Number) JsonPath.read(raiseResponse, "$.data.id")).longValue();
 
@@ -114,7 +114,7 @@ class OpinionControllerIntegrationTest {
                         .header("X-Mock-User-Id", "20")
                         .header("X-Mock-Roles", "HARDWARE_EXPERT")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sourceType\":\"EXPERT_REVIEW\",\"severity\":\"GENERAL\",\"content\":\"原始意见\"}"))
+                        .content("{\"sourceType\":\"EXPERT_REVIEW\",\"severity\":\"GENERAL\",\"comment\":\"原始意见\"}"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         long opinionId = ((Number) JsonPath.read(response, "$.data.id")).longValue();
@@ -123,10 +123,10 @@ class OpinionControllerIntegrationTest {
                         .header("X-Mock-User-Id", "20")
                         .header("X-Mock-Roles", "HARDWARE_EXPERT")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"severity\":\"SERIOUS\",\"content\":\"<p>修改后的意见</p>\"}"))
+                        .content("{\"severity\":\"SERIOUS\",\"comment\":\"<p>修改后的意见</p>\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.severity").value("SERIOUS"))
-                .andExpect(jsonPath("$.data.content").value("<p>修改后的意见</p>"));
+                .andExpect(jsonPath("$.data.comment").value("<p>修改后的意见</p>"));
 
         mockMvc.perform(delete("/opinions/{opinionId}", opinionId)
                         .header("X-Mock-User-Id", "20")

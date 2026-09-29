@@ -60,9 +60,9 @@ class TaskArchiveOpinionExportApplicationServiceTest {
         }
     }
 
-    private ReviewOpinionRecord opinion(long id, String sourceType, long raisedBy, String raisedByName, String severity, String richText, String content) {
+    private ReviewOpinionRecord opinion(long id, String sourceType, long raisedBy, String raisedByName, String severity, String richText, String comment) {
         ReviewOpinionRecord record = new ReviewOpinionRecord();
-        record.setId(id); record.setSourceType(sourceType); record.setRaisedBy(raisedBy); record.setRaisedByName(raisedByName); record.setSeverity(severity); record.setRichText(richText); record.setContent(content);
+        record.setId(id); record.setSourceType(sourceType); record.setRaisedBy(raisedBy); record.setRaisedByName(raisedByName); record.setSeverity(severity); record.setRichText(richText); record.setComment(comment);
         return record;
     }
 

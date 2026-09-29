@@ -34,7 +34,7 @@ class PcbHappyPathIntegrationTest {
         registerLatestPcbFile(taskId);
 
         transition(taskId, "START_PCB_MATUAL_ASSIGNMENT", 10L, "DESIGNER");
-        assignAndTransition(taskId, "START_PCB_MATUAL_REVIEW", "PCB_MUTUAL_CHECK", 21L, 1L, "PCB_LEADER");
+        assignAndTransition(taskId, "START_PCB_MATUAL_REVIEW", "BMS006", 1L, "PCB_LEADER");
 
         transition(taskId, "PREPARE_FINISH", 10L, "DESIGNER");
         transition(taskId, "FINISH", 1L, "PCB_LEADER");
@@ -43,8 +43,8 @@ class PcbHappyPathIntegrationTest {
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.taskId").value(taskId))
-                .andExpect(jsonPath("$.data.finalStatus").value("FINISHED"));
+                .andExpect(jsonPath("$.data.flowNodes").isArray())
+                .andExpect(jsonPath("$.data.flowNodes.length()").value(5));
 
         mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-User-Id", "1")
@@ -74,12 +74,12 @@ class PcbHappyPathIntegrationTest {
         return ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.data.id")).longValue();
     }
 
-    private void assignAndTransition(long taskId, String action, String reviewRole, long reviewerId, long operatorId, String operatorRole) throws Exception {
+    private void assignAndTransition(long taskId, String action, String reviewerEmployeeNo, long operatorId, String operatorRole) throws Exception {
         mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-User-Id", String.valueOf(operatorId))
                         .header("X-Mock-Roles", operatorRole)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"actions\":[\"" + action + "\"],\"assignedRole\":\"" + reviewRole + "\",\"reviewerIds\":[" + reviewerId + "]}"))
+                        .content("{\"actions\":[\"" + action + "\"],\"reviewerEmployeeNos\":[\"" + reviewerEmployeeNo + "\"]}"))
                 .andExpect(status().isOk());
     }
 

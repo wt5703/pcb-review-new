@@ -45,6 +45,80 @@ public class CheckItemTemplateApplicationService {
         this.templateMapper = templateMapper;
     }
 
+    /** 导入前供页面判断是否需要提示用户确认替换当前模板。 */
+    public TemplateExistenceView checkExistence(ReviewType reviewType, CurrentUser currentUser) {
+        requireManagePermission(currentUser);
+        if (reviewType == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "查询互检单模板时必须选择任务类型");
+        }
+        List<CheckItemTemplateRecord> records = templateMapper.findAll(reviewType.name());
+        int categoryCount = (int) records.stream().filter(record -> record.getParentId() == null).count();
+        int itemCount = records.size() - categoryCount;
+        return new TemplateExistenceView(reviewType, !records.isEmpty(), categoryCount, itemCount);
+    }
+
+    /** 兼容应用层已有调用：未显式确认时绝不替换已有模板。 */
+    public ImportResult importWorkbook(byte[] workbookBytes, ReviewType reviewType, CurrentUser currentUser) {
+        return importWorkbook(workbookBytes, reviewType, false, currentUser);
+    }
+
+    /**
+     * 按评审类型导入互检单 Excel：PCB 读取“类别、检查项”，原理图读取“检查项类别、检查内容”。
+     * PCB 的检查项可按换行编号拆分，且会保留 .xlsx 检查项单元格内嵌的示例图片。
+     */
+    @Transactional
+    public ImportResult importWorkbook(byte[] workbookBytes, ReviewType reviewType, boolean confirmed, CurrentUser currentUser) {
+        requireManagePermission(currentUser);
+        if (reviewType == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "导入互检单模板时必须选择任务类型");
+        }
+        List<CheckItemTemplateRecord> existingTemplates = templateMapper.findAll(reviewType.name());
+        // 先由存在性接口提示前端；这里仍保留校验，避免并发或绕过页面确认时误覆盖模板。
+        if (!existingTemplates.isEmpty() && !confirmed) {
+            throw new BusinessException(ErrorCode.DUPLICATE_REQUEST,
+                    (reviewType == ReviewType.PCB ? "PCB" : "原理图") + "互检单模板已存在，请确认后重新导入");
+        }
+        // 用户确认后，逻辑停用旧模板；已创建任务使用的是任务检查项快照，不会被影响。
+        int replacedCount = existingTemplates.isEmpty() ? 0 : templateMapper.disableEnabledByReviewType(reviewType.name());
+        List<ImportCategory> categories = readCategories(workbookBytes, reviewType);
+        int created = 0;
+        for (ImportCategory imported : categories) {
+            // 导入校验已保证当前类型没有模板，以下只创建一套完整的类别—子项树。
+            CheckItemTemplateRecord category = newTemplate(imported.reviewType(), null, imported.categoryName(), imported.sortNo(), true);
+            templateMapper.insert(category);
+            created++;
+            for (int index = 0; index < imported.items().size(); index++) {
+                ImportItem importedItem = imported.items().get(index);
+                CheckItemTemplateRecord item = newTemplate(imported.reviewType(), category.getId(), importedItem.itemName(), importedItem.itemRichText(), index + 1, true);
+                templateMapper.insert(item);
+                created++;
+            }
+        }
+        int totalRows = categories.stream().mapToInt(category -> 1 + category.items().size()).sum();
+        return new ImportResult(totalRows, created, replacedCount);
+    }
+
+    /**
+     * 每种评审类型仅维护一套互检单模板；层级关系只由 parentId 表达。
+     */
+    public TemplateListView get(ReviewType reviewType, CurrentUser currentUser) {
+        requireManagePermission(currentUser);
+        if (reviewType == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "查询互检单模板时必须选择任务类型");
+        }
+        List<CheckItemTemplateRecord> records = templateMapper.findAll(reviewType.name());
+        Map<Long, List<TemplateListItemView>> childrenByParentId = new HashMap<>();
+        records.stream().filter(record -> record.getParentId() != null)
+                .forEach(record -> childrenByParentId.computeIfAbsent(record.getParentId(), ignored -> new ArrayList<>()).add(TemplateListItemView.from(record)));
+        childrenByParentId.values().forEach(items -> items.sort(Comparator.comparing(TemplateListItemView::sortNo).thenComparing(TemplateListItemView::id)));
+        List<TemplateListCategoryView> categories = records.stream().filter(record -> record.getParentId() == null)
+                .sorted(Comparator.comparing(CheckItemTemplateRecord::getSortNo).thenComparing(CheckItemTemplateRecord::getId))
+                .map(category -> new TemplateListCategoryView(TemplateListItemView.from(category),
+                        List.copyOf(childrenByParentId.getOrDefault(category.getId(), List.of()))))
+                .toList();
+        return new TemplateListView(reviewType, categories);
+    }
+
     @Transactional
     public TemplateCategoryView create(CreateCategoryCommand command, CurrentUser currentUser) {
         requireManagePermission(currentUser);
@@ -106,20 +180,6 @@ public class CheckItemTemplateApplicationService {
         return new TemplateUpdateView(TemplateView.from(target), List.copyOf(items));
     }
 
-    /** 按评审类型读取互检模板树；层级关系只由 parentId 表达。 */
-    public List<TemplateListCategoryView> list(ReviewType reviewType, CurrentUser currentUser) {
-        requireManagePermission(currentUser);
-        List<CheckItemTemplateRecord> records = templateMapper.findAll(reviewType == null ? null : reviewType.name());
-        Map<Long, List<TemplateListItemView>> childrenByParentId = new HashMap<>();
-        records.stream().filter(record -> record.getParentId() != null)
-                .forEach(record -> childrenByParentId.computeIfAbsent(record.getParentId(), ignored -> new ArrayList<>()).add(TemplateListItemView.from(record)));
-        childrenByParentId.values().forEach(items -> items.sort(Comparator.comparing(TemplateListItemView::sortNo).thenComparing(TemplateListItemView::id)));
-        return records.stream().filter(record -> record.getParentId() == null)
-                .sorted(Comparator.comparing(CheckItemTemplateRecord::getSortNo).thenComparing(CheckItemTemplateRecord::getId))
-                .map(category -> new TemplateListCategoryView(TemplateListItemView.from(category),
-                        List.copyOf(childrenByParentId.getOrDefault(category.getId(), List.of()))))
-                .toList();
-    }
 
     @Transactional
     public void disable(long id, DeleteTargetCategory category, CurrentUser currentUser) {
@@ -142,51 +202,6 @@ public class CheckItemTemplateApplicationService {
         } else {
             templateMapper.decrementSiblingItemSortAfter(template.getParentId(), template.getSortNo());
         }
-    }
-
-    /**
-     * 按评审类型导入互检单 Excel：PCB 读取“类别、检查项”，原理图读取“检查项类别、检查内容”。
-     * PCB 的检查项可按换行编号拆分，且会保留 .xlsx 检查项单元格内嵌的示例图片。
-     */
-    @Transactional
-    public ImportResult importWorkbook(byte[] workbookBytes, ReviewType reviewType, CurrentUser currentUser) {
-        requireManagePermission(currentUser);
-        if (reviewType == null) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "导入互检单模板时必须选择任务类型");
-        }
-        List<ImportCategory> categories = readCategories(workbookBytes, reviewType);
-        int created = 0;
-        int updated = 0;
-        for (ImportCategory imported : categories) {
-            CheckItemTemplateRecord category = templateMapper.findCategoryByReviewTypeAndName(imported.reviewType().name(), imported.categoryName());
-            if (category == null) {
-                category = newTemplate(imported.reviewType(), null, imported.categoryName(), imported.sortNo(), true);
-                templateMapper.insert(category);
-                created++;
-            } else {
-                category.setSortNo(imported.sortNo());
-                category.setEnabled(true);
-                templateMapper.update(category);
-                updated++;
-            }
-            for (int index = 0; index < imported.items().size(); index++) {
-                ImportItem importedItem = imported.items().get(index);
-                CheckItemTemplateRecord item = templateMapper.findChildByParentIdAndName(category.getId(), importedItem.itemName());
-                if (item == null) {
-                    item = newTemplate(imported.reviewType(), category.getId(), importedItem.itemName(), importedItem.itemRichText(), index + 1, true);
-                    templateMapper.insert(item);
-                    created++;
-                } else {
-                    item.setSortNo(index + 1);
-                    item.setItemRichText(importedItem.itemRichText());
-                    item.setEnabled(true);
-                    templateMapper.update(item);
-                    updated++;
-                }
-            }
-        }
-        int totalRows = categories.stream().mapToInt(category -> 1 + category.items().size()).sum();
-        return new ImportResult(totalRows, created, updated);
     }
 
     private List<ImportCategory> readCategories(byte[] workbookBytes, ReviewType reviewType) {
@@ -358,7 +373,7 @@ public class CheckItemTemplateApplicationService {
     public record UpdateTemplateCommand(long itemId, String itemName, List<UpdateItemCommand> items) { }
     public record UpdateItemCommand(Long itemId, String itemName) { }
     public enum DeleteTargetCategory { CATEGORY, ITEM }
-    public record ImportResult(int totalRows, int createdCount, int updatedCount) { }
+    public record ImportResult(int totalRows, int createdCount, int replacedCount) { }
 
     public record TemplateView(Long id, ReviewType reviewType, Long parentId, String itemName, String itemRichText, int sortNo) {
         static TemplateView from(CheckItemTemplateRecord record) {
@@ -368,6 +383,10 @@ public class CheckItemTemplateApplicationService {
     public record TemplateCategoryView(TemplateView category, List<TemplateView> items) { }
     /** 统一修改接口的返回模型；小类修改时 items 为空，大类修改时返回本次处理的子项。 */
     public record TemplateUpdateView(TemplateView item, List<TemplateView> items) { }
+    /** 某一种评审类型的唯一互检单模板。 */
+    public record TemplateListView(ReviewType reviewType, List<TemplateListCategoryView> categories) { }
+    /** 当前类型的启用模板是否存在，以及该模板包含的大类和子项数量。 */
+    public record TemplateExistenceView(ReviewType reviewType, boolean exists, int categoryCount, int itemCount) { }
     public record TemplateListCategoryView(TemplateListItemView category, List<TemplateListItemView> items) { }
     public record TemplateListItemView(Long id, String itemName, String itemRichText, int sortNo) {
         static TemplateListItemView from(CheckItemTemplateRecord record) {

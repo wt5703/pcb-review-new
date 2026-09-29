@@ -2,7 +2,7 @@ package com.bms.identity.application;
 
 import com.bms.common.BusinessException;
 import com.bms.identity.domain.Role;
-import com.bms.identity.infrastructure.TaskAssignmentAccessMapper;
+import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;

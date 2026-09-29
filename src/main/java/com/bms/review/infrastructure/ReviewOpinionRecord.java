@@ -13,7 +13,7 @@ public class ReviewOpinionRecord {
     private String sourceType;
     private Long sourceItemId;
     private String severity;
-    private String content;
+    private String comment;
     private String richText;
     private Long raisedBy;
     private String raisedByName;
@@ -30,8 +30,8 @@ public class ReviewOpinionRecord {
     public void setSourceItemId(Long sourceItemId) { this.sourceItemId = sourceItemId; }
     public String getSeverity() { return severity; }
     public void setSeverity(String severity) { this.severity = severity; }
-    public String getContent() { return content; }
-    public void setContent(String content) { this.content = content; }
+    public String getComment() { return comment; }
+    public void setComment(String comment) { this.comment = comment; }
     public String getRichText() { return richText; }
     public void setRichText(String richText) { this.richText = richText; }
     public Long getRaisedBy() { return raisedBy; }

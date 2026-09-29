@@ -41,7 +41,7 @@ function fillEditor(group: TemplateListCategory): void {
 async function load(): Promise<void> {
   loading.value = true
   error.value = ''
-  try { categories.value = await reviewApi.listTemplates(reviewType.value) } catch (cause) { error.value = cause instanceof Error ? cause.message : '加载互检模板失败' } finally { loading.value = false }
+  try { categories.value = (await reviewApi.getTemplate(reviewType.value)).categories } catch (cause) { error.value = cause instanceof Error ? cause.message : '加载互检模板失败' } finally { loading.value = false }
 }
 
 function closeEditor(): void { editorMode.value = null; resetEditor() }
@@ -109,8 +109,10 @@ async function importWorkbook(event: Event): Promise<void> {
   error.value = ''
   message.value = ''
   try {
-    const result = await reviewApi.importTemplate(file, reviewType.value)
-    message.value = `导入完成：共 ${result.totalRows} 行，新增 ${result.createdCount} 条，更新 ${result.updatedCount} 条。`
+    const existence = await reviewApi.checkTemplateExistence(reviewType.value)
+    if (existence.exists && !window.confirm(`当前${reviewType.value === 'PCB' ? 'PCB' : '原理图'}模板已有 ${existence.categoryCount} 个大类、${existence.itemCount} 个检查项。确认后将替换旧模板，已创建任务不受影响。是否继续？`)) return
+    const result = await reviewApi.importTemplate(file, reviewType.value, existence.exists)
+    message.value = `导入完成：共 ${result.totalRows} 行，新增 ${result.createdCount} 条${result.replacedCount ? `，已替换 ${result.replacedCount} 条旧模板记录` : ''}。`
     await load()
   } catch (cause) { error.value = cause instanceof Error ? cause.message : '导入失败' } finally {
     importing.value = false

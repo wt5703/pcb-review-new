@@ -78,13 +78,13 @@ function formatTime(value?: string): string {
 }
 function extraOpinionText(opinion: Opinion): string {
   const template = document.createElement('template')
-  template.innerHTML = opinion.richText || opinion.content || ''
+  template.innerHTML = opinion.richText || opinion.comment || ''
   template.content.querySelectorAll('img').forEach((image) => image.remove())
   return template.innerHTML.trim()
 }
 function extraOpinionImages(opinion: Opinion): string[] {
   const template = document.createElement('template')
-  template.innerHTML = opinion.richText || opinion.content || ''
+  template.innerHTML = opinion.richText || opinion.comment || ''
   return Array.from(template.content.querySelectorAll('img'))
     .map((image) => image.getAttribute('src') || '')
     .filter(Boolean)
@@ -122,7 +122,7 @@ async function raiseExtraOpinion(): Promise<void> {
   extraOpinionSaving.value = true
   extraOpinionMessage.value = ''
   try {
-    await reviewApi.raiseOpinion(props.taskId, { sourceType: 'MUTUAL_EXTRA', severity: extraOpinionForm.severity, content: richText, richText })
+    await reviewApi.raiseOpinion(props.taskId, { sourceType: 'MUTUAL_EXTRA', severity: extraOpinionForm.severity, comment: richText, richText })
     if (extraOpinionEditor.value) extraOpinionEditor.value.innerHTML = ''
     if (extraOpinionScreenshotEditor.value) extraOpinionScreenshotEditor.value.innerHTML = ''
     extraOpinionMessage.value = '额外评审意见已提交。'
@@ -209,7 +209,7 @@ onMounted(loadExtraOpinions)
         <header class="mutual-category-head"><span class="category-number">{{ category.category.sortNo }}</span><div><span class="category-badge">类别</span><b>{{ category.category.itemName }}</b><small>{{ category.items.length }} 个检查项</small></div></header>
         <div class="mutual-items">
           <section v-for="item in category.items" :key="item.id" class="mutual-item">
-            <div class="mutual-item-head"><span class="item-number">{{ item.sortNo }}</span><div class="mutual-item-title" v-html="item.itemRichText || item.itemName" /><div class="result-control"><select v-model="edit(item).result" @change="clearItemFeedback(item.id)"><option :value="undefined" disabled>请选择结果</option><option value="PASS">合格</option><option value="FAIL">不合格</option><option value="NC">NC</option></select><span class="result-badge" :class="edit(item).result?.toLowerCase()">{{ resultLabel(edit(item).result) }}</span><button class="btn compact primary" :disabled="saving || savingItemId === item.id" @click="saveItem(item)">{{ savingItemId === item.id ? '保存中…' : '保存' }}</button></div></div>
+            <div class="mutual-item-head"><span class="item-number">{{ item.sortNo }}</span><div class="mutual-item-title">{{ item.itemName }}</div><div class="result-control"><select v-model="edit(item).result" @change="clearItemFeedback(item.id)"><option :value="undefined" disabled>请选择结果</option><option value="PASS">合格</option><option value="FAIL">不合格</option><option value="NC">NC</option></select><span class="result-badge" :class="edit(item).result?.toLowerCase()">{{ resultLabel(edit(item).result) }}</span><button class="btn compact primary" :disabled="saving || savingItemId === item.id" @click="saveItem(item)">{{ savingItemId === item.id ? '保存中…' : '保存' }}</button></div></div>
             <p v-if="itemFeedbacks[item.id]" class="mutual-item-feedback" :class="{ success: itemFeedbacks[item.id]?.success }">{{ itemFeedbacks[item.id]?.text }}</p>
             <div v-if="edit(item).result && edit(item).result !== 'PASS'" class="mutual-detail-grid">
               <label>意见 <textarea v-model="edit(item).comment" rows="3" placeholder="请填写具体意见 *" /></label>
@@ -241,7 +241,7 @@ onMounted(loadExtraOpinions)
       <div class="extra-opinion-list-head"><h3>额外意见列表</h3></div>
       <article v-for="opinion in extraOpinions" :key="opinion.id" class="extra-opinion-row">
         <div class="extra-opinion-main"><div class="extra-opinion-meta"><span class="severity-chip" :class="opinion.severity.toLowerCase()">{{ severityLabel(opinion.severity) }}</span><span class="opinion-status">{{ opinionStatusLabel(opinion.status) }}</span><span>提出时间：{{ formatTime(opinion.createdAt) }}</span></div>
-          <div class="extra-opinion-content" v-html="extraOpinionText(opinion) || (extraOpinionImages(opinion).length ? '' : opinion.content)" />
+          <div class="extra-opinion-content" v-html="extraOpinionText(opinion) || (extraOpinionImages(opinion).length ? '' : opinion.comment)" />
           <div v-if="opinion.status === 'PENDING_CONFIRMATION'" class="extra-opinion-actions"><button class="btn compact" @click="confirmExtraOpinion(opinion, true)">通过</button><button class="btn compact danger" @click="confirmExtraOpinion(opinion, false)">不通过</button></div>
         </div>
         <aside v-if="extraOpinionImages(opinion).length" class="extra-opinion-rich-text" aria-label="问题截图"><img v-for="(image, index) in extraOpinionImages(opinion)" :key="`${opinion.id}-${index}`" :src="image" alt="问题截图" /></aside>

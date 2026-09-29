@@ -1,5 +1,3 @@
-import { identity } from '@/stores/identity'
-
 export class ApiError extends Error {
   constructor(message: string, readonly status: number, readonly traceId?: string) {
     super(message)
@@ -18,8 +16,6 @@ function baseUrl(): string {
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
   headers.set('Accept', 'application/json')
-  headers.set('X-Mock-User-Id', String(identity.userId))
-  headers.set('X-Mock-Roles', identity.roles)
   if (options.body && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json')
   }
@@ -41,8 +37,6 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
 export async function requestBinary(path: string, options: RequestInit = {}): Promise<Blob> {
   const headers = new Headers(options.headers)
   headers.set('Accept', '*/*')
-  headers.set('X-Mock-User-Id', String(identity.userId))
-  headers.set('X-Mock-Roles', identity.roles)
   let response: Response
   try {
     response = await fetch(`${baseUrl()}${path}`, { ...options, headers })

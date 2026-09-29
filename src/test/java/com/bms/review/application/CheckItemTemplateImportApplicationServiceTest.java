@@ -1,5 +1,7 @@
 package com.bms.review.application;
 
+import com.bms.common.BusinessException;
+import com.bms.common.ErrorCode;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Role;
 import com.bms.review.infrastructure.CheckItemTemplateMapper;
@@ -14,6 +16,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -54,6 +57,36 @@ class CheckItemTemplateImportApplicationServiceTest {
                 "边缘定位柱（金属化孔、金属定位柱）与PAD边缘<1.5mm，需增加阻焊丝印；",
                 "从板螺丝孔螺母柱(螺母柱直径10mm）以螺丝孔中心画圆禁布区直径12.5mm以上、到器件禁布区直径15mm以上。",
                 "板子中间的螺丝附件器件与板子垂直放置");
+    }
+
+    @Test
+    void shouldRejectImportWhenTemplateAlreadyExistsForReviewType() throws Exception {
+        CheckItemTemplateRecord existing = new CheckItemTemplateRecord();
+        existing.setId(1L);
+        when(templateMapper.findAll(ReviewType.PCB.name())).thenReturn(List.of(existing));
+
+        assertThatThrownBy(() -> service.importWorkbook(workbookBytes("已有类别", "已有检查项"), ReviewType.PCB,
+                new CurrentUser(1L, Set.of(Role.PCB_LEADER))))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(exception -> assertThat(((BusinessException) exception).errorCode()).isEqualTo(ErrorCode.DUPLICATE_REQUEST))
+                .hasMessage("PCB互检单模板已存在，请确认后重新导入");
+    }
+
+    @Test
+    void shouldReplaceExistingTemplateOnlyAfterConfirmed() throws Exception {
+        CheckItemTemplateRecord existing = new CheckItemTemplateRecord();
+        existing.setId(1L);
+        when(templateMapper.findAll(ReviewType.PCB.name())).thenReturn(List.of(existing));
+        when(templateMapper.disableEnabledByReviewType(ReviewType.PCB.name())).thenReturn(1);
+        when(templateMapper.nextId()).thenReturn(10L, 11L);
+
+        CheckItemTemplateApplicationService.ImportResult result = service.importWorkbook(
+                workbookBytes("新类别", "新检查项"), ReviewType.PCB, true,
+                new CurrentUser(1L, Set.of(Role.PCB_LEADER)));
+
+        assertThat(result.createdCount()).isEqualTo(2);
+        assertThat(result.replacedCount()).isEqualTo(1);
+        verify(templateMapper).disableEnabledByReviewType(ReviewType.PCB.name());
     }
 
     private byte[] workbookBytes(String category, String items) throws Exception {
