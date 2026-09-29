@@ -5,7 +5,7 @@ import com.bms.common.ErrorCode;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Permission;
 import com.bms.identity.domain.PermissionPolicy;
-import com.bms.review.domain.ReviewRole;
+import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.review.infrastructure.AssignableReviewerRecord;
 import com.bms.review.infrastructure.ReviewerWhitelistMapper;
 import com.bms.review.infrastructure.ReviewerWhitelistRecord;
@@ -24,15 +24,15 @@ import java.util.stream.Collectors;
  */
 @Service
 public class ReviewerWhitelistApplicationService {
-    private static final List<ReviewRole> SUPPORTED_ROLE_ORDER = List.of(
-            ReviewRole.HARDWARE_EXPERT,
-            ReviewRole.EMC_EXPERT,
-            ReviewRole.STRUCTURE_EXPERT,
-            ReviewRole.PROCESS_EXPERT,
-            ReviewRole.PCB_EXPERT,
-            ReviewRole.PCB_MUTUAL_CHECK,
-            ReviewRole.SCHEMATIC_MUTUAL_CHECK);
-    private static final Set<ReviewRole> SUPPORTED_ROLES = Set.copyOf(SUPPORTED_ROLE_ORDER);
+    private static final List<ReviewerWhitelistRole> SUPPORTED_ROLE_ORDER = List.of(
+            ReviewerWhitelistRole.HARDWARE_EXPERT,
+            ReviewerWhitelistRole.EMC_EXPERT,
+            ReviewerWhitelistRole.STRUCTURE_EXPERT,
+            ReviewerWhitelistRole.PROCESS_EXPERT,
+            ReviewerWhitelistRole.PCB_EXPERT,
+            ReviewerWhitelistRole.PCB_MUTUAL_CHECK,
+            ReviewerWhitelistRole.SCHEMATIC_MUTUAL_CHECK);
+    private static final Set<ReviewerWhitelistRole> SUPPORTED_ROLES = Set.copyOf(SUPPORTED_ROLE_ORDER);
 
     private final ReviewerWhitelistMapper whitelistMapper;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
@@ -52,7 +52,7 @@ public class ReviewerWhitelistApplicationService {
         if (roleEmployeeNos == null || roleEmployeeNos.isEmpty()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "至少需要提供一类评审人员白名单");
         }
-        Set<ReviewRole> duplicateRoles = roleEmployeeNos.stream().map(RoleEmployeeNos::reviewRole).collect(Collectors.toSet());
+        Set<ReviewerWhitelistRole> duplicateRoles = roleEmployeeNos.stream().map(RoleEmployeeNos::reviewRole).collect(Collectors.toSet());
         if (duplicateRoles.size() != roleEmployeeNos.size()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "同一评审角色只能提交一次");
         }
@@ -106,8 +106,8 @@ public class ReviewerWhitelistApplicationService {
     }
 
     public List<RoleEmployeeNosView> views() {
-        Map<ReviewRole, List<String>> employeeNosByRole = whitelistMapper.findAll().stream()
-                .collect(Collectors.groupingBy(record -> ReviewRole.valueOf(record.getReviewRole()),
+        Map<ReviewerWhitelistRole, List<String>> employeeNosByRole = whitelistMapper.findAll().stream()
+                .collect(Collectors.groupingBy(record -> ReviewerWhitelistRole.valueOf(record.getReviewRole()),
                         Collectors.mapping(ReviewerWhitelistRecord::getEmployeeNo, Collectors.toList())));
         return SUPPORTED_ROLE_ORDER.stream()
                 .filter(employeeNosByRole::containsKey)
@@ -119,7 +119,7 @@ public class ReviewerWhitelistApplicationService {
     public List<ReviewerWhitelistView> list(CurrentUser currentUser) {
         requireManagePermission(currentUser);
         return whitelistMapper.findAll().stream()
-                .map(record -> new ReviewerWhitelistView(record.getId(), ReviewRole.valueOf(record.getReviewRole()), record.getEmployeeNo(),
+                .map(record -> new ReviewerWhitelistView(record.getId(), ReviewerWhitelistRole.valueOf(record.getReviewRole()), record.getEmployeeNo(),
                         record.getDisplayName(), record.getEmail(), record.getMobile(), record.getCreatedAt()))
                 .toList();
     }
@@ -128,7 +128,7 @@ public class ReviewerWhitelistApplicationService {
      * 返回指定白名单职责下可被实际分配的用户。白名单工号必须能解析到启用的用户账号，
      * 否则不会出现在人员选择器中，避免前端拿到无法用于 reviewerIds 的数据。
      */
-    public List<AssignableReviewerView> listAssignableUsers(List<ReviewRole> whitelistRoles) {
+    public List<AssignableReviewerView> listAssignableUsers(List<ReviewerWhitelistRole> whitelistRoles) {
         if (whitelistRoles == null || whitelistRoles.isEmpty()) {
             return List.of();
         }
@@ -144,15 +144,15 @@ public class ReviewerWhitelistApplicationService {
         }
     }
 
-    public record RoleEmployeeNos(ReviewRole reviewRole, List<String> employeeNos) { }
-    public record RoleEmployeeNosView(ReviewRole reviewRole, List<String> employeeNos) { }
-    public record ReviewerWhitelistView(Long id, ReviewRole reviewRole, String employeeNo, String displayName,
+    public record RoleEmployeeNos(ReviewerWhitelistRole reviewRole, List<String> employeeNos) { }
+    public record RoleEmployeeNosView(ReviewerWhitelistRole reviewRole, List<String> employeeNos) { }
+    public record ReviewerWhitelistView(Long id, ReviewerWhitelistRole reviewRole, String employeeNo, String displayName,
                                         String email, String mobile, java.time.LocalDateTime createdAt) { }
     public record AssignableReviewerView(Long userId, String employeeNo, String displayName, String departmentName,
-                                         ReviewRole whitelistRole) {
+                                         ReviewerWhitelistRole whitelistRole) {
         static AssignableReviewerView from(AssignableReviewerRecord record) {
             return new AssignableReviewerView(record.getUserId(), record.getEmployeeNo(), record.getDisplayName(),
-                    record.getDepartmentName(), ReviewRole.valueOf(record.getWhitelistRole()));
+                    record.getDepartmentName(), ReviewerWhitelistRole.valueOf(record.getWhitelistRole()));
         }
     }
     public record SaveResult(int createdCount, List<RoleEmployeeNosView> roleEmployeeNos) { }

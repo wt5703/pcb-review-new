@@ -305,22 +305,18 @@ public class OpinionApplicationService {
                 case STRUCTURE_REVIEW -> ReviewRole.STRUCTURE_EXPERT.name().equals(reviewRole);
                 case EXPERT_REVIEW -> ReviewRole.HARDWARE_EXPERT.name().equals(reviewRole)
                         || ReviewRole.EMC_EXPERT.name().equals(reviewRole) || ReviewRole.PCB_EXPERT.name().equals(reviewRole);
-                case SCHEMATIC_REVIEW -> ReviewRole.SCHEMATIC_HARDWARE_EXPERT.name().equals(reviewRole)
-                        || ReviewRole.SCHEMATIC_OTHER_EXPERT.name().equals(reviewRole);
-                case MUTUAL_CHECK_ITEM, MUTUAL_EXTRA -> ReviewRole.PCB_MUTUAL_CHECK.name().equals(reviewRole)
-                        || ReviewRole.SCHEMATIC_MUTUAL_CHECK.name().equals(reviewRole);
+                case SCHEMATIC_REVIEW -> isInitialExpertRole(reviewRole);
+                // 互检单人员是流程分配人员，不保存在任务创建时的“业务评审角色—专家”映射中。
+                case MUTUAL_CHECK_ITEM, MUTUAL_EXTRA -> false;
             });
         }
         TaskStatus status = TaskStatus.valueOf(task.getStatus());
         return switch (status) {
-            case PCB_EXPERT_REVIEWING -> ReviewRole.HARDWARE_EXPERT.name().equals(reviewRole)
-                    || ReviewRole.EMC_EXPERT.name().equals(reviewRole) || ReviewRole.PCB_EXPERT.name().equals(reviewRole);
+            case PCB_EXPERT_REVIEWING -> isInitialExpertRole(reviewRole);
             case PCB_PROCESS_STRUCTURE_REVIEWING -> ReviewRole.PROCESS_EXPERT.name().equals(reviewRole)
                     || ReviewRole.STRUCTURE_EXPERT.name().equals(reviewRole);
-            case SCHEMATIC_REVIEWING -> ReviewRole.SCHEMATIC_HARDWARE_EXPERT.name().equals(reviewRole)
-                    || ReviewRole.SCHEMATIC_OTHER_EXPERT.name().equals(reviewRole);
-            case MUTUAL_CHECK_REVIEWING -> ReviewRole.PCB_MUTUAL_CHECK.name().equals(reviewRole)
-                    || ReviewRole.SCHEMATIC_MUTUAL_CHECK.name().equals(reviewRole);
+            case SCHEMATIC_REVIEWING -> isInitialExpertRole(reviewRole);
+            case MUTUAL_CHECK_REVIEWING -> false;
             default -> false;
         };
     }
@@ -349,14 +345,15 @@ public class OpinionApplicationService {
         return switch (sourceType) {
             case "PROCESS_REVIEW" -> ReviewRole.PROCESS_EXPERT.name().equals(role);
             case "STRUCTURE_REVIEW" -> ReviewRole.STRUCTURE_EXPERT.name().equals(role);
-            case "EXPERT_REVIEW" -> ReviewRole.HARDWARE_EXPERT.name().equals(role) || ReviewRole.EMC_EXPERT.name().equals(role)
-                    || ReviewRole.PCB_EXPERT.name().equals(role);
-            case "SCHEMATIC_REVIEW" -> ReviewRole.SCHEMATIC_HARDWARE_EXPERT.name().equals(role)
-                    || ReviewRole.SCHEMATIC_OTHER_EXPERT.name().equals(role);
-            case "MUTUAL_CHECK_ITEM", "MUTUAL_EXTRA" -> ReviewRole.PCB_MUTUAL_CHECK.name().equals(role)
-                    || ReviewRole.SCHEMATIC_MUTUAL_CHECK.name().equals(role);
+            case "EXPERT_REVIEW", "SCHEMATIC_REVIEW" -> isInitialExpertRole(role);
+            case "MUTUAL_CHECK_ITEM", "MUTUAL_EXTRA" -> false;
             default -> false;
         };
+    }
+
+    private boolean isInitialExpertRole(String role) {
+        return ReviewRole.HARDWARE_EXPERT.name().equals(role) || ReviewRole.EMC_EXPERT.name().equals(role)
+                || ReviewRole.PCB_EXPERT.name().equals(role);
     }
 
     private record AssignedReviewer(String role, Long reviewerId) { }

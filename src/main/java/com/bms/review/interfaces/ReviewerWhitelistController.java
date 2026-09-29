@@ -4,7 +4,7 @@ import com.bms.common.ApiResponse;
 import com.bms.common.TraceIdFilter;
 import com.bms.identity.application.CurrentUserHolder;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
-import com.bms.review.domain.ReviewRole;
+import com.bms.review.domain.ReviewerWhitelistRole;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -75,7 +75,7 @@ public class ReviewerWhitelistController {
 
     @Schema(description = "单个评审角色与多个员工工号")
     record RoleEmployeeNosRequest(
-            @Schema(description = "评审角色", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull ReviewRole reviewRole,
+            @Schema(description = "白名单人员类别", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull ReviewerWhitelistRole reviewRole,
             @Schema(description = "该角色对应的员工工号列表", requiredMode = Schema.RequiredMode.REQUIRED)
             @NotEmpty List<@NotBlank String> employeeNos) { }
 }

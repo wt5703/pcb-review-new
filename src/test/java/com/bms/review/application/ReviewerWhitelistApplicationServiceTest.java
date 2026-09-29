@@ -2,7 +2,7 @@ package com.bms.review.application;
 
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Role;
-import com.bms.review.domain.ReviewRole;
+import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.review.infrastructure.ReviewerWhitelistMapper;
 import org.junit.jupiter.api.Test;
 
@@ -29,11 +29,11 @@ class ReviewerWhitelistApplicationServiceTest {
     void shouldAddEmployeeNumbersForSupportedReviewRoles() {
         when(whitelistMapper.findAll()).thenReturn(List.of());
         ReviewerWhitelistApplicationService.SaveResult result = service.add(List.of(
-                        new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewRole.HARDWARE_EXPERT, List.of("HW-1001", "HW-1002")),
-                        new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewRole.EMC_EXPERT, List.of("EMC-1001")),
-                        new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewRole.STRUCTURE_EXPERT, List.of("STR-1001")),
-                        new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewRole.PROCESS_EXPERT, List.of("PRO-1001")),
-                        new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewRole.PCB_EXPERT, List.of("PCB-1001"))),
+                        new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewerWhitelistRole.HARDWARE_EXPERT, List.of("HW-1001", "HW-1002")),
+                        new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewerWhitelistRole.EMC_EXPERT, List.of("EMC-1001")),
+                        new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewerWhitelistRole.STRUCTURE_EXPERT, List.of("STR-1001")),
+                        new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewerWhitelistRole.PROCESS_EXPERT, List.of("PRO-1001")),
+                        new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewerWhitelistRole.PCB_EXPERT, List.of("PCB-1001"))),
                 new CurrentUser(1L, Set.of(Role.HARDWARE_DEPARTMENT_MANAGER)));
 
         assertThat(result.createdCount()).isEqualTo(6);

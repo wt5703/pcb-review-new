@@ -16,6 +16,7 @@ import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.OpinionStatus;
 import com.bms.review.domain.OpinionSourceType;
 import com.bms.review.domain.ReviewRole;
+import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
@@ -24,6 +25,7 @@ import com.bms.task.domain.TaskReviewerAssignmentCodec;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import com.bms.workflow.domain.WorkflowAction;
+import com.bms.workflow.domain.WorkflowAssignmentRole;
 import com.bms.workflow.infrastructure.TaskFlowMapper;
 import com.bms.workflow.infrastructure.TaskFlowRecord;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -193,28 +195,29 @@ public class WorkflowApplicationService {
         }
     }
 
-    private boolean isExpectedAssignmentRole(WorkflowAction action, ReviewRole role) {
+    private boolean isExpectedAssignmentRole(WorkflowAction action, WorkflowAssignmentRole role) {
         return switch (action) {
-            case START_PCB_MATUAL_REVIEW -> role == ReviewRole.PCB_MUTUAL_CHECK;
-            case START_SCHEMATIC_MATUAL_REVIEW -> role == ReviewRole.SCHEMATIC_MUTUAL_CHECK;
-            case START_SCHEMATIC_EXPERT_REVIEW -> role == ReviewRole.SCHEMATIC_HARDWARE_EXPERT || role == ReviewRole.SCHEMATIC_OTHER_EXPERT;
+            case START_PCB_MATUAL_REVIEW -> role == WorkflowAssignmentRole.PCB_MUTUAL_CHECK;
+            case START_SCHEMATIC_MATUAL_REVIEW -> role == WorkflowAssignmentRole.SCHEMATIC_MUTUAL_CHECK;
+            case START_SCHEMATIC_EXPERT_REVIEW -> role == WorkflowAssignmentRole.SCHEMATIC_HARDWARE_EXPERT
+                    || role == WorkflowAssignmentRole.SCHEMATIC_OTHER_EXPERT;
             default -> false;
         };
     }
 
     private List<AssignableRoleRule> assignableRoleRules(ReviewType reviewType, TaskStatus status) {
         if (reviewType == ReviewType.PCB && status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT) {
-            return List.of(new AssignableRoleRule(ReviewRole.PCB_MUTUAL_CHECK,
-                    List.of(ReviewRole.PCB_MUTUAL_CHECK)));
+            return List.of(new AssignableRoleRule(WorkflowAssignmentRole.PCB_MUTUAL_CHECK,
+                    List.of(ReviewerWhitelistRole.PCB_MUTUAL_CHECK)));
         }
         if (reviewType == ReviewType.SCHEMATIC
                 && status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT) {
-            return List.of(new AssignableRoleRule(ReviewRole.SCHEMATIC_MUTUAL_CHECK,
-                    List.of(ReviewRole.SCHEMATIC_MUTUAL_CHECK)));
+            return List.of(new AssignableRoleRule(WorkflowAssignmentRole.SCHEMATIC_MUTUAL_CHECK,
+                    List.of(ReviewerWhitelistRole.SCHEMATIC_MUTUAL_CHECK)));
         }
         if (reviewType == ReviewType.SCHEMATIC && status == TaskStatus.SCHEMATIC_PENDING_HARDWARE_EXPERT_ASSIGNMENT) {
-            return List.of(new AssignableRoleRule(ReviewRole.SCHEMATIC_HARDWARE_EXPERT,
-                    List.of(ReviewRole.HARDWARE_EXPERT)));
+            return List.of(new AssignableRoleRule(WorkflowAssignmentRole.SCHEMATIC_HARDWARE_EXPERT,
+                    List.of(ReviewerWhitelistRole.HARDWARE_EXPERT)));
         }
         return List.of();
     }
@@ -403,7 +406,7 @@ public class WorkflowApplicationService {
         flowMapper.insert(record);
     }
 
-    public record TransitionCommand(WorkflowAction action, String comment, ReviewRole assignedRole, List<Long> reviewerIds) {
+    public record TransitionCommand(WorkflowAction action, String comment, WorkflowAssignmentRole assignedRole, List<Long> reviewerIds) {
         public TransitionCommand {
             if (reviewerIds != null && reviewerIds.stream().anyMatch(id -> id == null)) {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "评审人员用户 ID 不能为空");
@@ -413,7 +416,7 @@ public class WorkflowApplicationService {
     }
 
     /** 前端 transition 请求模型；只有 START_PCB_STRUCTURE_REVIEW + START_PCB_PROCESS_REVIEW 可同时出现。 */
-    public record TransitionBatchCommand(List<WorkflowAction> actions, String comment, ReviewRole assignedRole,
+    public record TransitionBatchCommand(List<WorkflowAction> actions, String comment, WorkflowAssignmentRole assignedRole,
                                          List<Long> reviewerIds) {
         public TransitionBatchCommand {
             if (actions == null || actions.isEmpty() || actions.stream().anyMatch(action -> action == null)) {
@@ -432,13 +435,14 @@ public class WorkflowApplicationService {
     }
 
     /** 本次流转登记的人员。分配历史由 task_flow_record 记录，不再维护独立任务人员状态表。 */
-    public record AssignedReviewerView(ReviewRole role, Long reviewerId) { }
+    public record AssignedReviewerView(WorkflowAssignmentRole role, Long reviewerId) { }
 
     @Schema(description = "当前流程节点的一类可分配职责及对应候选人员")
     public record AssignableReviewerRoleView(
-            @Schema(description = "提交流程时 assignedRole 应传的职责") ReviewRole reviewRole,
+            @Schema(description = "提交流程时 assignedRole 应传的流程职责") WorkflowAssignmentRole reviewRole,
             @Schema(description = "该职责下可分配人员；userId 可直接填入 transitions 的 reviewerIds")
             List<ReviewerWhitelistApplicationService.AssignableReviewerView> reviewers) { }
 
-    private record AssignableRoleRule(ReviewRole assignmentRole, List<ReviewRole> whitelistRoles) { }
+    private record AssignableRoleRule(WorkflowAssignmentRole assignmentRole,
+                                      List<ReviewerWhitelistRole> whitelistRoles) { }
 }

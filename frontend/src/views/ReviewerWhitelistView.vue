@@ -2,11 +2,11 @@
 import { onMounted, reactive, ref } from 'vue'
 import { reviewApi } from '@/api/review-api'
 
-type ReviewRole = 'HARDWARE_EXPERT' | 'EMC_EXPERT' | 'STRUCTURE_EXPERT' | 'PROCESS_EXPERT' | 'PCB_EXPERT' | 'PCB_MUTUAL_CHECK' | 'SCHEMATIC_MUTUAL_CHECK'
+type ReviewerWhitelistRole = 'HARDWARE_EXPERT' | 'EMC_EXPERT' | 'STRUCTURE_EXPERT' | 'PROCESS_EXPERT' | 'PCB_EXPERT' | 'PCB_MUTUAL_CHECK' | 'SCHEMATIC_MUTUAL_CHECK'
 type MockUser = { id: number; employeeNo: string; displayName: string; email: string; mobile?: string; departmentName: string; roles: string[] }
 type WhitelistItem = {
   id: number
-  reviewRole: ReviewRole
+  reviewRole: ReviewerWhitelistRole
   employeeNo: string
   displayName?: string
   email?: string
@@ -14,7 +14,7 @@ type WhitelistItem = {
   createdAt?: string
 }
 
-const roleDefinitions: Array<{ code: ReviewRole; name: string; description: string }> = [
+const roleDefinitions: Array<{ code: ReviewerWhitelistRole; name: string; description: string }> = [
   { code: 'HARDWARE_EXPERT', name: '硬件评审', description: '硬件设计与原理图相关评审' },
   { code: 'EMC_EXPERT', name: 'EMC评审', description: 'EMC 设计要求相关评审' },
   { code: 'STRUCTURE_EXPERT', name: '结构评审', description: '结构、装配与空间相关评审' },
@@ -26,7 +26,7 @@ const roleDefinitions: Array<{ code: ReviewRole; name: string; description: stri
 
 const users = ref<MockUser[]>([])
 const mappings = ref<WhitelistItem[]>([])
-const selectedEmployeeNos = reactive<Record<ReviewRole, string[]>>({
+const selectedEmployeeNos = reactive<Record<ReviewerWhitelistRole, string[]>>({
   HARDWARE_EXPERT: [], EMC_EXPERT: [], STRUCTURE_EXPERT: [], PROCESS_EXPERT: [], PCB_EXPERT: [], PCB_MUTUAL_CHECK: [], SCHEMATIC_MUTUAL_CHECK: []
 })
 const loading = ref(true)
@@ -35,7 +35,7 @@ const error = ref('')
 const message = ref('')
 
 function userRoleNames(user: MockUser): string { return user.roles.join(' / ') || '无预设系统角色' }
-function roleName(role: ReviewRole): string { return roleDefinitions.find((item) => item.code === role)?.name || role }
+function roleName(role: ReviewerWhitelistRole): string { return roleDefinitions.find((item) => item.code === role)?.name || role }
 function formatDateTime(value?: string): string {
   return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—'
 }

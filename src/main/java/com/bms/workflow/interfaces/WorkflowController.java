@@ -4,11 +4,11 @@ import com.bms.common.ApiResponse;
 import com.bms.common.TraceIdFilter;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.application.CurrentUserHolder;
-import com.bms.review.domain.ReviewRole;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.workflow.application.WorkflowApplicationService;
 import com.bms.workflow.domain.WorkflowAction;
+import com.bms.workflow.domain.WorkflowAssignmentRole;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -66,7 +66,7 @@ public class WorkflowController {
     @Schema(description = "任务流程推进请求")
     record TransitionRequest(@Schema(description = "流程动作数组。默认只传一个动作；仅可同时传 START_PCB_STRUCTURE_REVIEW、START_PCB_PROCESS_REVIEW。CREATE 仅由任务提交接口触发，不可在此传入。", requiredMode = Schema.RequiredMode.REQUIRED) @NotEmpty List<WorkflowAction> actions,
                              @Schema(description = "流转意见或说明") String comment,
-                             @Schema(description = "随本次动作分配的评审职责。仅 START_PCB_MATUAL_REVIEW、START_SCHEMATIC_MATUAL_REVIEW、START_SCHEMATIC_EXPERT_REVIEW 可传。") ReviewRole assignedRole,
+                             @Schema(description = "随本次动作分配的流程职责。仅 START_PCB_MATUAL_REVIEW、START_SCHEMATIC_MATUAL_REVIEW、START_SCHEMATIC_EXPERT_REVIEW 可传。") WorkflowAssignmentRole assignedRole,
                              @Schema(description = "随本次动作分配的评审人员用户 ID；需要分配人员的动作至少传一名，支持多人。") List<Long> reviewerIds) {
         WorkflowApplicationService.TransitionBatchCommand command() {
             return new WorkflowApplicationService.TransitionBatchCommand(actions, comment, assignedRole, reviewerIds);

@@ -3,6 +3,7 @@ package com.bms.common.interfaces;
 import com.bms.common.ApiResponse;
 import com.bms.common.TraceIdFilter;
 import com.bms.review.domain.ReviewRole;
+import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.task.domain.TaskStatus;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -24,13 +25,13 @@ import java.util.List;
 @Tag(name = "系统字典", description = "提供前端下拉框和多选框使用的固定业务字典。")
 public class DictionaryController {
     private static final List<DictionaryItem> REVIEWER_WHITELIST_ROLES = List.of(
-            new DictionaryItem(ReviewRole.HARDWARE_EXPERT.name(), "硬件评审"),
-            new DictionaryItem(ReviewRole.EMC_EXPERT.name(), "EMC评审"),
-            new DictionaryItem(ReviewRole.STRUCTURE_EXPERT.name(), "结构评审"),
-            new DictionaryItem(ReviewRole.PROCESS_EXPERT.name(), "工艺评审"),
-            new DictionaryItem(ReviewRole.PCB_EXPERT.name(), "PCB评审"),
-            new DictionaryItem(ReviewRole.PCB_MUTUAL_CHECK.name(), "PCB互检单评审"),
-            new DictionaryItem(ReviewRole.SCHEMATIC_MUTUAL_CHECK.name(), "原理图互检单评审"));
+            new DictionaryItem(ReviewerWhitelistRole.HARDWARE_EXPERT.name(), ReviewerWhitelistRole.HARDWARE_EXPERT.displayName()),
+            new DictionaryItem(ReviewerWhitelistRole.EMC_EXPERT.name(), ReviewerWhitelistRole.EMC_EXPERT.displayName()),
+            new DictionaryItem(ReviewerWhitelistRole.STRUCTURE_EXPERT.name(), ReviewerWhitelistRole.STRUCTURE_EXPERT.displayName()),
+            new DictionaryItem(ReviewerWhitelistRole.PROCESS_EXPERT.name(), ReviewerWhitelistRole.PROCESS_EXPERT.displayName()),
+            new DictionaryItem(ReviewerWhitelistRole.PCB_EXPERT.name(), ReviewerWhitelistRole.PCB_EXPERT.displayName()),
+            new DictionaryItem(ReviewerWhitelistRole.PCB_MUTUAL_CHECK.name(), ReviewerWhitelistRole.PCB_MUTUAL_CHECK.displayName()),
+            new DictionaryItem(ReviewerWhitelistRole.SCHEMATIC_MUTUAL_CHECK.name(), ReviewerWhitelistRole.SCHEMATIC_MUTUAL_CHECK.displayName()));
 
     private static final List<DictionaryItem> TASK_STATUSES = java.util.Arrays.stream(TaskStatus.values())
             .map(status -> new DictionaryItem(status.name(), status.displayName()))
@@ -42,11 +43,11 @@ public class DictionaryController {
         return ApiResponse.ok(new TaskOptionsView(
                 List.of("BMU板", "BSU板", "分流器板", "高压板", "转接板", "储能板", "其他"),
                 List.of(
-                        new DictionaryItem(ReviewRole.HARDWARE_EXPERT.name(), "硬件评审"),
-                        new DictionaryItem(ReviewRole.EMC_EXPERT.name(), "EMC评审"),
-                        new DictionaryItem(ReviewRole.PCB_EXPERT.name(), "PCB评审"),
-                        new DictionaryItem(ReviewRole.PROCESS_EXPERT.name(), "工艺评审"),
-                        new DictionaryItem(ReviewRole.STRUCTURE_EXPERT.name(), "结构评审")),
+                        new DictionaryItem(ReviewRole.HARDWARE_EXPERT.name(), ReviewRole.HARDWARE_EXPERT.displayName()),
+                        new DictionaryItem(ReviewRole.EMC_EXPERT.name(), ReviewRole.EMC_EXPERT.displayName()),
+                        new DictionaryItem(ReviewRole.PCB_EXPERT.name(), ReviewRole.PCB_EXPERT.displayName()),
+                        new DictionaryItem(ReviewRole.PROCESS_EXPERT.name(), ReviewRole.PROCESS_EXPERT.displayName()),
+                        new DictionaryItem(ReviewRole.STRUCTURE_EXPERT.name(), ReviewRole.STRUCTURE_EXPERT.displayName())),
                 REVIEWER_WHITELIST_ROLES,
                 TASK_STATUSES), traceId(request));
     }

@@ -19,6 +19,7 @@ import com.bms.workflow.domain.WorkflowAction;
 import com.bms.workflow.infrastructure.TaskFlowMapper;
 import com.bms.workflow.infrastructure.TaskFlowRecord;
 import com.bms.review.domain.ReviewRole;
+import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.task.domain.TaskReviewerAssignment;
 import com.bms.task.domain.TaskReviewerAssignmentCodec;
@@ -238,7 +239,8 @@ public class TaskApplicationService {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "每个已勾选的评审角色都必须选择至少一名专家");
         }
         for (ReviewRole role : roles) {
-            Set<Long> whitelistUserIds = reviewerWhitelistApplicationService.listAssignableUsers(List.of(role)).stream()
+            Set<Long> whitelistUserIds = reviewerWhitelistApplicationService.listAssignableUsers(
+                            List.of(ReviewerWhitelistRole.fromReviewRole(role))).stream()
                     .map(ReviewerWhitelistApplicationService.AssignableReviewerView::userId)
                     .collect(Collectors.toSet());
             if (!whitelistUserIds.containsAll(reviewersByRole.get(role))) {

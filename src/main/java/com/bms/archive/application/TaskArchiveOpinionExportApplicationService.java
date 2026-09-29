@@ -41,9 +41,10 @@ import java.util.stream.Collectors;
  */
 @Service
 public class TaskArchiveOpinionExportApplicationService {
-    private static final List<ReviewRole> SHEET_ROLE_ORDER = List.of(
-            ReviewRole.HARDWARE_EXPERT, ReviewRole.EMC_EXPERT, ReviewRole.PCB_EXPERT,
-            ReviewRole.PROCESS_EXPERT, ReviewRole.STRUCTURE_EXPERT);
+    private static final List<String> SHEET_ROLE_ORDER = List.of(
+            ReviewRole.HARDWARE_EXPERT.name(), ReviewRole.EMC_EXPERT.name(), ReviewRole.PCB_EXPERT.name(),
+            ReviewRole.PROCESS_EXPERT.name(), ReviewRole.STRUCTURE_EXPERT.name());
+    private static final String UNCLASSIFIED_EXPERT_ROLE = "EXPERT_REVIEW";
     private static final String[] HEADERS = {"序号", "评审阶段", "位置", "问题描述", "提出人", "严重等级", "处理情况", "提出人确认"};
     private final ReviewTaskMapper taskMapper;
     private final ReviewOpinionMapper opinionMapper;
@@ -55,7 +56,7 @@ public class TaskArchiveOpinionExportApplicationService {
 
     public ExportedExcel export(long taskId) {
         ReviewTaskRecord task = requireFinishedTask(taskId);
-        Map<ReviewRole, List<ExportRow>> rowsByRole = exportRows(task);
+        Map<String, List<ExportRow>> rowsByRole = exportRows(task);
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             if (rowsByRole.isEmpty()) createSheet(workbook, "专家评审", task, List.of());
             else rowsByRole.forEach((role, rows) -> createSheet(workbook, sheetName(role), task, rows));
@@ -66,14 +67,14 @@ public class TaskArchiveOpinionExportApplicationService {
         }
     }
 
-    private Map<ReviewRole, List<ExportRow>> exportRows(ReviewTaskRecord task) {
+    private Map<String, List<ExportRow>> exportRows(ReviewTaskRecord task) {
         Map<Long, Set<ReviewRole>> rolesByReviewer = rolesByReviewer(task.getReviewerAssignments());
-        Map<ReviewRole, List<ExportRow>> result = new LinkedHashMap<>();
+        Map<String, List<ExportRow>> result = new LinkedHashMap<>();
         opinionMapper.findByTaskId(task.getId()).stream().filter(this::isExpertOpinion)
                 .filter(opinion -> !"PASS".equalsIgnoreCase(opinion.getSeverity()))
                 .sorted(Comparator.comparing(ReviewOpinionRecord::getId)).forEach(opinion ->
                         rolesForOpinion(opinion, rolesByReviewer).forEach(role -> result.computeIfAbsent(role, ignored -> new ArrayList<>()).addAll(rowsForOpinion(opinion))));
-        Map<ReviewRole, List<ExportRow>> ordered = new LinkedHashMap<>();
+        Map<String, List<ExportRow>> ordered = new LinkedHashMap<>();
         SHEET_ROLE_ORDER.stream().filter(result::containsKey).forEach(role -> ordered.put(role, result.get(role)));
         result.forEach((role, rows) -> ordered.putIfAbsent(role, rows));
         return ordered;
@@ -84,12 +85,12 @@ public class TaskArchiveOpinionExportApplicationService {
                 || "PROCESS_REVIEW".equals(opinion.getSourceType()) || "STRUCTURE_REVIEW".equals(opinion.getSourceType());
     }
 
-    private Set<ReviewRole> rolesForOpinion(ReviewOpinionRecord opinion, Map<Long, Set<ReviewRole>> rolesByReviewer) {
-        if ("PROCESS_REVIEW".equals(opinion.getSourceType())) return Set.of(ReviewRole.PROCESS_EXPERT);
-        if ("STRUCTURE_REVIEW".equals(opinion.getSourceType())) return Set.of(ReviewRole.STRUCTURE_EXPERT);
+    private Set<String> rolesForOpinion(ReviewOpinionRecord opinion, Map<Long, Set<ReviewRole>> rolesByReviewer) {
+        if ("PROCESS_REVIEW".equals(opinion.getSourceType())) return Set.of(ReviewRole.PROCESS_EXPERT.name());
+        if ("STRUCTURE_REVIEW".equals(opinion.getSourceType())) return Set.of(ReviewRole.STRUCTURE_EXPERT.name());
         Set<ReviewRole> roles = new LinkedHashSet<>(rolesByReviewer.getOrDefault(opinion.getRaisedBy(), Set.of()));
         roles.removeIf(role -> role != ReviewRole.HARDWARE_EXPERT && role != ReviewRole.EMC_EXPERT && role != ReviewRole.PCB_EXPERT);
-        return roles.isEmpty() ? Set.of(ReviewRole.SCHEMATIC_OTHER_EXPERT) : roles;
+        return roles.isEmpty() ? Set.of(UNCLASSIFIED_EXPERT_ROLE) : roles.stream().map(Enum::name).collect(Collectors.toSet());
     }
 
     private List<ExportRow> rowsForOpinion(ReviewOpinionRecord opinion) {
@@ -148,7 +149,10 @@ public class TaskArchiveOpinionExportApplicationService {
         ReviewTaskRecord task = taskMapper.findById(taskId); if (task == null) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "评审任务不存在");
         if (!TaskStatus.FINISHED.name().equals(task.getStatus())) throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "任务尚未结束，不能导出归档意见"); return task;
     }
-    private String sheetName(ReviewRole role) { return switch (role) { case HARDWARE_EXPERT -> "硬件评审"; case EMC_EXPERT -> "EMC评审"; case PCB_EXPERT -> "PCB评审"; case PROCESS_EXPERT -> "工艺评审"; case STRUCTURE_EXPERT -> "结构评审"; default -> "专家评审"; }; }
+    private String sheetName(String role) {
+        return java.util.Arrays.stream(ReviewRole.values()).filter(value -> value.name().equals(role)).findFirst()
+                .map(ReviewRole::displayName).orElse("专家评审");
+    }
     private String phaseName(String sourceType) { return switch (sourceType) { case "PROCESS_REVIEW" -> "工艺评审"; case "STRUCTURE_REVIEW" -> "结构评审"; default -> "专家评审"; }; }
     private String severityName(String severity) { return switch (severity == null ? "" : severity) { case "SERIOUS" -> "严重"; case "MINOR" -> "轻微"; case "GENERAL" -> "一般"; default -> severity == null || severity.isBlank() ? "一般" : severity; }; }
     private String handlingName(OpinionReplyRecord reply) { String action = switch (reply.getReplyType()) { case "ACCEPT" -> "接受并修改"; case "ACCEPT_NO_CHANGE" -> "接受不修改"; case "REJECT" -> "不接受"; default -> reply.getReplyType(); }; return reply.getReason() == null || reply.getReason().isBlank() ? action : action + "：" + reply.getReason(); }

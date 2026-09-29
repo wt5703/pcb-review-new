@@ -13,6 +13,7 @@ import com.bms.task.infrastructure.ReviewTaskRecord;
 import com.bms.workflow.infrastructure.TaskFlowMapper;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.ReviewRole;
+import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.task.domain.TaskReviewerAssignment;
 import org.junit.jupiter.api.Test;
 
@@ -47,8 +48,8 @@ class TaskApplicationServiceTest {
     @Test
     void shouldCreateTaskWithoutFlowRecord() {
         when(taskMapper.nextId()).thenReturn(101L);
-        when(reviewerWhitelistApplicationService.listAssignableUsers(List.of(ReviewRole.PCB_EXPERT))).thenReturn(List.of(
-                new ReviewerWhitelistApplicationService.AssignableReviewerView(10L, "BMS010", "设计者", "研发", ReviewRole.PCB_EXPERT)));
+        when(reviewerWhitelistApplicationService.listAssignableUsers(List.of(ReviewerWhitelistRole.PCB_EXPERT))).thenReturn(List.of(
+                new ReviewerWhitelistApplicationService.AssignableReviewerView(10L, "BMS010", "设计者", "研发", ReviewerWhitelistRole.PCB_EXPERT)));
 
         TaskApplicationService.TaskView result = service.create(new TaskApplicationService.CreateTaskCommand(
                 ReviewType.PCB, "BMS PCB评审", "BMS", 10L, "设计者", "BMS-P1", "BMU", java.time.LocalDate.now(),

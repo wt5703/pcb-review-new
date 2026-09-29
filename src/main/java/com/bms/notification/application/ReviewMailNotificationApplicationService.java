@@ -181,18 +181,7 @@ public class ReviewMailNotificationApplicationService {
     }
 
     private String roleName(ReviewRole role) {
-        return switch (role) {
-            case HARDWARE_EXPERT -> "硬件评审";
-            case EMC_EXPERT -> "EMC评审";
-            case PCB_EXPERT -> "PCB评审";
-            case PROCESS_EXPERT -> "工艺评审";
-            case STRUCTURE_EXPERT -> "结构评审";
-            case PCB_MUTUAL_CHECK -> "PCB互检单评审";
-            case SCHEMATIC_MUTUAL_CHECK -> "原理图互检单评审";
-            case SCHEMATIC_HARDWARE_EXPERT -> "原理图硬件评审";
-            case SCHEMATIC_OTHER_EXPERT -> "原理图其他评审";
-            case SCHEMATIC_LEADER -> "原理图组长";
-        };
+        return role.displayName();
     }
 
     private List<MailMessage.MailAttachment> initialAttachments(List<Long> initialFileIds) {
