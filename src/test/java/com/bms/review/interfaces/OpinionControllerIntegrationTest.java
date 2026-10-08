@@ -41,7 +41,7 @@ class OpinionControllerIntegrationTest {
                         .header("X-Mock-User-Id", "20")
                         .header("X-Mock-Roles", "HARDWARE_EXPERT")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sourceType\":\"EXPERT_REVIEW\",\"comment\":\"<p>请调整走线</p><img src='data:image/png;base64,AA==' alt='问题截图' />\"}"))
+                        .content("{\"sourceType\":\"PCB_REVIEW\",\"comment\":\"<p>请调整走线</p><img src='data:image/png;base64,AA==' alt='问题截图' />\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PENDING_REPLY"))
                 .andExpect(jsonPath("$.data.comment").value("<p>请调整走线</p><img src='data:image/png;base64,AA==' alt='问题截图' />"))
@@ -93,7 +93,7 @@ class OpinionControllerIntegrationTest {
                         .header("X-Mock-User-Id", "20")
                         .header("X-Mock-Roles", "HARDWARE_EXPERT")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sourceType\":\"EXPERT_REVIEW\"}"))
+                        .content("{\"sourceType\":\"PCB_REVIEW\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.severity").value("PASS"))
                 .andExpect(jsonPath("$.data.status").value("CONFIRMED_PASS"));
@@ -114,7 +114,7 @@ class OpinionControllerIntegrationTest {
                         .header("X-Mock-User-Id", "20")
                         .header("X-Mock-Roles", "HARDWARE_EXPERT")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sourceType\":\"EXPERT_REVIEW\",\"severity\":\"GENERAL\",\"comment\":\"原始意见\"}"))
+                        .content("{\"sourceType\":\"PCB_REVIEW\",\"severity\":\"GENERAL\",\"comment\":\"原始意见\"}"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         long opinionId = ((Number) JsonPath.read(response, "$.data.id")).longValue();

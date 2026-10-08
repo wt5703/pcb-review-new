@@ -122,6 +122,21 @@ class TaskApplicationServiceTest {
     }
 
     @Test
+    void shouldIncludeReviewerAssignmentsInTaskListItems() {
+        ReviewTaskRecord task = record(1L, "BMS PCB评审", TaskStatus.DRAFT, 0L);
+        task.setReviewRoles("HARDWARE_EXPERT,EMC_EXPERT");
+        task.setReviewerAssignments("HARDWARE_EXPERT:101,102;EMC_EXPERT:103");
+        when(taskMapper.findAll()).thenReturn(List.of(task));
+
+        TaskApplicationService.TaskPage page = service.list(null,
+                new CurrentUser(1L, Set.of(Role.HARDWARE_DEPARTMENT_MANAGER)));
+
+        assertThat(page.items()).singleElement().satisfies(item -> assertThat(item.reviewerAssignments()).containsExactly(
+                        new TaskReviewerAssignment(ReviewRole.HARDWARE_EXPERT, List.of(101L, 102L)),
+                        new TaskReviewerAssignment(ReviewRole.EMC_EXPERT, List.of(103L))));
+    }
+
+    @Test
     void shouldOnlyReturnAssignedTasksToProcessExpert() {
         when(taskMapper.findAll()).thenReturn(List.of(
                 record(1L, "BMS PCB评审", TaskStatus.DRAFT, 0L),

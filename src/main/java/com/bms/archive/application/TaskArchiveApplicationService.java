@@ -146,11 +146,13 @@ public class TaskArchiveApplicationService {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record NotificationRecordView(String eventType, String recipient, String templateCode,
+    public record NotificationRecordView(Long taskId, String eventType, String subject, String recipient,
+                                         String carbonCopies, String attachments, String templateCode,
                                          String deliveryStatus, String failureReason, LocalDateTime attemptedAt) {
         static NotificationRecordView from(NotificationSendRecord record) {
-            return new NotificationRecordView(record.eventType(), record.recipient(), record.templateCode(),
-                    record.deliveryStatus(), record.failureReason(), record.attemptedAt());
+            return new NotificationRecordView(record.taskId(), record.eventType(), record.subject(), record.recipient(),
+                    record.carbonCopies(), record.attachments(), record.templateCode(), record.deliveryStatus(),
+                    record.failureReason(), record.attemptedAt());
         }
     }
 

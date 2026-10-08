@@ -62,7 +62,7 @@ public class OpinionApplicationService {
     /**
      * @author 王涛
      * @date 2026-09-18
-     * @description 兼容既有单元测试的构造入口；运行时由 Spring 注入完整依赖以支持未提交专家汇总。
+     * @description 提出意见并保存明确来源：PCB_REVIEW、PCB_PROCESS_REVIEW、PCB_STRUCTURE_REVIEW、SCHEMATIC_REVIEW 或互检来源；运行时由 Spring 注入完整依赖以支持未提交专家汇总。
      */
     @Transactional
     public OpinionView raise(RaiseOpinionCommand command, CurrentUser currentUser) {
@@ -226,7 +226,7 @@ public class OpinionApplicationService {
     }
 
     /**
-     * 支持一个阶段同时读取多个意见来源，例如 PCB 第二次设计者答复同时读取工艺、结构评审意见。
+     * 支持一个阶段同时读取多个意见来源，例如 PCB 第二次设计者答复同时读取 PCB_PROCESS_REVIEW、PCB_STRUCTURE_REVIEW 意见。
      * sourceTypes 有值时优先于兼容参数 sourceType。
      */
     public List<OpinionView> list(long taskId, String severity, OpinionStatus status, OpinionSourceType sourceType,
@@ -292,9 +292,9 @@ public class OpinionApplicationService {
         TaskStatus status = TaskStatus.valueOf(task.getStatus());
         ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
         return switch (sourceType) {
-            case EXPERT_REVIEW -> reviewType == ReviewType.PCB && status == TaskStatus.PCB_EXPERT_REVIEWING;
+            case PCB_REVIEW -> reviewType == ReviewType.PCB && status == TaskStatus.PCB_EXPERT_REVIEWING;
             case SCHEMATIC_REVIEW -> reviewType == ReviewType.SCHEMATIC && status == TaskStatus.SCHEMATIC_REVIEWING;
-            case PROCESS_REVIEW, STRUCTURE_REVIEW -> reviewType == ReviewType.PCB
+            case PCB_PROCESS_REVIEW, PCB_STRUCTURE_REVIEW -> reviewType == ReviewType.PCB
                     && status == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING;
             default -> false;
         };
@@ -303,9 +303,9 @@ public class OpinionApplicationService {
     private boolean reviewerRoleMatchesCurrentSummary(ReviewTaskRecord task, List<OpinionSourceType> sourceTypes, String reviewRole) {
         if (sourceTypes != null && !sourceTypes.isEmpty()) {
             return sourceTypes.stream().anyMatch(source -> switch (source) {
-                case PROCESS_REVIEW -> ReviewRole.PROCESS_EXPERT.name().equals(reviewRole);
-                case STRUCTURE_REVIEW -> ReviewRole.STRUCTURE_EXPERT.name().equals(reviewRole);
-                case EXPERT_REVIEW -> ReviewRole.HARDWARE_EXPERT.name().equals(reviewRole)
+                case PCB_PROCESS_REVIEW -> ReviewRole.PROCESS_EXPERT.name().equals(reviewRole);
+                case PCB_STRUCTURE_REVIEW -> ReviewRole.STRUCTURE_EXPERT.name().equals(reviewRole);
+                case PCB_REVIEW -> ReviewRole.HARDWARE_EXPERT.name().equals(reviewRole)
                         || ReviewRole.EMC_EXPERT.name().equals(reviewRole) || ReviewRole.PCB_EXPERT.name().equals(reviewRole);
                 case SCHEMATIC_REVIEW -> isInitialExpertRole(reviewRole);
                 // 互检单人员是流程分配人员，不保存在任务创建时的“业务评审角色—专家”映射中。
@@ -345,9 +345,9 @@ public class OpinionApplicationService {
 
     private boolean matchesSourceForRole(String sourceType, String role) {
         return switch (sourceType) {
-            case "PROCESS_REVIEW" -> ReviewRole.PROCESS_EXPERT.name().equals(role);
-            case "STRUCTURE_REVIEW" -> ReviewRole.STRUCTURE_EXPERT.name().equals(role);
-            case "EXPERT_REVIEW", "SCHEMATIC_REVIEW" -> isInitialExpertRole(role);
+            case "PCB_PROCESS_REVIEW" -> ReviewRole.PROCESS_EXPERT.name().equals(role);
+            case "PCB_STRUCTURE_REVIEW" -> ReviewRole.STRUCTURE_EXPERT.name().equals(role);
+            case "PCB_REVIEW", "SCHEMATIC_REVIEW" -> isInitialExpertRole(role);
             case "MUTUAL_CHECK_ITEM", "MUTUAL_EXTRA" -> false;
             default -> false;
         };

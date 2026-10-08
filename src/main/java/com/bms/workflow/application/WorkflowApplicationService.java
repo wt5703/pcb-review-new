@@ -330,12 +330,12 @@ public class WorkflowApplicationService {
     private void validateActionPrerequisites(ReviewTaskRecord task, WorkflowAction action) {
         switch (action) {
             case START_PCB_STRUCTURE_REVIEW, START_PCB_PROCESS_REVIEW -> {
-                requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.EXPERT_REVIEW), "专家评审意见尚未全部确认通过，不能开启工艺或结构评审");
+                requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.PCB_REVIEW), "专家评审意见尚未全部确认通过，不能开启工艺或结构评审");
                 requirePcbExpertsSubmitted(task.getId());
             }
             case START_PCB_MATUAL_ASSIGNMENT ->
-                    requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.EXPERT_REVIEW, OpinionSourceType.PROCESS_REVIEW,
-                            OpinionSourceType.STRUCTURE_REVIEW), "专家、工艺或结构评审意见尚未全部确认通过，不能开启互检单分配");
+                    requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.PCB_REVIEW, OpinionSourceType.PCB_PROCESS_REVIEW,
+                            OpinionSourceType.PCB_STRUCTURE_REVIEW), "专家、工艺或结构评审意见尚未全部确认通过，不能开启互检单分配");
             case START_SCHEMATIC_EXPERT_ASSIGNMENT ->
                     requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.MUTUAL_CHECK_ITEM, OpinionSourceType.MUTUAL_EXTRA),
                             "互检单意见尚未全部确认通过，不能开启硬件专家分配");
@@ -371,7 +371,7 @@ public class WorkflowApplicationService {
         }
         List<Long> requiredReviewerIds = assignedExpertIds;
         boolean allSubmitted = !requiredReviewerIds.isEmpty() && requiredReviewerIds.stream().allMatch(reviewerId ->
-                opinionMapper.findByTaskId(taskId).stream().anyMatch(opinion -> OpinionSourceType.EXPERT_REVIEW.name().equals(opinion.getSourceType())
+                opinionMapper.findByTaskId(taskId).stream().anyMatch(opinion -> OpinionSourceType.PCB_REVIEW.name().equals(opinion.getSourceType())
                         && reviewerId.equals(opinion.getRaisedBy())));
         if (!allSubmitted) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT,

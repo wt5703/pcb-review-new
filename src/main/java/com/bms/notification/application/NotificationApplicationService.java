@@ -13,11 +13,12 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * @author 王涛
  * @date 2026-09-18
- * @description 消费业务 Outbox 事件并通过邮件 Mock 生成可查询投递记录，以原子认领、状态更新和失败重试避免重复成功发送影响业务数据。
+ * @description 消费业务 Outbox 事件并通过邮件网关投递，记录每次成功或失败尝试；原子认领、状态更新和失败重试均不影响已提交的业务数据。
  */
 @Service
 public class NotificationApplicationService {
@@ -58,16 +59,16 @@ public class NotificationApplicationService {
             outboxEventMapper.markPublished(event.getId());
             return true;
         }
+        MailMessage message = null;
         try {
-            MailMessage message = parseMail(event.getPayload());
+            message = parseMail(event.getPayload());
             mailGateway.send(message);
-            sendRecordMapper.insert(new NotificationSendRecord(event.getId(), message.notificationType(), recipients(message), message.subject(),
-                    NotificationDeliveryStatus.SUCCESS.name(), null, null));
+            appendSendRecord(event, message, NotificationDeliveryStatus.SUCCESS.name(), null);
             outboxEventMapper.markPublished(event.getId());
             return true;
         } catch (RuntimeException exception) {
-            sendRecordMapper.insert(new NotificationSendRecord(event.getId(), event.getEventType(), "", event.getEventType(),
-                    NotificationDeliveryStatus.FAILED.name(), exception.getMessage(), null));
+            // 已解析的邮件载荷必须完整记入失败日志；解析失败时仍保留 Outbox 事件上下文。
+            appendSendRecord(event, message, NotificationDeliveryStatus.FAILED.name(), exception.getMessage());
             outboxEventMapper.markFailed(event.getId());
             return false;
         }
@@ -90,7 +91,20 @@ public class NotificationApplicationService {
 
     private String recipients(MailMessage message) {
         return message.recipients().stream().map(MailMessage.MailRecipient::email)
-                .filter(email -> email != null && !email.isBlank()).collect(java.util.stream.Collectors.joining(","));
+                .filter(email -> email != null && !email.isBlank()).collect(Collectors.joining(","));
+    }
+
+    private void appendSendRecord(OutboxEventEntity event, MailMessage message, String status, String failureReason) {
+        String eventType = message == null ? event.getEventType() : message.notificationType();
+        String recipient = message == null ? "" : recipients(message);
+        String carbonCopies = message == null ? "" : message.carbonCopies().stream().map(MailMessage.MailRecipient::email)
+                .filter(email -> email != null && !email.isBlank()).collect(Collectors.joining(","));
+        String attachments = message == null ? "" : message.attachments().stream()
+                .map(attachment -> attachment.fileCategory() + ":" + attachment.fileId() + ":" + attachment.fileName())
+                .collect(Collectors.joining(","));
+        String subject = message == null ? "" : message.subject();
+        sendRecordMapper.insert(new NotificationSendRecord(event.getId(), event.getAggregateId(), eventType, recipient,
+                carbonCopies, attachments, subject, eventType, status, failureReason, null));
     }
 
     private int normalizeLimit(int limit) { return limit < 1 ? 20 : Math.min(limit, 100); }

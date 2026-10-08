@@ -127,9 +127,9 @@ type FinishStage = { key: string; label: string; sourceTypes: string }
 const finishStages = computed<FinishStage[]>(() => task.value?.reviewType === 'PCB'
   ? [
       { key: 'mutual', label: '互检单', sourceTypes: 'MUTUAL_CHECK_ITEM,MUTUAL_EXTRA' },
-      { key: 'pcb', label: 'PCB评审流程', sourceTypes: 'EXPERT_REVIEW' },
-      { key: 'process', label: '工艺评审', sourceTypes: 'PROCESS_REVIEW' },
-      { key: 'structure', label: '结构评审', sourceTypes: 'STRUCTURE_REVIEW' }
+      { key: 'pcb', label: 'PCB评审流程', sourceTypes: 'PCB_REVIEW' },
+      { key: 'process', label: '工艺评审', sourceTypes: 'PCB_PROCESS_REVIEW' },
+      { key: 'structure', label: '结构评审', sourceTypes: 'PCB_STRUCTURE_REVIEW' }
     ]
   : [
       { key: 'mutual', label: '互检单', sourceTypes: 'MUTUAL_CHECK_ITEM,MUTUAL_EXTRA' },
@@ -173,7 +173,7 @@ const reviewerAssignmentAction = computed(() => {
 async function load(): Promise<void> {
   loading.value = true; error.value = ''; notice.value = ''
   try {
-    // 意见来源依赖任务类型；先取得任务，避免原理图首次加载误用 PCB 的 EXPERT_REVIEW。
+    // 意见来源依赖任务类型；先取得任务，避免原理图首次加载误用 PCB 的 PCB_REVIEW。
     const taskData = await reviewApi.getTask(taskId.value)
     task.value = taskData
     const [opinionsData, summaryData, checkItemsData, whitelistPage] = await Promise.all([
@@ -192,7 +192,7 @@ async function load(): Promise<void> {
   } catch (cause) { error.value = cause instanceof Error ? cause.message : '加载任务详情失败' } finally { loading.value = false }
 }
 function opinionSourceTypes(): string | undefined {
-  if (task.value?.reviewType === 'PCB' && activeTab.value === 'optional-reply') return 'PROCESS_REVIEW,STRUCTURE_REVIEW'
+  if (task.value?.reviewType === 'PCB' && activeTab.value === 'optional-reply') return 'PCB_PROCESS_REVIEW,PCB_STRUCTURE_REVIEW'
   if (task.value?.reviewType === 'SCHEMATIC' && activeTab.value === 'designer-reply') return 'MUTUAL_CHECK_ITEM,MUTUAL_EXTRA'
   if (task.value?.reviewType === 'SCHEMATIC' && activeTab.value === 'optional-reply') return 'SCHEMATIC_REVIEW'
   if (activeTab.value === 'mutual-reply') return 'MUTUAL_CHECK_ITEM,MUTUAL_EXTRA'
@@ -204,9 +204,9 @@ function opinionSourceType(): string | undefined {
 function opinionFilters(): { severity?: string; status?: string; sourceType?: string; sourceTypes?: string; scene: 'REVIEW_WORKSPACE' | 'DESIGNER_REPLY'; pageNo: number; pageSize: number } {
   const filters = { severity: opinionListFilters.severity || undefined, status: opinionListFilters.status || undefined, pageNo: opinionPagination.pageNo, pageSize: opinionPagination.pageSize }
   if (['designer-reply', 'optional-reply', 'mutual-reply'].includes(activeTab.value)) return { ...filters, sourceType: opinionSourceType(), sourceTypes: opinionSourceTypes(), scene: 'DESIGNER_REPLY' }
-  if (activeTab.value === 'process-review') return { ...filters, sourceType: 'PROCESS_REVIEW', scene: 'REVIEW_WORKSPACE' }
-  if (activeTab.value === 'structure-review') return { ...filters, sourceType: 'STRUCTURE_REVIEW', scene: 'REVIEW_WORKSPACE' }
-  return { ...filters, sourceType: task.value?.reviewType === 'SCHEMATIC' ? 'SCHEMATIC_REVIEW' : 'EXPERT_REVIEW', scene: 'REVIEW_WORKSPACE' }
+  if (activeTab.value === 'process-review') return { ...filters, sourceType: 'PCB_PROCESS_REVIEW', scene: 'REVIEW_WORKSPACE' }
+  if (activeTab.value === 'structure-review') return { ...filters, sourceType: 'PCB_STRUCTURE_REVIEW', scene: 'REVIEW_WORKSPACE' }
+  return { ...filters, sourceType: task.value?.reviewType === 'SCHEMATIC' ? 'SCHEMATIC_REVIEW' : 'PCB_REVIEW', scene: 'REVIEW_WORKSPACE' }
 }
 function normalizeOpinions(items: Opinion[]): Opinion[] { return items.map((item) => ({ ...item, comment: item.richText || item.comment, replies: item.replies ?? [] })) }
 function opinionImages(opinion: Opinion): string[] {
@@ -404,14 +404,14 @@ function handleScreenshotPaste(event: ClipboardEvent): void {
   files.forEach((file) => { const reader = new FileReader(); reader.onload = () => { const dataUrl = String(reader.result); if (screenshotEditor.value) screenshotEditor.value.innerHTML += `<img src="${dataUrl}" alt="问题截图" />` }; reader.readAsDataURL(file) })
 }
 function currentOpinionSource(): Opinion['sourceType'] {
-  if (activeTab.value === 'process-review') return 'PROCESS_REVIEW'
-  if (activeTab.value === 'structure-review') return 'STRUCTURE_REVIEW'
-  return task.value?.reviewType === 'SCHEMATIC' ? 'SCHEMATIC_REVIEW' : 'EXPERT_REVIEW'
+  if (activeTab.value === 'process-review') return 'PCB_PROCESS_REVIEW'
+  if (activeTab.value === 'structure-review') return 'PCB_STRUCTURE_REVIEW'
+  return task.value?.reviewType === 'SCHEMATIC' ? 'SCHEMATIC_REVIEW' : 'PCB_REVIEW'
 }
-function currentNoOpinionSource(): 'EXPERT_REVIEW' | 'SCHEMATIC_REVIEW' | 'PROCESS_REVIEW' | 'STRUCTURE_REVIEW' {
-  if (activeTab.value === 'process-review') return 'PROCESS_REVIEW'
-  if (activeTab.value === 'structure-review') return 'STRUCTURE_REVIEW'
-  return task.value?.reviewType === 'SCHEMATIC' ? 'SCHEMATIC_REVIEW' : 'EXPERT_REVIEW'
+function currentNoOpinionSource(): 'PCB_REVIEW' | 'SCHEMATIC_REVIEW' | 'PCB_PROCESS_REVIEW' | 'PCB_STRUCTURE_REVIEW' {
+  if (activeTab.value === 'process-review') return 'PCB_PROCESS_REVIEW'
+  if (activeTab.value === 'structure-review') return 'PCB_STRUCTURE_REVIEW'
+  return task.value?.reviewType === 'SCHEMATIC' ? 'SCHEMATIC_REVIEW' : 'PCB_REVIEW'
 }
 function draft(opinion: Opinion): { replyNo: number; replyType: 'ACCEPT' | 'REJECT'; reason: string } {
   const nextReplyNo = opinion.replies.length + 1

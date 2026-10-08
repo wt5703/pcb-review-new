@@ -35,7 +35,7 @@ class ReviewMailNotificationApplicationServiceTest {
     private final ReviewerWhitelistMapper whitelistMapper = mock(ReviewerWhitelistMapper.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ReviewMailNotificationApplicationService service = new ReviewMailNotificationApplicationService(outboxEventMapper,
-            fileMapper, whitelistMapper, objectMapper, "bms-hardware-development@bms.example.com");
+            fileMapper, whitelistMapper, objectMapper, new MailTemplateService());
 
     @Test
     void shouldNotifyOnlyInitialPcbExpertsWhenTaskSubmitted() throws Exception {
@@ -54,11 +54,11 @@ class ReviewMailNotificationApplicationServiceTest {
 
         MailMessage message = payload();
         assertThat(message.notificationType()).isEqualTo("PCB_TASK_CREATED");
-        assertThat(message.subject()).isEqualTo("BMSP1");
-        assertThat(message.content()).contains("王工，刘工你们好", "附件为BMSPCB文件，请进行硬件评审、PCB评审");
+        assertThat(message.subject()).isEqualTo("BMS PCB布局布线评审");
+        assertThat(message.content()).contains("王鹏飞你们好", "附件是BMSPCB文件，请进行硬件评审与EMC评审。");
         assertThat(message.recipients()).extracting(MailMessage.MailRecipient::email)
-                .containsExactly("wang@bms.example.com", "liu@bms.example.com");
-        assertThat(message.carbonCopies()).extracting(MailMessage.MailRecipient::name).containsExactly("BMS硬件开发部");
+                .containsExactly("wang@bms.example.com");
+        assertThat(message.carbonCopies()).isEmpty();
         assertThat(message.attachments()).extracting(MailMessage.MailAttachment::fileName).containsExactly("初版PCB.zip");
     }
 
@@ -105,10 +105,10 @@ class ReviewMailNotificationApplicationServiceTest {
 
         MailMessage message = payload();
         assertThat(message.notificationType()).isEqualTo("SCHEMATIC_TASK_FINISHED");
-        assertThat(message.subject()).isEqualTo("VCU原理图评审终版图");
-        assertThat(message.content()).contains("以下是VCU原理图评审终版图");
+        assertThat(message.subject()).isEqualTo("VCU原理图终版");
+        assertThat(message.content()).contains("附件为VCU原理图终版文件。");
         assertThat(message.recipients()).hasSize(2);
-        assertThat(message.attachments()).hasSize(4);
+        assertThat(message.attachments()).hasSize(1);
     }
 
     private MailMessage payload() throws Exception {

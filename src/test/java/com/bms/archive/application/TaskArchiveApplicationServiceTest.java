@@ -58,8 +58,8 @@ class TaskArchiveApplicationServiceTest {
         task.setStatus("FINISHED");
         when(fileMapper.findLatestByTaskId(1001L)).thenReturn(List.of(file));
         when(flowMapper.findByTaskId(1001L)).thenReturn(List.of(flow));
-        when(notificationSendRecordMapper.findByTaskId(1001L)).thenReturn(List.of(new NotificationSendRecord(501L,
-                "REVIEW_MAIL", "expert@example.com", "TASK_CREATED", "SENT", null, time.plusHours(2))));
+        when(notificationSendRecordMapper.findByTaskId(1001L)).thenReturn(List.of(new NotificationSendRecord(501L, 1001L,
+                "REVIEW_MAIL", "expert@example.com", "", "", "测试标题", "TASK_CREATED", "SENT", null, time.plusHours(2))));
         service.archive(task);
 
         ArgumentCaptor<TaskArchiveSnapshotRecord> captured = ArgumentCaptor.forClass(TaskArchiveSnapshotRecord.class);

@@ -44,7 +44,7 @@ public class TaskArchiveOpinionExportApplicationService {
     private static final List<String> SHEET_ROLE_ORDER = List.of(
             ReviewRole.HARDWARE_EXPERT.name(), ReviewRole.EMC_EXPERT.name(), ReviewRole.PCB_EXPERT.name(),
             ReviewRole.PROCESS_EXPERT.name(), ReviewRole.STRUCTURE_EXPERT.name());
-    private static final String UNCLASSIFIED_EXPERT_ROLE = "EXPERT_REVIEW";
+    private static final String UNCLASSIFIED_EXPERT_ROLE = "PCB_REVIEW";
     private static final String[] HEADERS = {"序号", "评审阶段", "位置", "问题描述", "提出人", "严重等级", "处理情况", "提出人确认"};
     private final ReviewTaskMapper taskMapper;
     private final ReviewOpinionMapper opinionMapper;
@@ -81,13 +81,13 @@ public class TaskArchiveOpinionExportApplicationService {
     }
 
     private boolean isExpertOpinion(ReviewOpinionRecord opinion) {
-        return "EXPERT_REVIEW".equals(opinion.getSourceType()) || "SCHEMATIC_REVIEW".equals(opinion.getSourceType())
-                || "PROCESS_REVIEW".equals(opinion.getSourceType()) || "STRUCTURE_REVIEW".equals(opinion.getSourceType());
+        return "PCB_REVIEW".equals(opinion.getSourceType()) || "SCHEMATIC_REVIEW".equals(opinion.getSourceType())
+                || "PCB_PROCESS_REVIEW".equals(opinion.getSourceType()) || "PCB_STRUCTURE_REVIEW".equals(opinion.getSourceType());
     }
 
     private Set<String> rolesForOpinion(ReviewOpinionRecord opinion, Map<Long, Set<ReviewRole>> rolesByReviewer) {
-        if ("PROCESS_REVIEW".equals(opinion.getSourceType())) return Set.of(ReviewRole.PROCESS_EXPERT.name());
-        if ("STRUCTURE_REVIEW".equals(opinion.getSourceType())) return Set.of(ReviewRole.STRUCTURE_EXPERT.name());
+        if ("PCB_PROCESS_REVIEW".equals(opinion.getSourceType())) return Set.of(ReviewRole.PROCESS_EXPERT.name());
+        if ("PCB_STRUCTURE_REVIEW".equals(opinion.getSourceType())) return Set.of(ReviewRole.STRUCTURE_EXPERT.name());
         Set<ReviewRole> roles = new LinkedHashSet<>(rolesByReviewer.getOrDefault(opinion.getRaisedBy(), Set.of()));
         roles.removeIf(role -> role != ReviewRole.HARDWARE_EXPERT && role != ReviewRole.EMC_EXPERT && role != ReviewRole.PCB_EXPERT);
         return roles.isEmpty() ? Set.of(UNCLASSIFIED_EXPERT_ROLE) : roles.stream().map(Enum::name).collect(Collectors.toSet());
@@ -153,7 +153,7 @@ public class TaskArchiveOpinionExportApplicationService {
         return java.util.Arrays.stream(ReviewRole.values()).filter(value -> value.name().equals(role)).findFirst()
                 .map(ReviewRole::displayName).orElse("专家评审");
     }
-    private String phaseName(String sourceType) { return switch (sourceType) { case "PROCESS_REVIEW" -> "工艺评审"; case "STRUCTURE_REVIEW" -> "结构评审"; default -> "专家评审"; }; }
+    private String phaseName(String sourceType) { return switch (sourceType) { case "PCB_PROCESS_REVIEW" -> "工艺评审"; case "PCB_STRUCTURE_REVIEW" -> "结构评审"; default -> "专家评审"; }; }
     private String severityName(String severity) { return switch (severity == null ? "" : severity) { case "SERIOUS" -> "严重"; case "MINOR" -> "轻微"; case "GENERAL" -> "一般"; default -> severity == null || severity.isBlank() ? "一般" : severity; }; }
     private String handlingName(OpinionReplyRecord reply) { String action = switch (reply.getReplyType()) { case "ACCEPT" -> "接受并修改"; case "ACCEPT_NO_CHANGE" -> "接受不修改"; case "REJECT" -> "不接受"; default -> reply.getReplyType(); }; return reply.getReason() == null || reply.getReason().isBlank() ? action : action + "：" + reply.getReason(); }
     private String confirmationName(OpinionConfirmationRecord confirmation) { if (confirmation == null) return "待专家确认"; String result = Boolean.TRUE.equals(confirmation.getPassed()) ? "确认通过" : "确认不通过"; return confirmation.getComment() == null || confirmation.getComment().isBlank() ? result : result + "：" + confirmation.getComment(); }

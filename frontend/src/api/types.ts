@@ -57,7 +57,7 @@ export interface MyTask extends Task {
 export interface Opinion {
   id: number
   taskId: number
-  sourceType: 'EXPERT_REVIEW' | 'SCHEMATIC_REVIEW' | 'PROCESS_REVIEW' | 'STRUCTURE_REVIEW' | 'MUTUAL_CHECK_ITEM' | 'MUTUAL_EXTRA'
+  sourceType: 'PCB_REVIEW' | 'SCHEMATIC_REVIEW' | 'PCB_PROCESS_REVIEW' | 'PCB_STRUCTURE_REVIEW' | 'MUTUAL_CHECK_ITEM' | 'MUTUAL_EXTRA'
   sourceItemId?: number
   comment: string
   richText?: string

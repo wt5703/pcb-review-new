@@ -13,17 +13,17 @@ import java.util.List;
  */
 @Mapper
 public interface NotificationSendRecordMapper {
-    @Insert("INSERT INTO notification_send_record (outbox_event_id, event_type, recipient, template_code, delivery_status, failure_reason) "
-            + "VALUES (#{outboxEventId}, #{eventType}, #{recipient}, #{templateCode}, #{deliveryStatus}, #{failureReason})")
+    @Insert("INSERT INTO notification_send_record (outbox_event_id, task_id, event_type, recipient, carbon_copies, attachments, subject, template_code, delivery_status, failure_reason) "
+            + "VALUES (#{outboxEventId}, #{taskId}, #{eventType}, #{recipient}, #{carbonCopies}, #{attachments}, #{subject}, #{templateCode}, #{deliveryStatus}, #{failureReason})")
     int insert(NotificationSendRecord record);
 
-    @Select("SELECT outbox_event_id AS outboxEventId, event_type AS eventType, recipient, template_code AS templateCode, "
-            + "delivery_status AS deliveryStatus, failure_reason AS failureReason, attempted_at AS attemptedAt FROM notification_send_record "
+    @Select("SELECT outbox_event_id AS outboxEventId, task_id AS taskId, event_type AS eventType, recipient, carbon_copies AS carbonCopies, "
+            + "attachments, subject, template_code AS templateCode, delivery_status AS deliveryStatus, failure_reason AS failureReason, attempted_at AS attemptedAt FROM notification_send_record "
             + "WHERE outbox_event_id=#{outboxEventId} ORDER BY id")
     List<NotificationSendRecord> findByOutboxEventId(long outboxEventId);
 
-    @Select("SELECT record.outbox_event_id AS outboxEventId, record.event_type AS eventType, record.recipient, "
-            + "record.template_code AS templateCode, record.delivery_status AS deliveryStatus, record.failure_reason AS failureReason, "
+    @Select("SELECT record.outbox_event_id AS outboxEventId, record.task_id AS taskId, record.event_type AS eventType, record.recipient, "
+            + "record.carbon_copies AS carbonCopies, record.attachments, record.subject, record.template_code AS templateCode, record.delivery_status AS deliveryStatus, record.failure_reason AS failureReason, "
             + "record.attempted_at AS attemptedAt FROM notification_send_record record INNER JOIN outbox_event event "
             + "ON event.id=record.outbox_event_id WHERE event.aggregate_type='REVIEW_TASK' AND event.aggregate_id=#{taskId} "
             + "ORDER BY record.attempted_at, record.id")

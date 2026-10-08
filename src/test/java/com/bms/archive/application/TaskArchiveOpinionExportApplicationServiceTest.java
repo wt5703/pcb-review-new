@@ -31,8 +31,8 @@ class TaskArchiveOpinionExportApplicationServiceTest {
         ReviewTaskRecord task = new ReviewTaskRecord();
         task.setId(101L); task.setProjectName("BMS"); task.setDesignName("控制板"); task.setStatus("FINISHED");
         task.setReviewerAssignments("EMC_EXPERT:10;STRUCTURE_EXPERT:11");
-        ReviewOpinionRecord emcOpinion = opinion(1L, "EXPERT_REVIEW", 10L, "王工", "SERIOUS", "<p>CANH<br/>CANL</p><img src='data:image/png;base64,a' />", "CAN 总线问题");
-        ReviewOpinionRecord structureOpinion = opinion(2L, "STRUCTURE_REVIEW", 11L, "张工", "GENERAL", "结构位置", "结构问题");
+        ReviewOpinionRecord emcOpinion = opinion(1L, "PCB_REVIEW", 10L, "王工", "SERIOUS", "<p>CANH<br/>CANL</p><img src='data:image/png;base64,a' />", "CAN 总线问题");
+        ReviewOpinionRecord structureOpinion = opinion(2L, "PCB_STRUCTURE_REVIEW", 11L, "张工", "GENERAL", "结构位置", "结构问题");
         OpinionReplyRecord firstReply = reply(21L, "ACCEPT", "已调整"); OpinionReplyRecord secondReply = reply(22L, "REJECT", "保留原设计");
         OpinionConfirmationRecord confirmation = new OpinionConfirmationRecord(); confirmation.setId(31L); confirmation.setReplyId(21L); confirmation.setPassed(true); confirmation.setComment("确认通过");
         when(taskMapper.findById(101L)).thenReturn(task);

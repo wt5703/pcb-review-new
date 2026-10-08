@@ -78,12 +78,12 @@ public class OpinionController {
     }
 
     @GetMapping("/tasks/{taskId}/opinions")
-    @Operation(summary = "分页查询任务意见列表", description = "每条记录在同一个扁平模型中返回专家意见、冗余的提出人姓名 raisedByName、全部设计者答复及各答复的确认结果，默认按意见提出时间倒序。severity 可按 SERIOUS、GENERAL、MINOR 筛选；无意见确认产生的 PASS 审计记录不在问题列表中展示。sourceType 可筛选单一来源，sourceTypes 可传多个逗号分隔的来源（如 PROCESS_REVIEW,STRUCTURE_REVIEW 或 MUTUAL_CHECK_ITEM,MUTUAL_EXTRA）；scene=REVIEW_WORKSPACE 仅返回当前登录专家提出的意见，scene=DESIGNER_REPLY 返回当前筛选范围内的任务意见。pageNo 从 1 开始，pageSize 最大为 100。")
+    @Operation(summary = "分页查询任务意见列表", description = "每条记录在同一个扁平模型中返回专家意见、冗余的提出人姓名 raisedByName、全部设计者答复及各答复的确认结果，默认按意见提出时间倒序。severity 可按 SERIOUS、GENERAL、MINOR 筛选；无意见确认产生的 PASS 审计记录不在问题列表中展示。sourceType 可筛选单一来源，sourceTypes 可传多个逗号分隔的来源（如 PCB_PROCESS_REVIEW,PCB_STRUCTURE_REVIEW 或 MUTUAL_CHECK_ITEM,MUTUAL_EXTRA）；scene=REVIEW_WORKSPACE 仅返回当前登录专家提出的意见，scene=DESIGNER_REPLY 返回当前筛选范围内的任务意见。pageNo 从 1 开始，pageSize 最大为 100。")
     ApiResponse<OpinionApplicationService.OpinionPage> list(@PathVariable long taskId,
             @RequestParam(required = false) @Parameter(description = "问题等级：SERIOUS 严重、GENERAL 一般、MINOR 轻微") String severity,
             @RequestParam(required = false) @Parameter(description = "意见状态：PENDING_REPLY  待答复、PENDING_CONFIRMATION 待确认、CONFIRMED_PASS 确认通过、CONFIRMED_REJECTED 确认不通过、WITHDRAWN 撤回") OpinionStatus status,
-            @RequestParam(required = false) @Parameter(description = "意见来源：EXPERT_REVIEW=PCB专家评审、SCHEMATIC_REVIEW=原理图评审、PROCESS_REVIEW=工艺评审、STRUCTURE_REVIEW=结构评审、MUTUAL_CHECK_ITEM=互检固定项、MUTUAL_EXTRA=互检额外项") OpinionSourceType sourceType,
-            @RequestParam(required = false) @Parameter(description = "多个意见来源，使用逗号分隔：PROCESS_REVIEW,STRUCTURE_REVIEW 或 MUTUAL_CHECK_ITEM,MUTUAL_EXTRA") List<OpinionSourceType> sourceTypes,
+            @RequestParam(required = false) @Parameter(description = "意见来源：PCB_REVIEW=PCB专家评审、SCHEMATIC_REVIEW=原理图评审、PCB_PROCESS_REVIEW=PCB工艺评审、PCB_STRUCTURE_REVIEW=PCB结构评审、MUTUAL_CHECK_ITEM=互检固定项、MUTUAL_EXTRA=互检额外项") OpinionSourceType sourceType,
+            @RequestParam(required = false) @Parameter(description = "多个意见来源，使用逗号分隔：PCB_PROCESS_REVIEW,PCB_STRUCTURE_REVIEW 或 MUTUAL_CHECK_ITEM,MUTUAL_EXTRA") List<OpinionSourceType> sourceTypes,
             @RequestParam(required = false, defaultValue = "DESIGNER_REPLY") @Parameter(description = "查询场景：REVIEW_WORKSPACE 仅当前登录专家提出的意见；DESIGNER_REPLY 展示任务全部意见") String scene,
             @RequestParam(defaultValue = "1") @Parameter(description = "页码，从 1 开始") @Min(1) int pageNo,
             @RequestParam(defaultValue = "20") @Parameter(description = "每页条数，最大 100") @Min(1) @Max(100) int pageSize,
@@ -95,7 +95,7 @@ public class OpinionController {
     @GetMapping("/tasks/{taskId}/opinions/summary")
     @Operation(summary = "查询设计者答复页意见汇总", description = "设计者答复页面的意见汇总；sourceTypes 可使用逗号分隔多个来源，以与意见列表保持相同的阶段范围。")
     ApiResponse<OpinionApplicationService.OpinionSummary> summary(@PathVariable long taskId,
-            @RequestParam(required = false) @Parameter(description = "多个意见来源，使用逗号分隔：PROCESS_REVIEW,STRUCTURE_REVIEW") List<OpinionSourceType> sourceTypes,
+            @RequestParam(required = false) @Parameter(description = "多个意见来源，使用逗号分隔：PCB_PROCESS_REVIEW,PCB_STRUCTURE_REVIEW") List<OpinionSourceType> sourceTypes,
             HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.summary(taskId, sourceTypes, CurrentUserHolder.require()), traceId(servletRequest));
     }
@@ -131,14 +131,14 @@ public class OpinionController {
     }
 
     @Schema(description = "提出评审意见请求")
-    record RaiseOpinionRequest(@Schema(description = "意见来源：EXPERT_REVIEW PCB专家评审、SCHEMATIC_REVIEW 原理图评审、PROCESS_REVIEW 工艺评审、STRUCTURE_REVIEW 结构评审、MUTUAL_CHECK_ITEM 互检固定项、MUTUAL_EXTRA 互检额外项", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull OpinionSourceType sourceType,
+    record RaiseOpinionRequest(@Schema(description = "意见来源：PCB_REVIEW PCB专家评审、SCHEMATIC_REVIEW 原理图评审、PCB_PROCESS_REVIEW PCB工艺评审、PCB_STRUCTURE_REVIEW PCB结构评审、MUTUAL_CHECK_ITEM 互检固定项、MUTUAL_EXTRA 互检额外项", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull OpinionSourceType sourceType,
                                @Schema(description = "来源检查项 ID；固定互检检查项意见时必填") Long sourceItemId,
                                @Schema(description = "问题描述，原样保存到 review_opinion.comment", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String comment,
                                @Schema(description = "富文本意见，支持文字与内嵌 data URI 图片；为空时使用 comment 保存到 rich_text", requiredMode = Schema.RequiredMode.NOT_REQUIRED) String richText,
                                @Schema(description = "问题等级：SERIOUS 严重、GENERAL 一般、MINOR 轻微") String severity) {
     }
     @Schema(description = "无意见确认提交请求")
-    record SubmitNoOpinionRequest(@Schema(description = "当前评审来源，仅允许 EXPERT_REVIEW、PROCESS_REVIEW 或 STRUCTURE_REVIEW", requiredMode = Schema.RequiredMode.REQUIRED)
+    record SubmitNoOpinionRequest(@Schema(description = "当前评审来源，仅允许 PCB_REVIEW、PCB_PROCESS_REVIEW、PCB_STRUCTURE_REVIEW 或 SCHEMATIC_REVIEW", requiredMode = Schema.RequiredMode.REQUIRED)
                                   @NotNull OpinionSourceType sourceType) { }
     @Schema(description = "编辑评审意见请求")
     record UpdateOpinionRequest(@Schema(description = "具体、可执行的评审意见内容", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String comment,

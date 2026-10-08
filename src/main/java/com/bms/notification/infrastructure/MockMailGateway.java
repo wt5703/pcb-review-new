@@ -2,6 +2,8 @@ package com.bms.notification.infrastructure;
 
 import com.bms.notification.application.MailGateway;
 import com.bms.notification.domain.MailMessage;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Component;
 
 /**
@@ -10,9 +12,13 @@ import org.springframework.stereotype.Component;
  * @description 本地阶段的邮件发送 Mock；载荷包含 forceMailFailure 标记时模拟外部邮件故障，用于验证失败记录与重试而不发送真实邮件。
  */
 @Component
+@ConditionalOnMissingBean(JavaMailSender.class)
 public class MockMailGateway implements MailGateway {
     @Override
     public void send(MailMessage message) {
+        if (message == null || message.recipients().isEmpty()) {
+            throw new IllegalStateException("邮件收件人不能为空");
+        }
         if (message != null && message.content() != null && message.content().contains("forceMailFailure")) {
             throw new IllegalStateException("本地邮件 Mock 模拟失败");
         }
