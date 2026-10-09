@@ -17,6 +17,7 @@ import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
+import com.bms.workflow.infrastructure.TaskFlowMapper;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -41,8 +42,9 @@ class OpinionApplicationServiceTest {
     private final TaskAssignmentAccessMapper assignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
     private final TaskNodeAuthorizationService taskNodeAuthorizationService = mock(TaskNodeAuthorizationService.class);
     private final OutboxEventPublisher outboxEventPublisher = mock(OutboxEventPublisher.class);
+    private final TaskFlowMapper flowMapper = mock(TaskFlowMapper.class);
     private final OpinionApplicationService service = new OpinionApplicationService(opinionMapper, taskMapper, taskCheckItemMapper,
-            assignmentAccessMapper, taskNodeAuthorizationService, outboxEventPublisher);
+            assignmentAccessMapper, taskNodeAuthorizationService, outboxEventPublisher, flowMapper);
 
     @Test
     void shouldRaiseMutualExtraOpinion() {
@@ -88,6 +90,31 @@ class OpinionApplicationServiceTest {
         assertThat(confirmed.status()).isEqualTo(OpinionStatus.CONFIRMED_PASS);
         verify(opinionMapper).insertReply(any(OpinionReplyRecord.class));
         verify(opinionMapper).insertConfirmation(any());
+    }
+
+    @Test
+    void shouldRemoveReviewerFromActiveAssignmentsAfterAllPcbOpinionsPass() {
+        ReviewTaskRecord activeTask = task(9L);
+        activeTask.setStatus(TaskStatus.PCB_EXPERT_REVIEWING.name());
+        activeTask.setReviewerAssignments("PCB_EXPERT:20");
+        activeTask.setAssignedReviewerIds("20");
+        ReviewOpinionRecord opinion = opinion(31L, 1001L, 20L, OpinionStatus.PENDING_CONFIRMATION);
+        opinion.setSourceType(OpinionSourceType.PCB_REVIEW.name());
+        OpinionReplyRecord reply = new OpinionReplyRecord();
+        reply.setId(41L);
+        when(taskMapper.findById(1001L)).thenReturn(activeTask);
+        when(opinionMapper.findById(31L)).thenReturn(opinion);
+        when(opinionMapper.findLatestReply(31L)).thenReturn(reply);
+        when(opinionMapper.nextConfirmationId()).thenReturn(51L);
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(opinion));
+        when(opinionMapper.updateStatus(any())).thenReturn(1);
+        when(taskMapper.updateAssignedReviewerIds(any())).thenReturn(1);
+
+        service.confirm(31L, new OpinionApplicationService.ConfirmOpinionCommand(true, "确认通过"),
+                new CurrentUser(20L, Set.of(Role.HARDWARE_EXPERT)));
+
+        assertThat(activeTask.getAssignedReviewerIds()).isEmpty();
+        verify(taskMapper).updateAssignedReviewerIds(activeTask);
     }
 
     @Test

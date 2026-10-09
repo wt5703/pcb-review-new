@@ -45,6 +45,10 @@ public interface ReviewTaskMapper {
     @Update("UPDATE review_task SET pcb_type=#{pcbType}, status=#{status}, initial_file_ids=#{initialFileIds}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
     int update(ReviewTaskRecord record);
 
+    /** 仅维护当前流程节点待处理人员，不覆盖创建任务时保存的 reviewer_assignments。 */
+    @Update("UPDATE review_task SET assigned_reviewer_ids=#{assignedReviewerIds}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
+    int updateAssignedReviewerIds(ReviewTaskRecord record);
+
     @Update("UPDATE review_task SET review_type=#{reviewType}, task_name=#{taskName}, project_name=#{projectName}, designer_name=#{designerName}, "
             + "design_name=#{designName}, pcb_type=#{pcbType}, expected_completed_date=#{expectedCompletedDate}, expert_leader_id=#{expertLeaderId}, "
             + "expert_leader_name=#{expertLeaderName}, review_roles=#{reviewRoles}, reviewer_assignments=#{reviewerAssignments}, assigned_reviewer_ids=#{assignedReviewerIds}, review_description=#{reviewDescription}, updated_at=CURRENT_TIMESTAMP "

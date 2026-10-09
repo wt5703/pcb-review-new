@@ -14,6 +14,7 @@ import com.bms.review.domain.ReviewRole;
 import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.task.domain.TaskReviewerAssignment;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Set;
@@ -60,12 +61,30 @@ class TaskApplicationServiceTest {
     void shouldAppendOutboxEventWhenTaskSubmitted() {
         when(taskMapper.findById(101L)).thenReturn(record(101L, "BMS PCB评审", TaskStatus.DRAFT, 0L));
         when(taskMapper.update(any())).thenReturn(1);
+        when(taskMapper.updateAssignedReviewerIds(any())).thenReturn(1);
 
         TaskApplicationService.TaskView result = service.submit(101L, List.of(3001L), designer);
 
         assertThat(result.status()).isEqualTo(TaskStatus.PCB_EXPERT_REVIEWING.name());
         verify(flowMapper).insert(any());
         verify(reviewMailNotificationApplicationService).enqueueTaskCreated(any());
+    }
+
+    @Test
+    void shouldOnlyActivatePcbAndEmcReviewersWhenPcbTaskIsSubmitted() {
+        ReviewTaskRecord task = record(101L, "BMS PCB评审", TaskStatus.DRAFT, 0L);
+        task.setReviewRoles("PCB_EXPERT,EMC_EXPERT,PROCESS_EXPERT,STRUCTURE_EXPERT");
+        task.setReviewerAssignments("PCB_EXPERT:11;EMC_EXPERT:12;PROCESS_EXPERT:13;STRUCTURE_EXPERT:14");
+        when(taskMapper.findById(101L)).thenReturn(task);
+        when(taskMapper.update(any())).thenReturn(1);
+        when(taskMapper.updateAssignedReviewerIds(any())).thenReturn(1);
+        when(flowMapper.nextId()).thenReturn(1L);
+
+        service.submit(101L, List.of(3001L), designer);
+
+        ArgumentCaptor<ReviewTaskRecord> captor = ArgumentCaptor.forClass(ReviewTaskRecord.class);
+        verify(taskMapper).updateAssignedReviewerIds(captor.capture());
+        assertThat(captor.getValue().getAssignedReviewerIds()).isEqualTo("11,12");
     }
 
     @Test

@@ -30,7 +30,9 @@ import com.bms.workflow.infrastructure.TaskFlowRecord;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * @author 王涛
@@ -150,7 +152,7 @@ public class WorkflowApplicationService {
         // 1. 只做校验和目标状态计算；此阶段不写任务状态，校验失败不会留下半成品数据。
         TransitionContext context = prepareTransition(taskId, command, currentUser);
 
-        // 2. 原子地写入任务状态、流转记录和状态变更事件，三者始终保持一致。
+        // 2. 原子地写入当前节点人员、任务状态、流转记录和状态变更事件，四者始终保持一致。
         persistTransition(context);
 
         // 3. 只有状态已成功写入后，才执行结束任务的归档和邮件等后置动作。
@@ -181,9 +183,55 @@ public class WorkflowApplicationService {
 
     /** 将状态变更、流程审计和供异步消费者使用的事件作为同一笔事务数据写入。 */
     private void persistTransition(TransitionContext context) {
+        refreshActiveReviewers(context);
         persistStatus(context.task(), context.plan().targetStatus());
+        persistActiveReviewers(context.task());
         appendHistory(context.task().getId(), context.action(), context.operatorId(), context.comment());
         publishStatusChangedEvent(context.task().getId(), context.action(), context.plan().targetStatus());
+    }
+
+    /**
+     * assigned_reviewer_ids 只保存当前已开启节点的待处理人员：
+     * - PCB 首轮仅 PCB、EMC 专家，工艺/结构在各自节点开启时追加；
+     * - 互检及原理图硬件评审使用本次分配的人员；
+     * - 已通过前一节点校验的历史人员在进入下一节点时清理，兼容旧数据中曾预写全部人员的情况。
+     */
+    private void refreshActiveReviewers(TransitionContext context) {
+        ReviewTaskRecord task = context.task();
+        Set<Long> activeReviewerIds = new LinkedHashSet<>(TaskReviewerAssignmentCodec.decodeReviewerIds(task.getAssignedReviewerIds()));
+        switch (context.action()) {
+            case START_PCB_PROCESS_REVIEW, START_PCB_STRUCTURE_REVIEW -> {
+                // 进入工艺/结构前已校验 PCB、EMC 专家全部提交，故不再保留其待办。
+                activeReviewerIds.removeAll(reviewerIdsForRoles(task, ReviewRole.PCB_EXPERT, ReviewRole.EMC_EXPERT));
+                activeReviewerIds.addAll(context.action() == WorkflowAction.START_PCB_PROCESS_REVIEW
+                        ? reviewerIdsForRoles(task, ReviewRole.PROCESS_EXPERT)
+                        : reviewerIdsForRoles(task, ReviewRole.STRUCTURE_EXPERT));
+            }
+            case START_PCB_MATUAL_REVIEW, START_SCHEMATIC_MATUAL_REVIEW -> {
+                // 互检人员以本次分配为准，且前序阶段意见已在流转校验中闭环。
+                activeReviewerIds.clear();
+                activeReviewerIds.addAll(context.reviewerIds());
+            }
+            case START_SCHEMATIC_EXPERT_REVIEW -> {
+                // 原理图硬件专家开启前，互检任务已结束，不再保留互检人员。
+                activeReviewerIds.clear();
+                activeReviewerIds.addAll(context.reviewerIds());
+            }
+            case FINISH -> activeReviewerIds.clear();
+            default -> { }
+        }
+        task.setAssignedReviewerIds(TaskReviewerAssignmentCodec.encodeReviewerIds(activeReviewerIds));
+    }
+
+    private List<Long> reviewerIdsForRoles(ReviewTaskRecord task, ReviewRole... roles) {
+        Set<ReviewRole> requiredRoles = Set.of(roles);
+        List<Long> ids = TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments()).stream()
+                .filter(assignment -> requiredRoles.contains(assignment.reviewRole()))
+                .flatMap(assignment -> assignment.reviewerIds().stream())
+                .distinct()
+                .toList();
+        // 兼容旧任务：没有角色—人员映射时沿用历史组长。
+        return ids.isEmpty() && task.getExpertLeaderId() != null ? List.of(task.getExpertLeaderId()) : ids;
     }
 
     private void publishStatusChangedEvent(long taskId, WorkflowAction action, TaskStatus targetStatus) {
@@ -240,6 +288,12 @@ public class WorkflowApplicationService {
     private void persistStatus(ReviewTaskRecord task, TaskStatus targetStatus) {
         task.setStatus(targetStatus.name());
         if (taskMapper.update(task) != 1) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
+        }
+    }
+
+    private void persistActiveReviewers(ReviewTaskRecord task) {
+        if (taskMapper.updateAssignedReviewerIds(task) != 1) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
         }
     }
@@ -489,7 +543,8 @@ public class WorkflowApplicationService {
     private record TransitionContext(ReviewTaskRecord task, WorkflowAction action, String comment, long operatorId,
                                      TaskStatus fromStatus, TransitionPlan plan, List<Long> reviewerIds) {
         private WorkflowView toView() {
-            return new WorkflowView(task.getId(), fromStatus, plan.targetStatus(), reviewerIds.stream().distinct().toList());
+            return new WorkflowView(task.getId(), fromStatus, plan.targetStatus(),
+                    TaskReviewerAssignmentCodec.decodeReviewerIds(task.getAssignedReviewerIds()));
         }
     }
 }

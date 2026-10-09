@@ -23,6 +23,8 @@ import com.bms.task.domain.TaskReviewerAssignment;
 import com.bms.task.domain.TaskReviewerAssignmentCodec;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
+import com.bms.workflow.domain.WorkflowAction;
+import com.bms.workflow.infrastructure.TaskFlowMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,19 +46,21 @@ public class OpinionApplicationService {
     private final TaskCheckItemMapper taskCheckItemMapper;
     private final TaskAssignmentAccessMapper assignmentAccessMapper;
     private final TaskNodeAuthorizationService taskNodeAuthorizationService;
+    private final TaskFlowMapper flowMapper;
     private final OutboxEventPublisher outboxEventPublisher;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     @Autowired
     public OpinionApplicationService(ReviewOpinionMapper opinionMapper, ReviewTaskMapper taskMapper, TaskCheckItemMapper taskCheckItemMapper,
                                      TaskAssignmentAccessMapper assignmentAccessMapper, TaskNodeAuthorizationService taskNodeAuthorizationService,
-                                     OutboxEventPublisher outboxEventPublisher) {
+                                     OutboxEventPublisher outboxEventPublisher, TaskFlowMapper flowMapper) {
         this.opinionMapper = opinionMapper;
         this.taskMapper = taskMapper;
         this.taskCheckItemMapper = taskCheckItemMapper;
         this.assignmentAccessMapper = assignmentAccessMapper;
         this.taskNodeAuthorizationService = taskNodeAuthorizationService;
         this.outboxEventPublisher = outboxEventPublisher;
+        this.flowMapper = flowMapper;
     }
 
     /**
@@ -121,6 +125,7 @@ public class OpinionApplicationService {
         record.setRaisedByName(currentUser.resolvedDisplayName());
         record.setStatus(OpinionStatus.CONFIRMED_PASS.name());
         opinionMapper.insert(record);
+        releaseReviewerWhenCurrentStagesCompleted(taskId, currentUser.id(), sourceType);
         outboxEventPublisher.publishTaskEvent("NO_OPINION_SUBMITTED", taskId, currentUser.id());
         return toView(record);
     }
@@ -199,6 +204,10 @@ public class OpinionApplicationService {
         confirmation.setConfirmedBy(currentUser.id());
         opinionMapper.insertConfirmation(confirmation);
         updateStatus(opinion, command.passed() ? OpinionStatus.CONFIRMED_PASS : OpinionStatus.CONFIRMED_REJECTED);
+        if (command.passed()) {
+            releaseReviewerWhenCurrentStagesCompleted(opinion.getTaskId(), opinion.getRaisedBy(),
+                    OpinionSourceType.valueOf(opinion.getSourceType()));
+        }
         outboxEventPublisher.publishTaskEvent(command.passed() ? "OPINION_CONFIRMED_PASS" : "OPINION_CONFIRMED_REJECTED",
                 opinion.getTaskId(), currentUser.id());
         return toView(opinion);
@@ -406,6 +415,92 @@ public class OpinionApplicationService {
         if (opinionMapper.updateStatus(opinion) != 1) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "评审意见不存在");
         }
+    }
+
+    /**
+     * 意见闭环后释放该专家的实时待办。一个人同时承担工艺、结构等多个已开启角色时，
+     * 必须对每个角色对应的来源均提交且其意见全部通过，才会从 assigned_reviewer_ids 移除。
+     */
+    private void releaseReviewerWhenCurrentStagesCompleted(long taskId, long reviewerId, OpinionSourceType completedSource) {
+        ReviewTaskRecord task = requireTask(taskId);
+        java.util.LinkedHashSet<Long> activeReviewerIds = new java.util.LinkedHashSet<>(
+                TaskReviewerAssignmentCodec.decodeReviewerIds(task.getAssignedReviewerIds()));
+        if (!activeReviewerIds.contains(reviewerId)) {
+            return;
+        }
+        List<OpinionSourceType> requiredSources = activeSourcesForReviewer(task, reviewerId, completedSource);
+        if (requiredSources.isEmpty()) {
+            return;
+        }
+        List<ReviewOpinionRecord> opinions = opinionMapper.findByTaskId(taskId);
+        List<ReviewOpinionRecord> safeOpinions = opinions == null ? List.of() : opinions;
+        boolean completed = requiredSources.stream().allMatch(source -> {
+            List<ReviewOpinionRecord> sourceOpinions = safeOpinions.stream()
+                    .filter(item -> reviewerId == item.getRaisedBy() && source.name().equals(item.getSourceType()))
+                    .toList();
+            return !sourceOpinions.isEmpty() && sourceOpinions.stream().allMatch(this::isClosedPassedOpinion);
+        });
+        if (!completed) {
+            return;
+        }
+        activeReviewerIds.remove(reviewerId);
+        task.setAssignedReviewerIds(TaskReviewerAssignmentCodec.encodeReviewerIds(activeReviewerIds));
+        if (taskMapper.updateAssignedReviewerIds(task) != 1) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
+        }
+    }
+
+    private List<OpinionSourceType> activeSourcesForReviewer(ReviewTaskRecord task, long reviewerId,
+                                                              OpinionSourceType completedSource) {
+        TaskStatus status = TaskStatus.valueOf(task.getStatus());
+        ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
+        if (status == TaskStatus.MUTUAL_CHECK_REVIEWING) {
+            // 互检分配并未保存角色映射；仅在该专家自己提交的互检来源全部闭环后释放待办。
+            return completedSource == OpinionSourceType.MUTUAL_CHECK_ITEM || completedSource == OpinionSourceType.MUTUAL_EXTRA
+                    ? List.of(completedSource) : List.of();
+        }
+        if (reviewType == ReviewType.PCB && status == TaskStatus.PCB_EXPERT_REVIEWING
+                && hasAssignedRole(task, reviewerId, ReviewRole.PCB_EXPERT, ReviewRole.EMC_EXPERT)) {
+            return List.of(OpinionSourceType.PCB_REVIEW);
+        }
+        if (reviewType == ReviewType.PCB && status == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING) {
+            java.util.ArrayList<OpinionSourceType> sources = new java.util.ArrayList<>();
+            if (hasStarted(task.getId(), WorkflowAction.START_PCB_PROCESS_REVIEW)
+                    && hasAssignedRole(task, reviewerId, ReviewRole.PROCESS_EXPERT)) {
+                sources.add(OpinionSourceType.PCB_PROCESS_REVIEW);
+            }
+            if (hasStarted(task.getId(), WorkflowAction.START_PCB_STRUCTURE_REVIEW)
+                    && hasAssignedRole(task, reviewerId, ReviewRole.STRUCTURE_EXPERT)) {
+                sources.add(OpinionSourceType.PCB_STRUCTURE_REVIEW);
+            }
+            return List.copyOf(sources);
+        }
+        if (reviewType == ReviewType.SCHEMATIC && status == TaskStatus.SCHEMATIC_REVIEWING
+                && hasAssignedRole(task, reviewerId, ReviewRole.HARDWARE_EXPERT)) {
+            return List.of(OpinionSourceType.SCHEMATIC_REVIEW);
+        }
+        return List.of();
+    }
+
+    private boolean hasAssignedRole(ReviewTaskRecord task, long reviewerId, ReviewRole... roles) {
+        java.util.Set<ReviewRole> requiredRoles = java.util.Set.of(roles);
+        List<TaskReviewerAssignment> assignments = TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments());
+        if (assignments.isEmpty()) {
+            return task.getExpertLeaderId() != null && task.getExpertLeaderId() == reviewerId;
+        }
+        return assignments.stream().anyMatch(assignment -> requiredRoles.contains(assignment.reviewRole())
+                && assignment.reviewerIds().contains(reviewerId));
+    }
+
+    private boolean hasStarted(long taskId, WorkflowAction action) {
+        List<com.bms.workflow.infrastructure.TaskFlowRecord> records = flowMapper.findByTaskId(taskId);
+        return (records == null ? List.<com.bms.workflow.infrastructure.TaskFlowRecord>of() : records).stream()
+                .anyMatch(record -> action.name().equals(record.getAction()));
+    }
+
+    private boolean isClosedPassedOpinion(ReviewOpinionRecord opinion) {
+        return OpinionStatus.CONFIRMED_PASS.name().equals(opinion.getStatus())
+                || OpinionStatus.WITHDRAWN.name().equals(opinion.getStatus());
     }
 
     private int nextReplyNo(long opinionId) {

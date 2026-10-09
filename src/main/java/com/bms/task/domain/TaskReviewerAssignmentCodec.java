@@ -3,6 +3,8 @@ package com.bms.task.domain;
 import com.bms.review.domain.ReviewRole;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -57,6 +59,39 @@ public final class TaskReviewerAssignmentCodec {
             return "";
         }
         return assignments.stream().flatMap(assignment -> assignment.reviewerIds().stream())
+                .distinct()
+                .map(String::valueOf)
+                .collect(Collectors.joining(","));
+    }
+
+    /**
+     * assigned_reviewer_ids 是当前流程节点仍待处理人员的快照，和创建时的角色—人员配置分开保存。
+     * 使用 LinkedHashSet 保持人员加入顺序，便于接口返回和排查流程流转。
+     */
+    public static List<Long> decodeReviewerIds(String persistedValue) {
+        if (persistedValue == null || persistedValue.isBlank()) {
+            return List.of();
+        }
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        for (String value : persistedValue.split(",")) {
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            try {
+                ids.add(Long.valueOf(value.trim()));
+            } catch (NumberFormatException ignored) {
+                // 容错读取历史脏数据，避免单条任务阻塞待办列表。
+            }
+        }
+        return List.copyOf(ids);
+    }
+
+    public static String encodeReviewerIds(Collection<Long> reviewerIds) {
+        if (reviewerIds == null || reviewerIds.isEmpty()) {
+            return "";
+        }
+        return reviewerIds.stream()
+                .filter(java.util.Objects::nonNull)
                 .distinct()
                 .map(String::valueOf)
                 .collect(Collectors.joining(","));

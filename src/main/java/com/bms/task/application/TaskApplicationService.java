@@ -84,6 +84,8 @@ public class TaskApplicationService {
         if (taskMapper.update(toRecord(task)) != 1) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
         }
+        // 任务提交后才激活 PCB、EMC 评审人员；工艺、结构人员要等对应评审节点真正开启。
+        updateActiveReviewers(taskId, initialActiveReviewerIds(task));
         appendFlow(task.id(), WorkflowAction.CREATE, currentUser.id(), "提交评审任务");
         reviewMailNotificationApplicationService.enqueueTaskCreated(task);
         return TaskView.from(task);
@@ -108,7 +110,8 @@ public class TaskApplicationService {
         existing.setExpectedCompletedDate(updated.expectedCompletedDate()); existing.setExpertLeaderId(updated.expertLeaderId());
         existing.setExpertLeaderName(updated.expertLeaderName()); existing.setReviewRoles(updated.reviewRoles().stream().map(Enum::name).collect(Collectors.joining(",")));
         existing.setReviewerAssignments(TaskReviewerAssignmentCodec.encode(updated.reviewerAssignments()));
-        existing.setAssignedReviewerIds(TaskReviewerAssignmentCodec.flattenReviewerIds(updated.reviewerAssignments()));
+        // 草稿不产生待办；assigned_reviewer_ids 仅表示已开启节点的实时处理人。
+        existing.setAssignedReviewerIds("");
         existing.setReviewDescription(updated.reviewDescription());
         if (taskMapper.updateDraft(existing) != 1) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "任务已提交，不允许编辑");
@@ -338,7 +341,8 @@ public class TaskApplicationService {
         record.setPcbType(task.pcbType()); record.setExpectedCompletedDate(task.expectedCompletedDate()); record.setExpertLeaderId(task.expertLeaderId());
         record.setExpertLeaderName(task.expertLeaderName()); record.setReviewRoles(task.reviewRoles().stream().map(Enum::name).collect(Collectors.joining(",")));
         record.setReviewerAssignments(TaskReviewerAssignmentCodec.encode(task.reviewerAssignments()));
-        record.setAssignedReviewerIds(TaskReviewerAssignmentCodec.flattenReviewerIds(task.reviewerAssignments()));
+        // 创建、保存草稿时不预先激活未来节点的专家。
+        record.setAssignedReviewerIds("");
         record.setReviewDescription(task.reviewDescription()); record.setStatus(task.status().name());
         record.setInitialFileIds(task.initialFileIds().stream().map(String::valueOf).collect(Collectors.joining(",")));
         record.setVersion(0L); return record;
@@ -355,5 +359,28 @@ public class TaskApplicationService {
                 record.getExpertLeaderId() == null ? record.getDesignerId() : record.getExpertLeaderId(),
                 record.getExpertLeaderName() == null || record.getExpertLeaderName().isBlank() ? "专家/组长#" + record.getDesignerId() : record.getExpertLeaderName(),
                 roles, reviewerAssignments, record.getReviewDescription(), TaskStatus.valueOf(record.getStatus()), fileIds);
+    }
+
+    private List<Long> initialActiveReviewerIds(ReviewTask task) {
+        if (task.reviewType() != ReviewType.PCB) {
+            return List.of();
+        }
+        List<Long> ids = task.reviewerAssignments().stream()
+                .filter(assignment -> assignment.reviewRole() == ReviewRole.PCB_EXPERT
+                        || assignment.reviewRole() == ReviewRole.EMC_EXPERT)
+                .flatMap(assignment -> assignment.reviewerIds().stream())
+                .distinct()
+                .toList();
+        // 兼容没有角色—人员映射的旧任务。
+        return ids.isEmpty() && task.expertLeaderId() != null ? List.of(task.expertLeaderId()) : ids;
+    }
+
+    private void updateActiveReviewers(long taskId, List<Long> reviewerIds) {
+        ReviewTaskRecord update = new ReviewTaskRecord();
+        update.setId(taskId);
+        update.setAssignedReviewerIds(TaskReviewerAssignmentCodec.encodeReviewerIds(reviewerIds));
+        if (taskMapper.updateAssignedReviewerIds(update) != 1) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
+        }
     }
 }

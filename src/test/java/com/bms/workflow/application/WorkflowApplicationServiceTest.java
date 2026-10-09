@@ -20,6 +20,7 @@ import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import com.bms.workflow.domain.WorkflowAction;
 import com.bms.workflow.infrastructure.TaskFlowMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -52,6 +53,11 @@ class WorkflowApplicationServiceTest {
     private final WorkflowApplicationService service = new WorkflowApplicationService(taskMapper, opinionMapper,
             fileMapper, checkItemApplicationService, flowMapper, outboxEventMapper, taskArchiveApplicationService,
             reviewerWhitelistApplicationService, reviewMailNotificationApplicationService);
+
+    @BeforeEach
+    void allowActiveReviewerPersistence() {
+        when(taskMapper.updateAssignedReviewerIds(any())).thenReturn(1);
+    }
 
     @Test
     void shouldStartPcbProcessReviewForAuthorizedDesignerAfterExpertOpinionsPassed() {
