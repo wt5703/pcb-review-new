@@ -1,5 +1,8 @@
 package com.bms.review.infrastructure;
 
+import com.bms.review.domain.OpinionSeverity;
+import com.bms.review.domain.OpinionSourceType;
+
 import java.time.LocalDateTime;
 
 /**
@@ -10,12 +13,13 @@ import java.time.LocalDateTime;
 public class ReviewOpinionRecord {
     private Long id;
     private Long taskId;
-    private String sourceType;
+    private OpinionSourceType sourceType;
     private Long sourceItemId;
-    private String severity;
+    private OpinionSeverity severity;
+    private boolean noOpinion;
     private String comment;
     private String richText;
-    private Long raisedBy;
+    private String raisedByEmployeeNo;
     private String raisedByName;
     private String status;
     private LocalDateTime createdAt;
@@ -24,18 +28,20 @@ public class ReviewOpinionRecord {
     public void setId(Long id) { this.id = id; }
     public Long getTaskId() { return taskId; }
     public void setTaskId(Long taskId) { this.taskId = taskId; }
-    public String getSourceType() { return sourceType; }
-    public void setSourceType(String sourceType) { this.sourceType = sourceType; }
+    public OpinionSourceType getSourceType() { return sourceType; }
+    public void setSourceType(OpinionSourceType sourceType) { this.sourceType = sourceType; }
     public Long getSourceItemId() { return sourceItemId; }
     public void setSourceItemId(Long sourceItemId) { this.sourceItemId = sourceItemId; }
-    public String getSeverity() { return severity; }
-    public void setSeverity(String severity) { this.severity = severity; }
+    public OpinionSeverity getSeverity() { return severity; }
+    public void setSeverity(OpinionSeverity severity) { this.severity = severity; }
+    public boolean isNoOpinion() { return noOpinion; }
+    public void setNoOpinion(boolean noOpinion) { this.noOpinion = noOpinion; }
     public String getComment() { return comment; }
     public void setComment(String comment) { this.comment = comment; }
     public String getRichText() { return richText; }
     public void setRichText(String richText) { this.richText = richText; }
-    public Long getRaisedBy() { return raisedBy; }
-    public void setRaisedBy(Long raisedBy) { this.raisedBy = raisedBy; }
+    public String getRaisedByEmployeeNo() { return raisedByEmployeeNo; }
+    public void setRaisedByEmployeeNo(String raisedByEmployeeNo) { this.raisedByEmployeeNo = raisedByEmployeeNo; }
     public String getRaisedByName() { return raisedByName; }
     public void setRaisedByName(String raisedByName) { this.raisedByName = raisedByName; }
     public String getStatus() { return status; }

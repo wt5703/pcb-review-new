@@ -11,10 +11,10 @@ public class ReviewerWhitelistRecord {
     private Long id;
     private String reviewRole;
     private String employeeNo;
-    private Long createdBy;
+    private String createdByEmployeeNo;
     private LocalDateTime createdAt;
     private Boolean deleted;
-    private Long deletedBy;
+    private String deletedByEmployeeNo;
     private LocalDateTime deletedAt;
     private String displayName;
     private String email;
@@ -27,14 +27,14 @@ public class ReviewerWhitelistRecord {
     public void setReviewRole(String reviewRole) { this.reviewRole = reviewRole; }
     public String getEmployeeNo() { return employeeNo; }
     public void setEmployeeNo(String employeeNo) { this.employeeNo = employeeNo; }
-    public Long getCreatedBy() { return createdBy; }
-    public void setCreatedBy(Long createdBy) { this.createdBy = createdBy; }
+    public String getCreatedByEmployeeNo() { return createdByEmployeeNo; }
+    public void setCreatedByEmployeeNo(String createdByEmployeeNo) { this.createdByEmployeeNo = createdByEmployeeNo; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public Boolean getDeleted() { return deleted; }
     public void setDeleted(Boolean deleted) { this.deleted = deleted; }
-    public Long getDeletedBy() { return deletedBy; }
-    public void setDeletedBy(Long deletedBy) { this.deletedBy = deletedBy; }
+    public String getDeletedByEmployeeNo() { return deletedByEmployeeNo; }
+    public void setDeletedByEmployeeNo(String deletedByEmployeeNo) { this.deletedByEmployeeNo = deletedByEmployeeNo; }
     public LocalDateTime getDeletedAt() { return deletedAt; }
     public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
     public String getDisplayName() { return displayName; }

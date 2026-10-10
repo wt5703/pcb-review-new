@@ -1,5 +1,7 @@
 package com.bms.review.infrastructure;
 
+import java.time.LocalDateTime;
+
 /**
  * @author 王涛
  * @date 2026-09-22
@@ -7,19 +9,25 @@ package com.bms.review.infrastructure;
  */
 public class AssignableReviewerRecord {
     private String whitelistRole;
-    private Long userId;
     private String employeeNo;
     private String displayName;
+    private String email;
+    private String mobile;
     private String departmentName;
+    private LocalDateTime createdAt;
 
     public String getWhitelistRole() { return whitelistRole; }
     public void setWhitelistRole(String whitelistRole) { this.whitelistRole = whitelistRole; }
-    public Long getUserId() { return userId; }
-    public void setUserId(Long userId) { this.userId = userId; }
     public String getEmployeeNo() { return employeeNo; }
     public void setEmployeeNo(String employeeNo) { this.employeeNo = employeeNo; }
     public String getDisplayName() { return displayName; }
     public void setDisplayName(String displayName) { this.displayName = displayName; }
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+    public String getMobile() { return mobile; }
+    public void setMobile(String mobile) { this.mobile = mobile; }
     public String getDepartmentName() { return departmentName; }
     public void setDepartmentName(String departmentName) { this.departmentName = departmentName; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

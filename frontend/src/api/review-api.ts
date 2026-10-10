@@ -1,7 +1,10 @@
 import { queryString, request, requestBinary } from './client'
-import type { Archive, AssignableReviewer, CheckItem, CheckItemCategory, TaskFileReference, MyTask, Opinion, OpinionPage, OpinionSummary, ResourceUploadResult, ReviewType, Task, TaskFile, TaskPage, TemplateCategory, TemplateExistence, TemplateList } from './types'
+import { OpinionSource } from './types'
+import type { Archive, AssignableReviewer, CheckItem, CheckItemCategory, CurrentUserProfile, TaskFileReference, MyTask, Opinion, OpinionPage, OpinionSummary, OpinionSeverityType, OpinionSourceType, ResourceUploadResult, ReviewType, Task, TaskFile, TaskPage, TemplateCategory, TemplateExistence, TemplateList } from './types'
 
 type ReviewerWhitelistRole = 'HARDWARE_EXPERT' | 'EMC_EXPERT' | 'STRUCTURE_EXPERT' | 'PROCESS_EXPERT' | 'PCB_EXPERT' | 'PCB_MUTUAL_CHECK' | 'SCHEMATIC_MUTUAL_CHECK'
+type ReviewerWhitelistItem = { id: number; reviewRole: ReviewerWhitelistRole; employeeNo: string; displayName?: string; email?: string; mobile?: string; departmentName?: string; createdAt?: string }
+type ReviewerWhitelistPage = { total: number; pageNo: number; pageSize: number; items: ReviewerWhitelistItem[] }
 type TaskSaveRequest = {
   reviewType: ReviewType
   taskName: string
@@ -28,7 +31,25 @@ async function uploadInitialFile(file: File, reviewType: ReviewType): Promise<Ta
   return uploaded.fileId
 }
 
+function listReviewerWhitelists(query: { keyword?: string; pageNo?: number; pageSize?: number } = {}): Promise<ReviewerWhitelistPage> {
+  return request<ReviewerWhitelistPage>('/reviewer-whitelists/query', {
+    method: 'POST', body: JSON.stringify(query)
+  })
+}
+
+/** 需要完整候选人目录的表单逐页拉取，避免白名单超过单页上限时遗漏可选人员。 */
+async function listAllReviewerWhitelists(): Promise<ReviewerWhitelistItem[]> {
+  const firstPage = await listReviewerWhitelists({ pageNo: 1, pageSize: 1000 })
+  const pageCount = Math.ceil(firstPage.total / firstPage.pageSize)
+  if (pageCount <= 1) return firstPage.items
+  const remainingPages = await Promise.all(
+    Array.from({ length: pageCount - 1 }, (_, index) => listReviewerWhitelists({ pageNo: index + 2, pageSize: firstPage.pageSize }))
+  )
+  return [firstPage, ...remainingPages].flatMap((page) => page.items)
+}
+
 export const reviewApi = {
+  getCurrentUser: () => request<CurrentUserProfile>('/identity/current-user'),
   listTasks: (query: { keyword?: string; reviewType?: string; statuses?: string[]; pageNo?: number; pageSize?: number }) =>
     request<TaskPage>(`/tasks${queryString({ ...query, statuses: query.statuses?.join(',') })}`),
   getTask: (taskId: number) => request<Task>(`/tasks/${taskId}`),
@@ -40,13 +61,13 @@ export const reviewApi = {
   submitTask: (body: TaskSaveRequest, taskId?: number) => {
     return request<Task>(`/tasks/submit${queryString({ taskId })}`, { method: 'POST', body: JSON.stringify(body) })
   },
-  listOpinions: (taskId: number, filters: { severity?: string; status?: string; sourceType?: string; sourceTypes?: string; scene?: 'REVIEW_WORKSPACE' | 'DESIGNER_REPLY'; pageNo?: number; pageSize?: number } = {}) => request<OpinionPage>(`/tasks/${taskId}/opinions${queryString(filters)}`),
+  listOpinions: (taskId: number, filters: { severity?: OpinionSeverityType; status?: string; sourceType?: OpinionSourceType; sourceTypes?: string; scene?: 'REVIEW_WORKSPACE' | 'DESIGNER_REPLY'; pageNo?: number; pageSize?: number } = {}) => request<OpinionPage>(`/tasks/${taskId}/opinions${queryString(filters)}`),
   getOpinionSummary: (taskId: number, sourceTypes?: string) => request<OpinionSummary>(`/tasks/${taskId}/opinions/summary${queryString({ sourceTypes })}`),
-  raiseOpinion: (taskId: number, body: { sourceType: Opinion['sourceType']; sourceItemId?: number; comment: string; richText?: string; severity?: string }) =>
+  raiseOpinion: (taskId: number, body: { sourceType: OpinionSourceType; sourceItemId?: number; comment: string; richText?: string; severity?: OpinionSeverityType }) =>
     request<Opinion>(`/tasks/${taskId}/opinions`, { method: 'POST', body: JSON.stringify(body) }),
-  submitNoOpinion: (taskId: number, sourceType: 'PCB_REVIEW' | 'SCHEMATIC_REVIEW' | 'PCB_PROCESS_REVIEW' | 'PCB_STRUCTURE_REVIEW') =>
+  submitNoOpinion: (taskId: number, sourceType: Exclude<OpinionSourceType, typeof OpinionSource.MUTUAL_CHECK_ITEM | typeof OpinionSource.MUTUAL_EXTRA>) =>
     request<Opinion>(`/tasks/${taskId}/opinions/no-opinion`, { method: 'POST', body: JSON.stringify({ sourceType }) }),
-  updateOpinion: (opinionId: number, body: { comment: string; richText?: string; severity?: string }) =>
+  updateOpinion: (opinionId: number, body: { comment: string; richText?: string; severity?: OpinionSeverityType }) =>
     request<Opinion>(`/opinions/${opinionId}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteOpinion: (opinionId: number) => request<void>(`/opinions/${opinionId}`, { method: 'DELETE' }),
   replyOpinion: (opinionId: number, body: { replyType: 'ACCEPT' | 'REJECT'; reason?: string }) =>
@@ -58,14 +79,27 @@ export const reviewApi = {
     request<CheckItem>(`/tasks/${taskId}/check-items/${itemId}`, { method: 'PUT', body: JSON.stringify(body) }),
   submitCheckItems: (taskId: number, items: Array<{ itemId: number; result: string; comment?: string; richText?: string }>) =>
     request<CheckItem[]>(`/tasks/${taskId}/check-items/batch`, { method: 'PUT', body: JSON.stringify({ items }) }),
-  listAssignableReviewers: (reviewType: 'PCB' | 'SCHEMATIC', taskStatus: string) =>
-    request<AssignableReviewer[]>(`/workflow/assignable-reviewers${queryString({ reviewType, taskStatus })}`),
+  listAssignableReviewers: (reviewType: 'PCB' | 'SCHEMATIC') =>
+    request<AssignableReviewer[]>(`/workflow/assignable-reviewers${queryString({ reviewType })}`),
+  listMutualCheckReviewers: (reviewType: 'PCB' | 'SCHEMATIC') =>
+    request<AssignableReviewer[]>(`/workflow/mutual-check-reviewers${queryString({ reviewType })}`),
   getTaskOptions: () => request<{ pcbTypes: string[]; reviewRoles: Array<{ code: string; name: string }>; reviewerWhitelistRoles: Array<{ code: string; name: string }>; taskStatuses: Array<{ code: string; name: string }> }>('/dictionaries/task-options'),
   uploadTaskFile: (taskId: number, fileCategory: string, file: File) => uploadResource(file, fileCategory, taskId),
   latestFiles: (taskId: number, fileCategory: string) => request<TaskFile[]>(`/files/latest${queryString({ taskId, fileCategory })}`),
   downloadContent: (fileId: number) => requestBinary(`/files/download${queryString({ fileId })}`, { method: 'POST' }),
   transition: (taskId: number, body: { actions: string[]; comment?: string; reviewerEmployeeNos?: string[] }) =>
-    request<{ taskId: number; fromStatus: string; toStatus: string; assignedReviewerIds: number[] }>(`/tasks/${taskId}/workflow/transitions`, { method: 'POST', body: JSON.stringify(body) }),
+    request<{ taskId: number; fromStatus: string; toStatus: string; assignedReviewerEmployeeNos: string[] }>(`/tasks/${taskId}/workflow/transitions`, { method: 'POST', body: JSON.stringify(body) }),
+  transitionWithFiles: (taskId: number, body: { actions: string[]; comment?: string; reviewerEmployeeNos?: string[] },
+                        files: Array<{ fileCategory: 'PCB_PROCESS_REVIEW' | 'PCB_STRUCTURE_REVIEW'; file: File }>) => {
+    const form = new FormData()
+    form.set('command', new Blob([JSON.stringify(body)], { type: 'application/json' }))
+    files.forEach(({ fileCategory, file }) => {
+      form.append('files', file, file.name)
+      form.append('fileCategories', fileCategory)
+    })
+    return request<{ taskId: number; fromStatus: string; toStatus: string; assignedReviewerEmployeeNos: string[] }>(
+      `/tasks/${taskId}/workflow/transitions`, { method: 'POST', body: form })
+  },
   getArchive: (taskId: number) => request<Archive>(`/tasks/${taskId}/archive`),
   exportArchiveOpinions: (taskId: number) => requestBinary(`/tasks/${taskId}/archive/export`),
   importTemplate: (file: File, reviewType: ReviewType, confirmed = false) => {
@@ -85,10 +119,8 @@ export const reviewApi = {
     request<{ createdCount: number; roleEmployeeNos: Array<{ reviewRole: string; employeeNos: string[] }> }>('/reviewer-whitelists', {
       method: 'POST', body: JSON.stringify({ roleEmployeeNos })
     }),
-  listReviewerWhitelists: (query: { keyword?: string; pageNo?: number; pageSize?: number } = {}) =>
-    request<{ total: number; pageNo: number; pageSize: number; items: Array<{ id: number; reviewRole: ReviewerWhitelistRole; employeeNo: string; displayName?: string; email?: string; mobile?: string; departmentName?: string; createdAt?: string }> }>('/reviewer-whitelists/query', {
-      method: 'POST', body: JSON.stringify(query)
-    }),
+  listReviewerWhitelists,
+  listAllReviewerWhitelists,
   removeReviewerWhitelist: (params: { id?: number; employeeNo?: string }) =>
     request<{ deletedCount: number }>(`/reviewer-whitelists${queryString(params)}`, { method: 'DELETE' }),
   disableCheckItemTemplate: (id: number, category: 'CATEGORY' | 'ITEM') =>

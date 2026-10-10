@@ -33,21 +33,21 @@ class PcbHappyPathIntegrationTest {
         long taskId = createAndSubmitTask();
         registerLatestPcbFile(taskId);
 
-        transition(taskId, "START_PCB_MATUAL_ASSIGNMENT", 10L, "DESIGNER");
-        assignAndTransition(taskId, "START_PCB_MATUAL_REVIEW", "BMS006", 1L, "PCB_LEADER");
+        transition(taskId, "START_PCB_MATUAL_ASSIGNMENT", "BMS010", "DESIGNER");
+        assignAndTransition(taskId, "START_PCB_MATUAL_REVIEW", "BMS006", "BMS001", "PCB_LEADER");
 
-        transition(taskId, "PREPARE_FINISH", 10L, "DESIGNER");
-        transition(taskId, "FINISH", 1L, "PCB_LEADER");
+        transition(taskId, "PREPARE_FINISH", "BMS010", "DESIGNER");
+        transition(taskId, "FINISH", "BMS001", "PCB_LEADER");
 
         mockMvc.perform(get("/tasks/{taskId}/archive", taskId)
-                        .header("X-Mock-User-Id", "1")
+                        .header("X-Mock-Employee-No", "BMS001")
                         .header("X-Mock-Roles", "PCB_LEADER"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.flowNodes").isArray())
                 .andExpect(jsonPath("$.data.flowNodes.length()").value(5));
 
         mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
-                        .header("X-Mock-User-Id", "1")
+                        .header("X-Mock-Employee-No", "BMS001")
                         .header("X-Mock-Roles", "PCB_LEADER")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"actions\":[\"FINISH\"]}"))
@@ -66,7 +66,7 @@ class PcbHappyPathIntegrationTest {
                 {"reviewType":"PCB","taskName":"PCB 全链路验收","projectName":"BMS","designerId":10,"designName":"BMS-P1","pcbType":"BMU","files":["c778c14e-6f1a-4f4f-9f11-100000000004"]}
                 """;
         MvcResult result = mockMvc.perform(post("/tasks/submit").contentType(MediaType.APPLICATION_JSON).content(taskRequest)
-                        .header("X-Mock-User-Id", "10")
+                        .header("X-Mock-Employee-No", "BMS010")
                         .header("X-Mock-Roles", "DESIGNER"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PCB_EXPERT_REVIEWING"))
@@ -74,18 +74,18 @@ class PcbHappyPathIntegrationTest {
         return ((Number) JsonPath.read(result.getResponse().getContentAsString(), "$.data.id")).longValue();
     }
 
-    private void assignAndTransition(long taskId, String action, String reviewerEmployeeNo, long operatorId, String operatorRole) throws Exception {
+    private void assignAndTransition(long taskId, String action, String reviewerEmployeeNo, String operatorEmployeeNo, String operatorRole) throws Exception {
         mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
-                        .header("X-Mock-User-Id", String.valueOf(operatorId))
+                        .header("X-Mock-Employee-No", operatorEmployeeNo)
                         .header("X-Mock-Roles", operatorRole)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"actions\":[\"" + action + "\"],\"reviewerEmployeeNos\":[\"" + reviewerEmployeeNo + "\"]}"))
                 .andExpect(status().isOk());
     }
 
-    private void transition(long taskId, String action, long userId, String role) throws Exception {
+    private void transition(long taskId, String action, String employeeNo, String role) throws Exception {
         mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
-                        .header("X-Mock-User-Id", String.valueOf(userId))
+                        .header("X-Mock-Employee-No", employeeNo)
                         .header("X-Mock-Roles", role)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"actions\":[\"" + action + "\"]}"))

@@ -8,7 +8,7 @@ package com.bms.identity.domain;
 
 
 public enum Role {
-    /** 硬件开发部经理：管理全局评审配置，并负责原理图专家分配。 */
+    /** 硬件开发部经理：管理全局评审配置。 */
     HARDWARE_DEPARTMENT_MANAGER("硬件开发部经理"),
     /** PCB 组长：负责 PCB 互检单分配及 PCB 任务结束确认。 */
     PCB_LEADER("PCB组长"),

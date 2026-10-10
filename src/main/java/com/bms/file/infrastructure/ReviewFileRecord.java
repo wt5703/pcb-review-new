@@ -18,7 +18,7 @@ public class ReviewFileRecord {
     private String fileId;
     private String resourcePath;
     private Boolean latest;
-    private Long uploadedBy;
+    private String uploadedByEmployeeNo;
     private LocalDateTime uploadedAt;
     private String uploadedStage;
 
@@ -42,8 +42,8 @@ public class ReviewFileRecord {
     public void setResourcePath(String resourcePath) { this.resourcePath = resourcePath; }
     public Boolean getLatest() { return latest; }
     public void setLatest(Boolean latest) { this.latest = latest; }
-    public Long getUploadedBy() { return uploadedBy; }
-    public void setUploadedBy(Long uploadedBy) { this.uploadedBy = uploadedBy; }
+    public String getUploadedByEmployeeNo() { return uploadedByEmployeeNo; }
+    public void setUploadedByEmployeeNo(String uploadedByEmployeeNo) { this.uploadedByEmployeeNo = uploadedByEmployeeNo; }
     public LocalDateTime getUploadedAt() { return uploadedAt; }
     public void setUploadedAt(LocalDateTime uploadedAt) { this.uploadedAt = uploadedAt; }
     public String getUploadedStage() { return uploadedStage; }

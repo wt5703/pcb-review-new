@@ -13,7 +13,7 @@ public class OpinionConfirmationRecord {
     private Long replyId;
     private Boolean passed;
     private String comment;
-    private Long confirmedBy;
+    private String confirmedByEmployeeNo;
     private LocalDateTime createdAt;
 
     public Long getId() { return id; }
@@ -26,8 +26,8 @@ public class OpinionConfirmationRecord {
     public void setPassed(Boolean passed) { this.passed = passed; }
     public String getComment() { return comment; }
     public void setComment(String comment) { this.comment = comment; }
-    public Long getConfirmedBy() { return confirmedBy; }
-    public void setConfirmedBy(Long confirmedBy) { this.confirmedBy = confirmedBy; }
+    public String getConfirmedByEmployeeNo() { return confirmedByEmployeeNo; }
+    public void setConfirmedByEmployeeNo(String confirmedByEmployeeNo) { this.confirmedByEmployeeNo = confirmedByEmployeeNo; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

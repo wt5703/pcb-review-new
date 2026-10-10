@@ -42,14 +42,14 @@ class TaskArchiveApplicationServiceTest {
         file.setTaskId(1001L);
         file.setFileCategory("PCB_REVIEW");
         file.setFileName("BMU_Control_V2.PCB");
-        file.setUploadedBy(9L);
+        file.setUploadedByEmployeeNo("BMS009");
         file.setUploadedAt(time);
         file.setUploadedStage("PCB_EXPERT_REVIEWING");
         TaskFlowRecord flow = new TaskFlowRecord();
         flow.setId(401L);
         flow.setAction("START_MUTUAL_CHECK");
         flow.setActionName("开启互检单评审");
-        flow.setOperateId(2L);
+        flow.setOperateEmployeeNo("BMS002");
         flow.setComment("互检人员已完成分配");
         flow.setCreatedAt(time.plusHours(1));
         ReviewTaskRecord task = new ReviewTaskRecord();
@@ -69,7 +69,7 @@ class TaskArchiveApplicationServiceTest {
 
         assertThat(view.flowNodes()).singleElement().satisfies(value -> {
             assertThat(value.stageName()).isEqualTo("开启互检单评审");
-            assertThat(value.operatorName()).isEqualTo("用户#2");
+            assertThat(value.operatorName()).isEqualTo("BMS002");
             assertThat(value.content()).isEqualTo("互检人员已完成分配");
         });
         assertThat(view.stageFiles()).singleElement().satisfies(value -> {

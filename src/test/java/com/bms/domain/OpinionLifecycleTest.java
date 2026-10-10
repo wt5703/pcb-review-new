@@ -19,25 +19,25 @@ class OpinionLifecycleTest {
 
     @Test
     void opinionShouldFollowReplyConfirmAndRetryLifecycle() {
-        ReviewOpinion opinion = ReviewOpinion.raise(1L, "PCB_EXPERT", "严重问题", 10L);
+        ReviewOpinion opinion = ReviewOpinion.raise(1L, "PCB_EXPERT", "严重问题", "BMS010");
 
-        opinion.reply(20L, ReplyType.ACCEPT, null);
+        opinion.reply("BMS020", ReplyType.ACCEPT, null);
         assertThat(opinion.status()).isEqualTo(OpinionStatus.PENDING_CONFIRMATION);
 
-        opinion.confirm(10L, false, "请补充修改说明");
+        opinion.confirm("BMS010", false, "请补充修改说明");
         assertThat(opinion.status()).isEqualTo(OpinionStatus.PENDING_REPLY);
 
-        opinion.reply(20L, ReplyType.ACCEPT, null);
-        opinion.confirm(10L, true, "通过");
+        opinion.reply("BMS020", ReplyType.ACCEPT, null);
+        opinion.confirm("BMS010", true, "通过");
         assertThat(opinion.status()).isEqualTo(OpinionStatus.CONFIRMED_PASS);
     }
 
     @Test
     void onlyRaiserMayConfirmOpinion() {
-        ReviewOpinion opinion = ReviewOpinion.raise(1L, "PCB_EXPERT", "问题", 10L);
-        opinion.reply(20L, ReplyType.ACCEPT, null);
+        ReviewOpinion opinion = ReviewOpinion.raise(1L, "PCB_EXPERT", "问题", "BMS010");
+        opinion.reply("BMS020", ReplyType.ACCEPT, null);
 
-        assertThatThrownBy(() -> opinion.confirm(11L, true, ""))
+        assertThatThrownBy(() -> opinion.confirm("BMS011", true, ""))
                 .isInstanceOf(IllegalStateException.class);
     }
 }

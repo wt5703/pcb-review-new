@@ -15,11 +15,11 @@ import java.util.List;
  */
 @Mapper
 public interface ReviewerWhitelistMapper {
-    @Select("SELECT id, review_role AS reviewRole, employee_no AS employeeNo, display_name AS displayName, email, mobile, department_name AS departmentName, created_by AS createdBy, created_at AS createdAt, deleted, deleted_by AS deletedBy, deleted_at AS deletedAt "
+    @Select("SELECT id, review_role AS reviewRole, employee_no AS employeeNo, display_name AS displayName, email, mobile, department_name AS departmentName, created_by_employee_no AS createdByEmployeeNo, created_at AS createdAt, deleted, deleted_by_employee_no AS deletedByEmployeeNo, deleted_at AS deletedAt "
             + "FROM reviewer_whitelist WHERE review_role=#{reviewRole} AND employee_no=#{employeeNo} AND deleted=FALSE")
     ReviewerWhitelistRecord findByRoleAndEmployeeNo(@Param("reviewRole") String reviewRole, @Param("employeeNo") String employeeNo);
 
-    @Select("SELECT id, review_role AS reviewRole, employee_no AS employeeNo, display_name AS displayName, email, mobile, department_name AS departmentName, created_by AS createdBy, created_at AS createdAt, deleted, deleted_by AS deletedBy, deleted_at AS deletedAt "
+    @Select("SELECT id, review_role AS reviewRole, employee_no AS employeeNo, display_name AS displayName, email, mobile, department_name AS departmentName, created_by_employee_no AS createdByEmployeeNo, created_at AS createdAt, deleted, deleted_by_employee_no AS deletedByEmployeeNo, deleted_at AS deletedAt "
             + "FROM reviewer_whitelist WHERE review_role=#{reviewRole} AND employee_no=#{employeeNo}")
     ReviewerWhitelistRecord findAnyByRoleAndEmployeeNo(@Param("reviewRole") String reviewRole, @Param("employeeNo") String employeeNo);
 
@@ -31,19 +31,22 @@ public interface ReviewerWhitelistMapper {
             + "FROM reviewer_whitelist WHERE id=#{id} AND deleted=FALSE")
     ReviewerWhitelistRecord findById(long id);
 
-    @Insert("INSERT INTO reviewer_whitelist (review_role, employee_no, display_name, email, mobile, department_name, created_by) VALUES (#{reviewRole}, #{employeeNo}, #{displayName}, #{email}, #{mobile}, #{departmentName}, #{createdBy})")
+    @Insert("INSERT INTO reviewer_whitelist (review_role, employee_no, display_name, email, mobile, department_name, created_by_employee_no) VALUES (#{reviewRole}, #{employeeNo}, #{displayName}, #{email}, #{mobile}, #{departmentName}, #{createdByEmployeeNo})")
     int insert(ReviewerWhitelistRecord record);
 
-    @Update("UPDATE reviewer_whitelist SET deleted=FALSE, deleted_by=NULL, deleted_at=NULL WHERE id=#{id} AND deleted=TRUE")
-    int restore(long id);
+    @Update("UPDATE reviewer_whitelist SET deleted=FALSE, deleted_by=NULL, deleted_at=NULL, display_name=#{displayName}, email=#{email}, mobile=#{mobile}, department_name=#{departmentName} WHERE id=#{id} AND deleted=TRUE")
+    int restore(ReviewerWhitelistRecord record);
 
-    @Update("UPDATE reviewer_whitelist SET deleted=TRUE, deleted_by=#{operatorId}, deleted_at=CURRENT_TIMESTAMP WHERE id=#{id} AND deleted=FALSE")
-    int logicDeleteById(@Param("id") long id, @Param("operatorId") long operatorId);
+    @Update("UPDATE reviewer_whitelist SET display_name=#{displayName}, email=#{email}, mobile=#{mobile}, department_name=#{departmentName} WHERE id=#{id} AND deleted=FALSE")
+    int updateProfile(ReviewerWhitelistRecord record);
 
-    @Update("UPDATE reviewer_whitelist SET deleted=TRUE, deleted_by=#{operatorId}, deleted_at=CURRENT_TIMESTAMP WHERE employee_no=#{employeeNo} AND deleted=FALSE")
-    int logicDeleteByEmployeeNo(@Param("employeeNo") String employeeNo, @Param("operatorId") long operatorId);
+    @Update("UPDATE reviewer_whitelist SET deleted=TRUE, deleted_by_employee_no=#{operatorEmployeeNo}, deleted_at=CURRENT_TIMESTAMP WHERE id=#{id} AND deleted=FALSE")
+    int logicDeleteById(@Param("id") long id, @Param("operatorEmployeeNo") String operatorEmployeeNo);
 
-    @Select("SELECT id, review_role AS reviewRole, employee_no AS employeeNo, display_name AS displayName, email, mobile, department_name AS departmentName, created_by AS createdBy, created_at AS createdAt, deleted, deleted_by AS deletedBy, deleted_at AS deletedAt "
+    @Update("UPDATE reviewer_whitelist SET deleted=TRUE, deleted_by_employee_no=#{operatorEmployeeNo}, deleted_at=CURRENT_TIMESTAMP WHERE employee_no=#{employeeNo} AND deleted=FALSE")
+    int logicDeleteByEmployeeNo(@Param("employeeNo") String employeeNo, @Param("operatorEmployeeNo") String operatorEmployeeNo);
+
+    @Select("SELECT id, review_role AS reviewRole, employee_no AS employeeNo, display_name AS displayName, email, mobile, department_name AS departmentName, created_by_employee_no AS createdByEmployeeNo, created_at AS createdAt, deleted, deleted_by_employee_no AS deletedByEmployeeNo, deleted_at AS deletedAt "
             + "FROM reviewer_whitelist WHERE deleted=FALSE ORDER BY review_role, employee_no")
     List<ReviewerWhitelistRecord> findAll();
 
@@ -57,7 +60,7 @@ public interface ReviewerWhitelistMapper {
 
     @Select("<script>"
             + "SELECT id, review_role AS reviewRole, employee_no AS employeeNo, display_name AS displayName, email, mobile, "
-            + "department_name AS departmentName, created_by AS createdBy, created_at AS createdAt, deleted, deleted_by AS deletedBy, deleted_at AS deletedAt "
+            + "department_name AS departmentName, created_by_employee_no AS createdByEmployeeNo, created_at AS createdAt, deleted, deleted_by_employee_no AS deletedByEmployeeNo, deleted_at AS deletedAt "
             + "FROM reviewer_whitelist WHERE deleted=FALSE "
             + "<if test='keyword != null and keyword != \"\"'>"
             + "AND (employee_no LIKE CONCAT('%', #{keyword}, '%') OR display_name LIKE CONCAT('%', #{keyword}, '%')) "
@@ -69,8 +72,8 @@ public interface ReviewerWhitelistMapper {
                                                       @Param("limit") int limit);
 
     @Select("<script>"
-            + "SELECT id AS userId, review_role AS whitelistRole, employee_no AS employeeNo, "
-            + "display_name AS displayName, department_name AS departmentName "
+            + "SELECT review_role AS whitelistRole, employee_no AS employeeNo, display_name AS displayName, email, mobile, "
+            + "department_name AS departmentName, created_at AS createdAt "
             + "FROM reviewer_whitelist WHERE deleted=FALSE AND review_role IN "
             + "<foreach collection='roles' item='role' open='(' separator=',' close=')'>#{role}</foreach> "
             + "ORDER BY review_role, id"

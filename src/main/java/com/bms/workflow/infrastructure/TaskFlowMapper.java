@@ -16,11 +16,11 @@ public interface TaskFlowMapper {
     @Select("SELECT COALESCE(MAX(id), 0) + 1 FROM task_flow_record")
     long nextId();
 
-    @Insert("INSERT INTO task_flow_record (id, task_id, action, action_name, operate_id, comment) "
-            + "VALUES (#{id}, #{taskId}, #{action}, #{actionName}, #{operateId}, #{comment})")
+    @Insert("INSERT INTO task_flow_record (id, task_id, action, action_name, operate_employee_no, comment) "
+            + "VALUES (#{id}, #{taskId}, #{action}, #{actionName}, #{operateEmployeeNo}, #{comment})")
     int insert(TaskFlowRecord record);
 
-    @Select("SELECT id, task_id AS taskId, action, action_name AS actionName, operate_id AS operateId, comment, create_at AS createdAt "
+    @Select("SELECT id, task_id AS taskId, action, action_name AS actionName, operate_employee_no AS operateEmployeeNo, comment, create_at AS createdAt "
             + "FROM task_flow_record WHERE task_id=#{taskId} ORDER BY id")
     List<TaskFlowRecord> findByTaskId(long taskId);
 }

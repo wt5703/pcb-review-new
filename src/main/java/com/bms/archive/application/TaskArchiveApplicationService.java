@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.bms.archive.infrastructure.TaskArchiveSnapshotMapper;
+import com.bms.file.domain.FileCategory;
 import com.bms.archive.infrastructure.TaskArchiveSnapshotRecord;
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
@@ -13,6 +14,7 @@ import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
 import com.bms.notification.infrastructure.NotificationSendRecord;
 import com.bms.notification.infrastructure.NotificationSendRecordMapper;
+import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import com.bms.workflow.infrastructure.TaskFlowMapper;
@@ -33,16 +35,19 @@ public class TaskArchiveApplicationService {
     private final ReviewFileMapper fileMapper;
     private final TaskFlowMapper flowMapper;
     private final NotificationSendRecordMapper notificationSendRecordMapper;
+    private final UserCenterUserProfileClient userProfileClient;
     private final ObjectMapper objectMapper;
 
     public TaskArchiveApplicationService(TaskArchiveSnapshotMapper snapshotMapper, ReviewFileMapper fileMapper,
                                          TaskFlowMapper flowMapper,
                                          NotificationSendRecordMapper notificationSendRecordMapper,
+                                         UserCenterUserProfileClient userProfileClient,
                                          ObjectMapper objectMapper) {
         this.snapshotMapper = snapshotMapper;
         this.fileMapper = fileMapper;
         this.flowMapper = flowMapper;
         this.notificationSendRecordMapper = notificationSendRecordMapper;
+        this.userProfileClient = userProfileClient;
         this.objectMapper = objectMapper;
     }
 
@@ -70,23 +75,26 @@ public class TaskArchiveApplicationService {
 
     private StageFileView toStageFile(ReviewFileRecord file) {
         return new StageFileView(file.getId(), stageNameForFile(file), file.getFileCategory(), file.getFileName(),
-                file.getUploadedBy(), displayName(file.getUploadedBy()), file.getUploadedAt(),
+                file.getUploadedByEmployeeNo(), displayName(file.getUploadedByEmployeeNo()), file.getUploadedAt(),
                 file.getResourcePath(), file.getFileFormat(), file.getFileSize(), file.getMd5(),
                 "/leapmotor/pcb_review/files/download?fileId=" + file.getId());
     }
 
     private FlowNodeView toFlowNode(TaskFlowRecord flow) {
-        return new FlowNodeView(flow.getCreatedAt(), flow.getActionName(), displayName(flow.getOperateId()), flow.getComment());
+        return new FlowNodeView(flow.getCreatedAt(), flow.getActionName(), displayName(flow.getOperateEmployeeNo()), flow.getComment());
     }
 
     private String stageNameForFileCategory(String category) {
-        return switch (category) {
-            case "PCB_REVIEW" -> "PCB评审";
-            case "SCHEMATIC_REVIEW" -> "原理图评审";
-            case "PCB_PROCESS_REVIEW" -> "PCB工艺评审";
-            case "PCB_STRUCTURE_REVIEW" -> "PCB结构评审";
-            default -> category;
-        };
+        try {
+            return switch (FileCategory.valueOf(category)) {
+                case PCB_REVIEW -> "PCB评审";
+                case SCHEMATIC_REVIEW -> "原理图评审";
+                case PCB_PROCESS_REVIEW -> "PCB工艺评审";
+                case PCB_STRUCTURE_REVIEW -> "PCB结构评审";
+            };
+        } catch (IllegalArgumentException exception) {
+            return category;
+        }
     }
 
     private String stageNameForFile(ReviewFileRecord file) {
@@ -102,8 +110,8 @@ public class TaskArchiveApplicationService {
         }
     }
 
-    private String displayName(Long userId) {
-        return userId == null ? null : "用户#" + userId;
+    private String displayName(String employeeNo) {
+        return employeeNo == null ? null : userProfileClient.getByEmployeeNo(employeeNo).displayName();
     }
 
     private String json(Object value) {
@@ -136,7 +144,7 @@ public class TaskArchiveApplicationService {
     }
 
     public record StageFileView(Long fileId, String stageName, String fileCategory, String fileName,
-                                Long uploaderId, String uploaderName, LocalDateTime uploadedAt,
+                                String uploaderEmployeeNo, String uploaderName, LocalDateTime uploadedAt,
                                 String resourcePath, String fileFormat, Long fileSize, String md5, String downloadPath) {
     }
 

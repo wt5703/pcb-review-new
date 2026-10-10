@@ -3,13 +3,16 @@ package com.bms.review.application;
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
 import com.bms.identity.application.CurrentUser;
-import com.bms.identity.application.TaskNodeAuthorizationService;
+import com.bms.identity.infrastructure.UserCenterUserProfileClient;
+import com.bms.task.application.TaskProcessorAuthorizationService;
 import com.bms.identity.domain.Permission;
 import com.bms.identity.domain.PermissionPolicy;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.review.domain.CheckItemStatus;
 import com.bms.review.domain.CheckResult;
 import com.bms.review.domain.OpinionStatus;
+import com.bms.review.domain.OpinionSeverity;
+import com.bms.review.domain.OpinionSourceType;
 import com.bms.review.infrastructure.CheckItemTemplateMapper;
 import com.bms.review.infrastructure.CheckItemTemplateRecord;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
@@ -39,19 +42,22 @@ public class TaskCheckItemApplicationService {
     private final CheckItemTemplateMapper templateMapper;
     private final TaskCheckItemMapper taskCheckItemMapper;
     private final TaskAssignmentAccessMapper assignmentAccessMapper;
-    private final TaskNodeAuthorizationService taskNodeAuthorizationService;
+    private final TaskProcessorAuthorizationService taskProcessorAuthorizationService;
     private final ReviewOpinionMapper opinionMapper;
+    private final UserCenterUserProfileClient userProfileClient;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public TaskCheckItemApplicationService(ReviewTaskMapper taskMapper, CheckItemTemplateMapper templateMapper,
                                            TaskCheckItemMapper taskCheckItemMapper, TaskAssignmentAccessMapper assignmentAccessMapper,
-                                           TaskNodeAuthorizationService taskNodeAuthorizationService, ReviewOpinionMapper opinionMapper) {
+                                           TaskProcessorAuthorizationService taskProcessorAuthorizationService, ReviewOpinionMapper opinionMapper,
+                                           UserCenterUserProfileClient userProfileClient) {
         this.taskMapper = taskMapper;
         this.templateMapper = templateMapper;
         this.taskCheckItemMapper = taskCheckItemMapper;
         this.assignmentAccessMapper = assignmentAccessMapper;
-        this.taskNodeAuthorizationService = taskNodeAuthorizationService;
+        this.taskProcessorAuthorizationService = taskProcessorAuthorizationService;
         this.opinionMapper = opinionMapper;
+        this.userProfileClient = userProfileClient;
     }
 
     @Transactional
@@ -86,7 +92,7 @@ public class TaskCheckItemApplicationService {
         if (isFinished(task)) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许修改检查项");
         }
-        taskNodeAuthorizationService.requireCurrentTaskProcessor(taskId, currentUser);
+        taskProcessorAuthorizationService.requireCurrentTaskProcessor(taskId, currentUser);
 
         // 2. 仅定位任务已经生成的检查项快照，防止模板修改影响本次保存。
         TaskCheckItemRecord record = taskCheckItemMapper.findByTaskIdAndId(taskId, itemId);
@@ -111,7 +117,7 @@ public class TaskCheckItemApplicationService {
         if (taskCheckItemMapper.submit(record) != 1) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务");
         }
-        return CheckItemView.from(record, opinion, itemNameOf(record));
+        return toCheckItemView(record, opinion, itemNameOf(record));
     }
 
     /**
@@ -124,7 +130,7 @@ public class TaskCheckItemApplicationService {
         // 1. 批量提交同样只处理既有任务快照，不在保存过程中读取或同步模板。
         ReviewTaskRecord task = requireTaskExists(taskId);
         if (isFinished(task)) { throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许修改检查项"); }
-        taskNodeAuthorizationService.requireCurrentTaskProcessor(taskId, currentUser);
+        taskProcessorAuthorizationService.requireCurrentTaskProcessor(taskId, currentUser);
         if (commands == null || commands.isEmpty()) { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "互检单至少需要提交一条检查项结果"); }
 
         // 2. 先逐项校验归属和重复提交；任一项失败会由事务整体回滚。
@@ -147,7 +153,7 @@ public class TaskCheckItemApplicationService {
             record.setCheckResult(command.result().name()); record.setComment(command.comment()); record.setRichText(command.richText());
             record.setStatus(CheckItemStatus.COMPLETED.name());
             if (taskCheckItemMapper.submit(record) != 1) { throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务"); }
-            views.add(CheckItemView.from(record, opinion, itemNameOf(record)));
+            views.add(toCheckItemView(record, opinion, itemNameOf(record)));
         }
         return List.copyOf(views);
     }
@@ -213,7 +219,7 @@ public class TaskCheckItemApplicationService {
     private ReviewTaskRecord requireVisibleTask(long taskId, CurrentUser currentUser) {
         ReviewTaskRecord task = requireTaskExists(taskId);
         if (permissionPolicy.has(currentUser.roles(), Permission.VIEW_MUTUAL_CHECK_OPINION)
-                || assignmentAccessMapper.isAssignedToTask(taskId, currentUser.id())) {
+                || assignmentAccessMapper.isAssignedToTask(taskId, currentUser.employeeNo())) {
             return task;
         }
         throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看该任务的互检检查项");
@@ -235,6 +241,12 @@ public class TaskCheckItemApplicationService {
         validateResult(command.result(), command.comment());
     }
 
+    private CheckItemView toCheckItemView(TaskCheckItemRecord record, ReviewOpinionRecord opinion, String itemName) {
+        String raisedByName = opinion == null ? null
+                : userProfileClient.getByEmployeeNo(opinion.getRaisedByEmployeeNo()).displayName();
+        return CheckItemView.from(record, opinion, itemName, raisedByName);
+    }
+
     private void requireLeafCheckItem(TaskCheckItemRecord record) {
         if (record.getParentId() == null) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "互检类别不能直接提交，必须提交其下检查项");
@@ -254,11 +266,11 @@ public class TaskCheckItemApplicationService {
 
     private ReviewOpinionRecord createOrUpdateMutualOpinion(long taskId, TaskCheckItemRecord item, String comment, String richText, CurrentUser currentUser) {
         String opinionContent = richText == null || richText.isBlank() ? comment.trim() : richText.trim();
-        ReviewOpinionRecord opinion = opinionMapper.findActiveMutualCheckItemOpinion(taskId, item.getId());
+        ReviewOpinionRecord opinion = opinionMapper.findActiveMutualCheckItemOpinion(taskId, item.getId(), OpinionSourceType.MUTUAL_CHECK_ITEM);
         if (opinion == null) {
             opinion = new ReviewOpinionRecord(); opinion.setId(opinionMapper.nextOpinionId()); opinion.setTaskId(taskId);
-            opinion.setSourceType("MUTUAL_CHECK_ITEM"); opinion.setSourceItemId(item.getId()); opinion.setSeverity("GENERAL");
-            opinion.setComment(opinionContent); opinion.setRichText(opinionContent); opinion.setRaisedBy(currentUser.id()); opinion.setRaisedByName(currentUser.resolvedDisplayName());
+            opinion.setSourceType(OpinionSourceType.MUTUAL_CHECK_ITEM); opinion.setSourceItemId(item.getId()); opinion.setSeverity(OpinionSeverity.GENERAL);
+            opinion.setComment(opinionContent); opinion.setRichText(opinionContent); opinion.setRaisedByEmployeeNo(currentUser.employeeNo()); opinion.setRaisedByName(currentUser.resolvedDisplayName());
             opinion.setStatus("PENDING_REPLY"); opinionMapper.insert(opinion);
         } else {
             opinion.setComment(opinionContent); opinion.setRichText(opinionContent);
@@ -272,7 +284,7 @@ public class TaskCheckItemApplicationService {
      * 仅撤回尚未确认通过的同源意见，保留已经闭环的历史记录。
      */
     private void withdrawUnresolvedMutualOpinion(long taskId, TaskCheckItemRecord item) {
-        ReviewOpinionRecord opinion = opinionMapper.findActiveMutualCheckItemOpinion(taskId, item.getId());
+        ReviewOpinionRecord opinion = opinionMapper.findActiveMutualCheckItemOpinion(taskId, item.getId(), OpinionSourceType.MUTUAL_CHECK_ITEM);
         if (opinion == null || OpinionStatus.CONFIRMED_PASS.name().equals(opinion.getStatus())) {
             return;
         }
@@ -335,17 +347,17 @@ public class TaskCheckItemApplicationService {
     public record CheckItemView(Long id, String itemName, int sortNo,
                                 CheckResult result, String comment, String richText, CheckItemOpinionView opinion,
                                 CheckItemStatus status) {
-        static CheckItemView from(TaskCheckItemRecord record, ReviewOpinionRecord opinion, String itemName) {
+        static CheckItemView from(TaskCheckItemRecord record, ReviewOpinionRecord opinion, String itemName, String raisedByName) {
             return new CheckItemView(record.getId(), itemName,
                     record.getSortNo(), record.getCheckResult() == null ? null : CheckResult.valueOf(record.getCheckResult()), record.getComment(), record.getRichText(),
-                    opinion == null ? null : CheckItemOpinionView.from(opinion), CheckItemStatus.valueOf(record.getStatus()));
+                    opinion == null ? null : CheckItemOpinionView.from(opinion, raisedByName), CheckItemStatus.valueOf(record.getStatus()));
         }
     }
-    public record CheckItemOpinionView(Long id, String comment, String richText, Long raisedBy, String raisedByName, String severity,
+    public record CheckItemOpinionView(Long id, String comment, String richText, String raisedByEmployeeNo, String raisedByName, OpinionSeverity severity,
                                        OpinionStatus status, java.time.LocalDateTime createdAt) {
-        static CheckItemOpinionView from(ReviewOpinionRecord opinion) {
-            return new CheckItemOpinionView(opinion.getId(), opinion.getComment(), opinion.getRichText(), opinion.getRaisedBy(),
-                    opinion.getRaisedByName(), opinion.getSeverity(), OpinionStatus.valueOf(opinion.getStatus()), opinion.getCreatedAt());
+        static CheckItemOpinionView from(ReviewOpinionRecord opinion, String raisedByName) {
+            return new CheckItemOpinionView(opinion.getId(), opinion.getComment(), opinion.getRichText(), opinion.getRaisedByEmployeeNo(),
+                    raisedByName, opinion.getSeverity(), OpinionStatus.valueOf(opinion.getStatus()), opinion.getCreatedAt());
         }
     }
 }

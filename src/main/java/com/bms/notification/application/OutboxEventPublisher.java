@@ -18,9 +18,9 @@ public class OutboxEventPublisher {
         this.outboxEventMapper = outboxEventMapper;
     }
 
-    public void publishTaskEvent(String eventType, long taskId, long operatorId) {
+    public void publishTaskEvent(String eventType, long taskId, String operatorEmployeeNo) {
         String payload = "{\"eventType\":\"" + eventType + "\",\"taskId\":" + taskId
-                + ",\"operatorId\":" + operatorId + "}";
+                + ",\"operatorEmployeeNo\":\"" + operatorEmployeeNo + "\"}";
         outboxEventMapper.insert(new OutboxEventRecord(eventType, REVIEW_TASK_AGGREGATE, taskId, payload, "PENDING"));
     }
 }

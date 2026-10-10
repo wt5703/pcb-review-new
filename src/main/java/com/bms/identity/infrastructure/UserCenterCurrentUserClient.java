@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
  */
 @Component
 public class UserCenterCurrentUserClient {
-    private static final CurrentUser DEFAULT_MOCK_USER = new CurrentUser(1L, "王鹏飞", EnumSet.allOf(Role.class));
+    private static final CurrentUser DEFAULT_MOCK_USER = new CurrentUser("BMS001", "王鹏飞", EnumSet.allOf(Role.class));
 
     private final RestClient restClient;
     private final String currentUserUrl;
@@ -41,7 +41,8 @@ public class UserCenterCurrentUserClient {
                     .headers(headers -> forwardAuthorization(request, headers))
                     .retrieve()
                     .body(UserCenterUser.class);
-            if (response == null || response.userId() == null || response.displayName() == null || response.displayName().isBlank()) {
+            if (response == null || response.employeeNo() == null || response.employeeNo().isBlank()
+                    || response.displayName() == null || response.displayName().isBlank()) {
                 return DEFAULT_MOCK_USER;
             }
             Set<Role> roles = response.roles() == null ? Set.of() : response.roles().stream()
@@ -49,7 +50,7 @@ public class UserCenterCurrentUserClient {
                     .map(String::trim)
                     .map(Role::valueOf)
                     .collect(Collectors.toUnmodifiableSet());
-            return new CurrentUser(response.userId(), response.displayName(), roles);
+            return new CurrentUser(response.employeeNo(), response.displayName(), roles);
         } catch (Exception ignored) {
             return DEFAULT_MOCK_USER;
         }
@@ -62,6 +63,6 @@ public class UserCenterCurrentUserClient {
         }
     }
 
-    /** 约定用户中心当前用户接口返回 userId、employeeNo、displayName 和 roles。 */
-    record UserCenterUser(Long userId, String employeeNo, String displayName, Set<String> roles) { }
+    /** 约定用户中心当前用户接口返回 employeeNo、displayName 和 roles。 */
+    record UserCenterUser(String employeeNo, String displayName, Set<String> roles) { }
 }

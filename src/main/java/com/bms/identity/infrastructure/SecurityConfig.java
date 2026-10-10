@@ -8,7 +8,7 @@ import org.springframework.security.web.SecurityFilterChain;
 /**
  * @author 王涛
  * @date 2026-09-10
- * @description 配置本地 Mock 身份模式下的 Spring Security 过滤链，使业务授权由应用层权限策略统一处理并避免表单登录干扰接口测试。
+ * @description 关闭 Spring Security 的默认表单认证入口，使当前用户解析和业务授权统一由本模块及应用层权限策略处理。
  */
 
 

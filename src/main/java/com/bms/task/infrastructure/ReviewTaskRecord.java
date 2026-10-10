@@ -12,16 +12,16 @@ public class ReviewTaskRecord {
     private String reviewType;
     private String taskName;
     private String projectName;
-    private Long designerId;
+    private String designerEmployeeNo;
     private String designerName;
     private String designName;
     private String pcbType;
     private LocalDate expectedCompletedDate;
-    private Long expertLeaderId;
+    private String expertLeaderEmployeeNo;
     private String expertLeaderName;
     private String reviewRoles;
     private String reviewerAssignments;
-    private String assignedReviewerIds;
+    private String assignedReviewerEmployeeNos;
     private String reviewDescription;
     private String status;
     private String initialFileIds;
@@ -35,8 +35,8 @@ public class ReviewTaskRecord {
     public void setTaskName(String taskName) { this.taskName = taskName; }
     public String getProjectName() { return projectName; }
     public void setProjectName(String projectName) { this.projectName = projectName; }
-    public Long getDesignerId() { return designerId; }
-    public void setDesignerId(Long designerId) { this.designerId = designerId; }
+    public String getDesignerEmployeeNo() { return designerEmployeeNo; }
+    public void setDesignerEmployeeNo(String designerEmployeeNo) { this.designerEmployeeNo = designerEmployeeNo; }
     public String getDesignerName() { return designerName; }
     public void setDesignerName(String designerName) { this.designerName = designerName; }
     public String getDesignName() { return designName; }
@@ -45,16 +45,16 @@ public class ReviewTaskRecord {
     public void setPcbType(String pcbType) { this.pcbType = pcbType; }
     public LocalDate getExpectedCompletedDate() { return expectedCompletedDate; }
     public void setExpectedCompletedDate(LocalDate expectedCompletedDate) { this.expectedCompletedDate = expectedCompletedDate; }
-    public Long getExpertLeaderId() { return expertLeaderId; }
-    public void setExpertLeaderId(Long expertLeaderId) { this.expertLeaderId = expertLeaderId; }
+    public String getExpertLeaderEmployeeNo() { return expertLeaderEmployeeNo; }
+    public void setExpertLeaderEmployeeNo(String expertLeaderEmployeeNo) { this.expertLeaderEmployeeNo = expertLeaderEmployeeNo; }
     public String getExpertLeaderName() { return expertLeaderName; }
     public void setExpertLeaderName(String expertLeaderName) { this.expertLeaderName = expertLeaderName; }
     public String getReviewRoles() { return reviewRoles; }
     public void setReviewRoles(String reviewRoles) { this.reviewRoles = reviewRoles; }
     public String getReviewerAssignments() { return reviewerAssignments; }
     public void setReviewerAssignments(String reviewerAssignments) { this.reviewerAssignments = reviewerAssignments; }
-    public String getAssignedReviewerIds() { return assignedReviewerIds; }
-    public void setAssignedReviewerIds(String assignedReviewerIds) { this.assignedReviewerIds = assignedReviewerIds; }
+    public String getAssignedReviewerEmployeeNos() { return assignedReviewerEmployeeNos; }
+    public void setAssignedReviewerEmployeeNos(String assignedReviewerEmployeeNos) { this.assignedReviewerEmployeeNos = assignedReviewerEmployeeNos; }
     public String getReviewDescription() { return reviewDescription; }
     public void setReviewDescription(String reviewDescription) { this.reviewDescription = reviewDescription; }
     public String getStatus() { return status; }

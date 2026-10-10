@@ -45,8 +45,8 @@ class OpenApiIntegrationTest {
                 .andExpect(jsonPath("$.data.taskStatuses[*].code").value(org.hamcrest.Matchers.contains(
                         "DRAFT", "PCB_EXPERT_REVIEWING", "PCB_PROCESS_STRUCTURE_REVIEWING",
                         "MUTUAL_CHECK_PENDING_ASSIGNMENT", "MUTUAL_CHECK_REVIEWING",
-                        "SCHEMATIC_PENDING_HARDWARE_EXPERT_ASSIGNMENT", "SCHEMATIC_REVIEWING", "FINISHED")))
+                        "SCHEMATIC_REVIEWING", "FINISHED")))
                 .andExpect(jsonPath("$.data.taskStatuses[*].name").value(org.hamcrest.Matchers.contains(
-                        "草稿", "专家评审", "工艺/结构评审", "互检单待分配", "互检单评审", "待分配硬件专家", "原理图评审", "结束")));
+                        "草稿", "专家评审", "工艺/结构评审", "互检单待分配", "互检单评审", "原理图评审", "结束")));
     }
 }

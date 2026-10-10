@@ -18,12 +18,12 @@ public final class ReviewTask {
     private final ReviewType reviewType;
     private final String taskName;
     private final String projectName;
-    private final Long designerId;
+    private final String designerEmployeeNo;
     private final String designerName;
     private final String designName;
     private String pcbType;
     private final LocalDate expectedCompletedDate;
-    private final Long expertLeaderId;
+    private final String expertLeaderEmployeeNo;
     private final String expertLeaderName;
     private final List<ReviewRole> reviewRoles;
     private final List<TaskReviewerAssignment> reviewerAssignments;
@@ -31,20 +31,20 @@ public final class ReviewTask {
     private final List<Long> initialFileIds = new ArrayList<>();
     private TaskStatus status = TaskStatus.DRAFT;
 
-    private ReviewTask(Long id, ReviewType reviewType, String taskName, String projectName, Long designerId,
+    private ReviewTask(Long id, ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo,
                        String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
-                       Long expertLeaderId, String expertLeaderName, List<ReviewRole> reviewRoles,
+                       String expertLeaderEmployeeNo, String expertLeaderName, List<ReviewRole> reviewRoles,
                        List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription) {
         this.id = Objects.requireNonNull(id);
         this.reviewType = Objects.requireNonNull(reviewType);
         this.taskName = requireText(taskName, "任务名称不能为空");
         this.projectName = requireText(projectName, "项目名称不能为空");
-        this.designerId = Objects.requireNonNull(designerId);
+        this.designerEmployeeNo = requireText(designerEmployeeNo, "设计者工号不能为空");
         this.designerName = requireText(designerName, "设计者姓名不能为空");
         this.designName = requireText(designName, "设计名称不能为空");
         this.pcbType = pcbType;
         this.expectedCompletedDate = Objects.requireNonNull(expectedCompletedDate, "期望完成日期不能为空");
-        this.expertLeaderId = Objects.requireNonNull(expertLeaderId, "专家/组长不能为空");
+        this.expertLeaderEmployeeNo = requireText(expertLeaderEmployeeNo, "组长工号不能为空");
         this.expertLeaderName = requireText(expertLeaderName, "专家/组长姓名不能为空");
         this.reviewRoles = List.copyOf(Objects.requireNonNull(reviewRoles));
         if (this.reviewRoles.isEmpty()) { throw new IllegalArgumentException("评审角色不能为空"); }
@@ -53,18 +53,18 @@ public final class ReviewTask {
     }
 
     public static ReviewTask draft(Long id, ReviewType reviewType, String taskName, String projectName,
-                                   Long designerId, String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
-                                   Long expertLeaderId, String expertLeaderName, List<ReviewRole> reviewRoles, String reviewDescription) {
-        return draft(id, reviewType, taskName, projectName, designerId, designerName, designName, pcbType,
-                expectedCompletedDate, expertLeaderId, expertLeaderName, reviewRoles, List.of(), reviewDescription);
+                                   String designerEmployeeNo, String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
+                                   String expertLeaderEmployeeNo, String expertLeaderName, List<ReviewRole> reviewRoles, String reviewDescription) {
+        return draft(id, reviewType, taskName, projectName, designerEmployeeNo, designerName, designName, pcbType,
+                expectedCompletedDate, expertLeaderEmployeeNo, expertLeaderName, reviewRoles, List.of(), reviewDescription);
     }
 
     public static ReviewTask draft(Long id, ReviewType reviewType, String taskName, String projectName,
-                                   Long designerId, String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
-                                   Long expertLeaderId, String expertLeaderName, List<ReviewRole> reviewRoles,
+                                   String designerEmployeeNo, String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
+                                   String expertLeaderEmployeeNo, String expertLeaderName, List<ReviewRole> reviewRoles,
                                    List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription) {
-        return new ReviewTask(id, reviewType, taskName, projectName, designerId, designerName, designName, pcbType,
-                expectedCompletedDate, expertLeaderId, expertLeaderName, reviewRoles, reviewerAssignments, reviewDescription);
+        return new ReviewTask(id, reviewType, taskName, projectName, designerEmployeeNo, designerName, designName, pcbType,
+                expectedCompletedDate, expertLeaderEmployeeNo, expertLeaderName, reviewRoles, reviewerAssignments, reviewDescription);
     }
 
     /**
@@ -73,26 +73,26 @@ public final class ReviewTask {
      * @description 兼容既有领域测试和旧调用方的草稿构造入口；生产接口必须使用包含设计者姓名、日期、专家和评审角色的完整参数版本。
      */
     public static ReviewTask draft(Long id, ReviewType reviewType, String taskName, String projectName,
-                                   Long designerId, String designName, String pcbType) {
-        return draft(id, reviewType, taskName, projectName, designerId, "设计者#" + designerId, designName, pcbType,
-                LocalDate.now(), designerId, "专家/组长#" + designerId, List.of(ReviewRole.PCB_EXPERT), null);
+                                   String designerEmployeeNo, String designName, String pcbType) {
+        return draft(id, reviewType, taskName, projectName, designerEmployeeNo, designerEmployeeNo, designName, pcbType,
+                LocalDate.now(), designerEmployeeNo, designerEmployeeNo, List.of(ReviewRole.PCB_EXPERT), null);
     }
 
-    public static ReviewTask restore(Long id, ReviewType reviewType, String taskName, String projectName, Long designerId,
+    public static ReviewTask restore(Long id, ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo,
                                      String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
-                                     Long expertLeaderId, String expertLeaderName, List<ReviewRole> reviewRoles, String reviewDescription,
+                                     String expertLeaderEmployeeNo, String expertLeaderName, List<ReviewRole> reviewRoles, String reviewDescription,
                                      TaskStatus status, List<Long> initialFileIds) {
-        return restore(id, reviewType, taskName, projectName, designerId, designerName, designName, pcbType,
-                expectedCompletedDate, expertLeaderId, expertLeaderName, reviewRoles, List.of(), reviewDescription, status, initialFileIds);
+        return restore(id, reviewType, taskName, projectName, designerEmployeeNo, designerName, designName, pcbType,
+                expectedCompletedDate, expertLeaderEmployeeNo, expertLeaderName, reviewRoles, List.of(), reviewDescription, status, initialFileIds);
     }
 
-    public static ReviewTask restore(Long id, ReviewType reviewType, String taskName, String projectName, Long designerId,
+    public static ReviewTask restore(Long id, ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo,
                                      String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
-                                     Long expertLeaderId, String expertLeaderName, List<ReviewRole> reviewRoles,
+                                     String expertLeaderEmployeeNo, String expertLeaderName, List<ReviewRole> reviewRoles,
                                      List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription,
                                      TaskStatus status, List<Long> initialFileIds) {
-        ReviewTask task = new ReviewTask(id, reviewType, taskName, projectName, designerId, designerName, designName, pcbType,
-                expectedCompletedDate, expertLeaderId, expertLeaderName, reviewRoles, reviewerAssignments, reviewDescription);
+        ReviewTask task = new ReviewTask(id, reviewType, taskName, projectName, designerEmployeeNo, designerName, designName, pcbType,
+                expectedCompletedDate, expertLeaderEmployeeNo, expertLeaderName, reviewRoles, reviewerAssignments, reviewDescription);
         task.initialFileIds.addAll(initialFileIds);
         task.status = status;
         return task;
@@ -160,12 +160,12 @@ public final class ReviewTask {
     public ReviewType reviewType() { return reviewType; }
     public String taskName() { return taskName; }
     public String projectName() { return projectName; }
-    public Long designerId() { return designerId; }
+    public String designerEmployeeNo() { return designerEmployeeNo; }
     public String designerName() { return designerName; }
     public String designName() { return designName; }
     public String pcbType() { return pcbType; }
     public LocalDate expectedCompletedDate() { return expectedCompletedDate; }
-    public Long expertLeaderId() { return expertLeaderId; }
+    public String expertLeaderEmployeeNo() { return expertLeaderEmployeeNo; }
     public String expertLeaderName() { return expertLeaderName; }
     public List<ReviewRole> reviewRoles() { return reviewRoles; }
     public List<TaskReviewerAssignment> reviewerAssignments() { return reviewerAssignments; }

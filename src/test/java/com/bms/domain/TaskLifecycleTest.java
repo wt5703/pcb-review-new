@@ -19,7 +19,7 @@ class TaskLifecycleTest {
 
     @Test
     void pcbTaskMustHavePcbTypeAndInitialFileBeforeSubmit() {
-        ReviewTask task = ReviewTask.draft(1L, ReviewType.PCB, "任务", "项目", 20L, "PCB-A", null);
+        ReviewTask task = ReviewTask.draft(1L, ReviewType.PCB, "任务", "项目", "BMS020", "PCB-A", null);
 
         assertThatThrownBy(task::submit).isInstanceOf(IllegalStateException.class);
 
@@ -32,7 +32,7 @@ class TaskLifecycleTest {
 
     @Test
     void finishedTaskIsReadOnly() {
-        ReviewTask task = ReviewTask.draft(1L, ReviewType.SCHEMATIC, "任务", "项目", 20L, "SCH-A", null);
+        ReviewTask task = ReviewTask.draft(1L, ReviewType.SCHEMATIC, "任务", "项目", "BMS020", "SCH-A", null);
         task.addInitialFile(100L);
         task.submit();
         task.moveTo(TaskStatus.SCHEMATIC_REVIEWING);

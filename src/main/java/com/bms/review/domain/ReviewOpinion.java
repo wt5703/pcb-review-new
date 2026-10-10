@@ -13,47 +13,47 @@ import java.util.Objects;
 
 public final class ReviewOpinion {
     private final Long taskId;
-    private final String sourceType;
+    private final OpinionSourceType sourceType;
     private final String comment;
-    private final Long raisedBy;
+    private final String raisedByEmployeeNo;
     private final List<OpinionReply> replies = new ArrayList<>();
     private final List<OpinionConfirmation> confirmations = new ArrayList<>();
     private OpinionStatus status;
 
-    private ReviewOpinion(Long taskId, String sourceType, String comment, Long raisedBy) {
+    private ReviewOpinion(Long taskId, OpinionSourceType sourceType, String comment, String raisedByEmployeeNo) {
         this.taskId = Objects.requireNonNull(taskId);
         this.sourceType = Objects.requireNonNull(sourceType);
         this.comment = requireText(comment, "意见内容不能为空");
-        this.raisedBy = Objects.requireNonNull(raisedBy);
+        this.raisedByEmployeeNo = requireText(raisedByEmployeeNo, "提出人工号不能为空");
         this.status = OpinionStatus.PENDING_REPLY;
     }
 
-    public static ReviewOpinion raise(Long taskId, String sourceType, String comment, Long raisedBy) {
-        return new ReviewOpinion(taskId, sourceType, comment, raisedBy);
+    public static ReviewOpinion raise(Long taskId, OpinionSourceType sourceType, String comment, String raisedByEmployeeNo) {
+        return new ReviewOpinion(taskId, sourceType, comment, raisedByEmployeeNo);
     }
 
-    public void reply(Long replierId, ReplyType replyType, String reason) {
+    public void reply(String replierEmployeeNo, ReplyType replyType, String reason) {
         requireState(OpinionStatus.PENDING_REPLY, "当前意见不允许答复");
-        Objects.requireNonNull(replierId);
+        requireText(replierEmployeeNo, "答复人工号不能为空");
         Objects.requireNonNull(replyType);
         if (replyType != ReplyType.ACCEPT) {
             requireText(reason, "接受但不修改或不接受时必须填写原因");
         }
-        replies.add(new OpinionReply(replierId, replyType, reason));
+        replies.add(new OpinionReply(replierEmployeeNo, replyType, reason));
         status = OpinionStatus.PENDING_CONFIRMATION;
     }
 
-    public void confirm(Long confirmerId, boolean passed, String comment) {
+    public void confirm(String confirmerEmployeeNo, boolean passed, String comment) {
         requireState(OpinionStatus.PENDING_CONFIRMATION, "当前意见不允许确认");
-        if (!raisedBy.equals(confirmerId)) {
+        if (!raisedByEmployeeNo.equals(confirmerEmployeeNo)) {
             throw new IllegalStateException("只有意见提出人可以确认");
         }
-        confirmations.add(new OpinionConfirmation(confirmerId, passed, comment));
+        confirmations.add(new OpinionConfirmation(confirmerEmployeeNo, passed, comment));
         status = passed ? OpinionStatus.CONFIRMED_PASS : OpinionStatus.PENDING_REPLY;
     }
 
-    public void withdraw(Long operatorId, String reason) {
-        if (!raisedBy.equals(operatorId)) {
+    public void withdraw(String operatorEmployeeNo, String reason) {
+        if (!raisedByEmployeeNo.equals(operatorEmployeeNo)) {
             throw new IllegalStateException("只有意见提出人可以撤回");
         }
         if (status == OpinionStatus.CONFIRMED_PASS || status == OpinionStatus.WITHDRAWN) {
@@ -71,8 +71,12 @@ public final class ReviewOpinion {
         return taskId;
     }
 
-    public Long raisedBy() {
-        return raisedBy;
+    public OpinionSourceType sourceType() {
+        return sourceType;
+    }
+
+    public String raisedByEmployeeNo() {
+        return raisedByEmployeeNo;
     }
 
 
@@ -97,9 +101,9 @@ public final class ReviewOpinion {
         return value;
     }
 
-    public record OpinionReply(Long replierId, ReplyType replyType, String reason) {
+    public record OpinionReply(String replierEmployeeNo, ReplyType replyType, String reason) {
     }
 
-    public record OpinionConfirmation(Long confirmerId, boolean passed, String comment) {
+    public record OpinionConfirmation(String confirmerEmployeeNo, boolean passed, String comment) {
     }
 }

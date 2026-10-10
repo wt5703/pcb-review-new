@@ -49,7 +49,7 @@ class ReviewerAssignmentControllerIntegrationTest {
                         .content("{\"actions\":[\"START_PCB_MATUAL_REVIEW\"],\"reviewerEmployeeNos\":[\"BMS006\"]}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.toStatus").value("MUTUAL_CHECK_REVIEWING"))
-                .andExpect(jsonPath("$.data.assignedReviewerIds.length()").value(1));
+                .andExpect(jsonPath("$.data.assignedReviewerEmployeeNos.length()").value(1));
 
     }
 

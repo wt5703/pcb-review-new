@@ -1,31 +1,60 @@
 export type ReviewType = 'PCB' | 'SCHEMATIC'
 
+/** 与后端 OpinionSourceType 枚举一一对应，页面逻辑不得散落来源字符串。 */
+export const OpinionSource = {
+  PCB_REVIEW: 'PCB_REVIEW',
+  SCHEMATIC_REVIEW: 'SCHEMATIC_REVIEW',
+  PCB_PROCESS_REVIEW: 'PCB_PROCESS_REVIEW',
+  PCB_STRUCTURE_REVIEW: 'PCB_STRUCTURE_REVIEW',
+  MUTUAL_CHECK_ITEM: 'MUTUAL_CHECK_ITEM',
+  MUTUAL_EXTRA: 'MUTUAL_EXTRA'
+} as const
+export type OpinionSourceType = typeof OpinionSource[keyof typeof OpinionSource]
+
+/** 与后端 OpinionSeverity 枚举一一对应。 */
+export const OpinionSeverity = {
+  SERIOUS: 'SERIOUS',
+  GENERAL: 'GENERAL',
+  MINOR: 'MINOR'
+} as const
+export type OpinionSeverityType = typeof OpinionSeverity[keyof typeof OpinionSeverity]
+
 export interface Task {
   id: number
   reviewType: ReviewType
   taskName: string
   projectName: string
-  designerId: number
+  designerEmployeeNo: string
   designerName: string
   designName: string
   pcbType?: string
   expectedCompletedDate: string
-  expertLeaderId: number
+  expertLeaderEmployeeNo: string
   expertLeaderName: string
   reviewRoles: string[]
   /** 创建任务时按评审角色确定的白名单专家，作为各评审阶段待办与未提交校验依据。 */
-  reviewerAssignments: Array<{ reviewRole: string; reviewerIds: number[] }>
+  reviewerAssignments: Array<{ reviewRole: string; reviewerEmployeeNos: string[] }>
   reviewDescription?: string
   status: string
   /** 仅任务详情接口返回的流程记录。 */
   flowRecords?: TaskFlowRecord[]
 }
 
+/** 后端根据当前登录态解析的用户资料；前端不传员工工号。 */
+export interface CurrentUserProfile {
+  employeeNo: string
+  displayName: string
+  email?: string
+  mobile?: string
+  departmentName?: string
+  roles: string[]
+}
+
 export interface TaskFlowRecord {
   id: number
   action: string
   actionName: string
-  operatorId?: number
+  operatorEmployeeNo?: string
   operatorName: string
   comment?: string
   operatedAt?: string
@@ -57,13 +86,13 @@ export interface MyTask extends Task {
 export interface Opinion {
   id: number
   taskId: number
-  sourceType: 'PCB_REVIEW' | 'SCHEMATIC_REVIEW' | 'PCB_PROCESS_REVIEW' | 'PCB_STRUCTURE_REVIEW' | 'MUTUAL_CHECK_ITEM' | 'MUTUAL_EXTRA'
+  sourceType: OpinionSourceType
   sourceItemId?: number
   comment: string
   richText?: string
-  raisedBy: number
+  raisedByEmployeeNo: string
   raisedByName: string
-  severity: 'SERIOUS' | 'GENERAL' | 'MINOR' | 'PASS'
+  severity: OpinionSeverityType
   createdAt?: string
   status: 'PENDING_REPLY' | 'PENDING_CONFIRMATION' | 'CONFIRMED_PASS' | 'CONFIRMED_REJECTED' | 'WITHDRAWN'
   replies: OpinionReply[]
@@ -83,7 +112,7 @@ export interface OpinionSummary {
   confirmedPass: number
   confirmedRejected: number
   withdrawn: number
-  unsubmittedReviewers: Array<{ reviewerId: number; reviewerName: string; reviewRole: string; processStatus: string }>
+  unsubmittedReviewers: Array<{ reviewerEmployeeNo: string; reviewerName: string; reviewRole: string; processStatus: string }>
 }
 
 export interface OpinionReply {
@@ -91,7 +120,7 @@ export interface OpinionReply {
   replyNo: number
   replyType: 'ACCEPT' | 'REJECT'
   reason?: string
-  repliedBy: number
+  repliedByEmployeeNo: string
   repliedAt?: string
   confirmation?: OpinionConfirmation
 }
@@ -100,7 +129,7 @@ export interface OpinionConfirmation {
   id: number
   passed: boolean
   comment?: string
-  confirmedBy: number
+  confirmedByEmployeeNo: string
   confirmedAt?: string
 }
 
@@ -111,7 +140,7 @@ export interface CheckItem {
   result?: 'PASS' | 'FAIL' | 'NC'
   comment?: string
   richText?: string
-  opinion?: { id: number; comment: string; richText?: string; raisedBy: number; raisedByName: string; severity: string; status: string; createdAt?: string } | null
+  opinion?: { id: number; comment: string; richText?: string; raisedByEmployeeNo: string; raisedByName: string; severity: OpinionSeverityType; status: string; createdAt?: string } | null
   status: string
 }
 
@@ -136,17 +165,19 @@ export interface CheckItemListItem {
 }
 
 export interface Reviewer {
-  reviewerId: number
+  reviewerEmployeeNo: string
   role: string
 }
 
 /** 当前流程节点按职责归组的可分配人员；提交流程时使用 employeeNo。 */
 export interface AssignableReviewer {
-  userId: number
   employeeNo: string
   displayName: string
+  email?: string
+  mobile?: string
   departmentName: string
   whitelistRole: string
+  createdAt?: string
 }
 
 export interface ArchiveFile {
@@ -155,7 +186,7 @@ export interface ArchiveFile {
   fileCategory: string
   fileName: string
   fileFormat?: string
-  uploaderId: number
+  uploaderEmployeeNo: string
   uploaderName: string
   uploadedAt?: string
   resourcePath?: string
@@ -173,7 +204,7 @@ export interface TaskFile {
   fileSize: number
   md5: string
   resourcePath: string
-  uploadedBy: number
+  uploadedByEmployeeNo: string
   uploadedAt?: string
   uploadedStage?: string
   latest: boolean

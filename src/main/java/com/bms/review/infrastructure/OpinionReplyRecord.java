@@ -12,7 +12,7 @@ public class OpinionReplyRecord {
     private Long opinionId;
     private String replyType;
     private String reason;
-    private Long repliedBy;
+    private String repliedByEmployeeNo;
     private Integer replyNo;
     private LocalDateTime createdAt;
 
@@ -24,8 +24,8 @@ public class OpinionReplyRecord {
     public void setReplyType(String replyType) { this.replyType = replyType; }
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
-    public Long getRepliedBy() { return repliedBy; }
-    public void setRepliedBy(Long repliedBy) { this.repliedBy = repliedBy; }
+    public String getRepliedByEmployeeNo() { return repliedByEmployeeNo; }
+    public void setRepliedByEmployeeNo(String repliedByEmployeeNo) { this.repliedByEmployeeNo = repliedByEmployeeNo; }
     public Integer getReplyNo() { return replyNo; }
     public void setReplyNo(Integer replyNo) { this.replyNo = replyNo; }
     public LocalDateTime getCreatedAt() { return createdAt; }

@@ -17,21 +17,21 @@ public interface ReviewFileMapper {
 
     @Select("SELECT id, task_id AS taskId, file_category AS fileCategory, "
             + "file_id AS fileId, file_name AS fileName, file_format AS fileFormat, file_size AS fileSize, md5, resource_path AS resourcePath, "
-            + "is_latest AS latest, uploaded_by AS uploadedBy, uploaded_at AS uploadedAt, uploaded_stage AS uploadedStage FROM review_file WHERE id=#{id}")
+            + "is_latest AS latest, uploaded_by_employee_no AS uploadedByEmployeeNo, uploaded_at AS uploadedAt, uploaded_stage AS uploadedStage FROM review_file WHERE id=#{id}")
     ReviewFileRecord findById(long id);
 
     @Select("SELECT id, task_id AS taskId, file_category AS fileCategory, "
             + "file_id AS fileId, file_name AS fileName, file_format AS fileFormat, file_size AS fileSize, md5, resource_path AS resourcePath, "
-            + "is_latest AS latest, uploaded_by AS uploadedBy, uploaded_at AS uploadedAt, uploaded_stage AS uploadedStage FROM review_file WHERE file_id=#{fileId}")
+            + "is_latest AS latest, uploaded_by_employee_no AS uploadedByEmployeeNo, uploaded_at AS uploadedAt, uploaded_stage AS uploadedStage FROM review_file WHERE file_id=#{fileId}")
     ReviewFileRecord findByFileId(String fileId);
 
     @Select("SELECT id, task_id AS taskId, file_category AS fileCategory, file_name AS fileName, "
-            + "file_id AS fileId, file_format AS fileFormat, file_size AS fileSize, md5, resource_path AS resourcePath, is_latest AS latest, uploaded_by AS uploadedBy, uploaded_at AS uploadedAt, uploaded_stage AS uploadedStage "
+            + "file_id AS fileId, file_format AS fileFormat, file_size AS fileSize, md5, resource_path AS resourcePath, is_latest AS latest, uploaded_by_employee_no AS uploadedByEmployeeNo, uploaded_at AS uploadedAt, uploaded_stage AS uploadedStage "
             + "FROM review_file WHERE task_id=#{taskId} AND is_latest=TRUE ORDER BY id")
     java.util.List<ReviewFileRecord> findLatestByTaskId(long taskId);
 
     @Select("SELECT id, task_id AS taskId, file_category AS fileCategory, file_name AS fileName, "
-            + "file_id AS fileId, file_format AS fileFormat, file_size AS fileSize, md5, resource_path AS resourcePath, is_latest AS latest, uploaded_by AS uploadedBy, uploaded_at AS uploadedAt, uploaded_stage AS uploadedStage "
+            + "file_id AS fileId, file_format AS fileFormat, file_size AS fileSize, md5, resource_path AS resourcePath, is_latest AS latest, uploaded_by_employee_no AS uploadedByEmployeeNo, uploaded_at AS uploadedAt, uploaded_stage AS uploadedStage "
             + "FROM review_file WHERE task_id=#{taskId} AND file_category=#{fileCategory} AND is_latest=TRUE ORDER BY uploaded_at DESC, id DESC")
     java.util.List<ReviewFileRecord> findLatestByTaskIdAndCategory(long taskId, String fileCategory);
 
@@ -43,7 +43,7 @@ public interface ReviewFileMapper {
     int bindToTask(ReviewFileRecord record);
 
     @Insert("INSERT INTO review_file (id, task_id, file_category, file_name, file_format, file_size, md5, "
-            + "file_id, resource_path, is_latest, uploaded_by, uploaded_stage) VALUES (#{id}, #{taskId}, #{fileCategory}, #{fileName}, #{fileFormat}, "
-            + "#{fileSize}, #{md5}, #{fileId}, #{resourcePath}, #{latest}, #{uploadedBy}, #{uploadedStage})")
+            + "file_id, resource_path, is_latest, uploaded_by_employee_no, uploaded_stage) VALUES (#{id}, #{taskId}, #{fileCategory}, #{fileName}, #{fileFormat}, "
+            + "#{fileSize}, #{md5}, #{fileId}, #{resourcePath}, #{latest}, #{uploadedByEmployeeNo}, #{uploadedStage})")
     int insert(ReviewFileRecord record);
 }

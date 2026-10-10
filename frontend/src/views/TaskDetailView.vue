@@ -6,7 +6,8 @@ import TaskFlow from '@/components/TaskFlow.vue'
 import MutualCheckForm from '@/components/MutualCheckForm.vue'
 import { reviewApi } from '@/api/review-api'
 import { identity } from '@/stores/identity'
-import type { Archive, AssignableReviewer, CheckItemCategory, CheckItemListItem, Opinion, OpinionSummary, Task } from '@/api/types'
+import { OpinionSeverity, OpinionSource } from '@/api/types'
+import type { Archive, AssignableReviewer, CheckItemCategory, CheckItemListItem, Opinion, OpinionSeverityType, OpinionSourceType, OpinionSummary, Task } from '@/api/types'
 
 const route = useRoute()
 const taskId = computed(() => Number(route.params.taskId))
@@ -18,7 +19,7 @@ const stageTabs = [
 ] as const
 const schematicStageTabs = [
   ['overview', '任务信息'], ['reviewers', '互检单分配'], ['check-items', '互检单'], ['designer-reply', '设计者答复'],
-  ['hardware-reviewers', '硬件专家分配'], ['opinions', '原理图评审'], ['optional-reply', '设计者答复'], ['finish', '流程结束'], ['archive', '归档记录']
+  ['opinions', '原理图评审'], ['optional-reply', '设计者答复'], ['finish', '流程结束'], ['archive', '归档记录']
 ] as const
 const task = ref<Task>()
 const opinions = ref<Opinion[]>([])
@@ -27,12 +28,12 @@ const finishStageSummaries = ref<Record<string, OpinionSummary | undefined>>({})
 const checkItemCategories = ref<CheckItemCategory[]>([])
 const archive = ref<Archive>()
 const assignableReviewers = ref<AssignableReviewer[]>([])
-const whitelistPeople = ref<Array<{ id: number; employeeNo: string; displayName: string; email: string; departmentName: string; roles: string[] }>>([])
+const whitelistPeople = ref<Array<{ employeeNo: string; displayName: string; email: string; departmentName: string; roles: string[] }>>([])
 const loading = ref(true)
 const error = ref('')
 const notice = ref('')
-const opinionForm = reactive({ severity: 'GENERAL' as Opinion['severity'] })
-const opinionListFilters = reactive({ severity: '', status: '' })
+const opinionForm = reactive({ severity: OpinionSeverity.GENERAL as Opinion['severity'] })
+const opinionListFilters = reactive<{ severity: '' | OpinionSeverityType; status: string }>({ severity: '', status: '' })
 const opinionPagination = reactive({ pageNo: 1, pageSize: 10, total: 0 })
 const opinionEditor = ref<HTMLElement>()
 const screenshotEditor = ref<HTMLElement>()
@@ -70,7 +71,7 @@ const visibleStageTabs = computed(() => task.value?.reviewType === 'SCHEMATIC' ?
 const isDesignerReplyPage = computed(() => ['designer-reply', 'optional-reply', 'mutual-reply'].includes(activeTab.value))
 const currentRoleCodes = computed(() => identity.roles.split(',').map((role) => role.trim()).filter(Boolean))
 const isAdministrator = computed(() => currentRoleCodes.value.includes('HARDWARE_DEPARTMENT_MANAGER'))
-const canActAsDesigner = computed(() => Boolean(task.value) && (task.value!.designerId === identity.userId || isAdministrator.value))
+const canActAsDesigner = computed(() => Boolean(task.value) && (task.value!.designerEmployeeNo === identity.employeeNo || isAdministrator.value))
 const canFinishTask = computed(() => Boolean(task.value) && (isAdministrator.value || (task.value!.reviewType === 'PCB'
   ? currentRoleCodes.value.includes('PCB_LEADER')
   : currentRoleCodes.value.includes('SCHEMATIC_LEADER'))))
@@ -111,7 +112,7 @@ const designerWorkflowStep = computed<DesignerWorkflowStep | undefined>(() => {
     return { action: 'PREPARE_FINISH', label: '提交流程并准备结束', comment: '互检单意见已闭环，准备结束任务', nextTab: 'finish' }
   }
   if (task.value.reviewType === 'SCHEMATIC' && activeTab.value === 'designer-reply' && task.value.status === 'MUTUAL_CHECK_REVIEWING') {
-    return { action: 'START_SCHEMATIC_EXPERT_ASSIGNMENT', label: '提交流程，进入专家分配', comment: '互检单意见已闭环，进入硬件专家分配', nextTab: 'hardware-reviewers' }
+    return { action: 'START_SCHEMATIC_EXPERT_REVIEW', label: '提交流程，开启原理图评审', comment: '互检单意见已闭环，开启原理图评审', nextTab: 'opinions' }
   }
   if (task.value.reviewType === 'SCHEMATIC' && activeTab.value === 'optional-reply' && task.value.status === 'SCHEMATIC_REVIEWING') {
     return { action: 'PREPARE_FINISH', label: '提交流程并准备结束', comment: '原理图评审意见已闭环，准备结束任务', nextTab: 'finish' }
@@ -124,16 +125,17 @@ const isCombinedSchematicFinalWorkflow = computed(() => canUploadSchematicFinalF
   && designerWorkflowStep.value?.action === 'PREPARE_FINISH')
 const isSchematicFirstReplyWorkflow = computed(() => isSchematicFirstReplyPage.value)
 type FinishStage = { key: string; label: string; sourceTypes: string }
+const joinOpinionSources = (...sourceTypes: OpinionSourceType[]): string => sourceTypes.join(',')
 const finishStages = computed<FinishStage[]>(() => task.value?.reviewType === 'PCB'
   ? [
-      { key: 'mutual', label: '互检单', sourceTypes: 'MUTUAL_CHECK_ITEM,MUTUAL_EXTRA' },
-      { key: 'pcb', label: 'PCB评审流程', sourceTypes: 'PCB_REVIEW' },
-      { key: 'process', label: '工艺评审', sourceTypes: 'PCB_PROCESS_REVIEW' },
-      { key: 'structure', label: '结构评审', sourceTypes: 'PCB_STRUCTURE_REVIEW' }
+      { key: 'mutual', label: '互检单', sourceTypes: joinOpinionSources(OpinionSource.MUTUAL_CHECK_ITEM, OpinionSource.MUTUAL_EXTRA) },
+      { key: 'pcb', label: 'PCB评审流程', sourceTypes: OpinionSource.PCB_REVIEW },
+      { key: 'process', label: '工艺评审', sourceTypes: OpinionSource.PCB_PROCESS_REVIEW },
+      { key: 'structure', label: '结构评审', sourceTypes: OpinionSource.PCB_STRUCTURE_REVIEW }
     ]
   : [
-      { key: 'mutual', label: '互检单', sourceTypes: 'MUTUAL_CHECK_ITEM,MUTUAL_EXTRA' },
-      { key: 'schematic', label: '原理图评审', sourceTypes: 'SCHEMATIC_REVIEW' }
+      { key: 'mutual', label: '互检单', sourceTypes: joinOpinionSources(OpinionSource.MUTUAL_CHECK_ITEM, OpinionSource.MUTUAL_EXTRA) },
+      { key: 'schematic', label: '原理图评审', sourceTypes: OpinionSource.SCHEMATIC_REVIEW }
     ])
 function finishStageStatus(stage: FinishStage): 'NC' | 'COMPLETED' | 'PENDING' | 'LOADING' {
   const summary = finishStageSummaries.value[stage.key]
@@ -155,7 +157,7 @@ const canSubmitDesignerWorkflow = computed(() => Boolean(opinionSummary.value)
   && opinionSummary.value!.pendingReply === 0
   && opinionSummary.value!.pendingConfirmation === 0
   && opinionSummary.value!.confirmedRejected === 0)
-const mutualOpinions = computed(() => opinions.value.filter((item) => item.sourceType === 'MUTUAL_CHECK_ITEM'))
+const mutualOpinions = computed(() => opinions.value.filter((item) => item.sourceType === OpinionSource.MUTUAL_CHECK_ITEM))
 const checkItems = computed(() => checkItemCategories.value.flatMap((category) => category.items))
 const reviewWorkspaceTitle = computed(() => {
   if (['designer-reply', 'optional-reply', 'mutual-reply'].includes(activeTab.value)) return '设计者答复'
@@ -165,9 +167,7 @@ const reviewWorkspaceTitle = computed(() => {
 })
 const reviewerAssignmentAction = computed(() => {
   if (!task.value) return ''
-  if (task.value.reviewType === 'SCHEMATIC') {
-    return activeTab.value === 'hardware-reviewers' ? 'START_SCHEMATIC_EXPERT_REVIEW' : 'START_SCHEMATIC_MATUAL_REVIEW'
-  }
+  if (task.value.reviewType === 'SCHEMATIC') return 'START_SCHEMATIC_MATUAL_REVIEW'
   return 'START_PCB_MATUAL_REVIEW'
 })
 async function load(): Promise<void> {
@@ -180,10 +180,10 @@ async function load(): Promise<void> {
       reviewApi.listOpinions(taskId.value, opinionFilters()),
       reviewApi.getOpinionSummary(taskId.value, opinionSourceTypes()),
       reviewApi.listCheckItems(taskId.value),
-      reviewApi.listReviewerWhitelists({ pageNo: 1, pageSize: 1000 })
+      reviewApi.listAllReviewerWhitelists()
     ])
-    const users = whitelistPage.items
-    opinions.value = normalizeOpinions(opinionsData.items); opinionSummary.value = summaryData; opinionPagination.total = opinionsData.total; opinionPagination.pageNo = opinionsData.pageNo; checkItemCategories.value = checkItemsData; whitelistPeople.value = users.map((user) => ({ id: user.id, employeeNo: user.employeeNo, displayName: user.displayName || user.employeeNo, email: user.email || '', departmentName: user.departmentName || '', roles: [user.reviewRole] })); identity.userId = 1
+    const users = whitelistPage
+    opinions.value = normalizeOpinions(opinionsData.items); opinionSummary.value = summaryData; opinionPagination.total = opinionsData.total; opinionPagination.pageNo = opinionsData.pageNo; checkItemCategories.value = checkItemsData; whitelistPeople.value = users.map((user) => ({ employeeNo: user.employeeNo, displayName: user.displayName || user.employeeNo, email: user.email || '', departmentName: user.departmentName || '', roles: [user.reviewRole] }))
     syncActiveTabForTaskStatus()
     await refreshFinishStageSummaries()
     await refreshPcbFirstReplyFileUploadStates()
@@ -192,21 +192,21 @@ async function load(): Promise<void> {
   } catch (cause) { error.value = cause instanceof Error ? cause.message : '加载任务详情失败' } finally { loading.value = false }
 }
 function opinionSourceTypes(): string | undefined {
-  if (task.value?.reviewType === 'PCB' && activeTab.value === 'optional-reply') return 'PCB_PROCESS_REVIEW,PCB_STRUCTURE_REVIEW'
-  if (task.value?.reviewType === 'SCHEMATIC' && activeTab.value === 'designer-reply') return 'MUTUAL_CHECK_ITEM,MUTUAL_EXTRA'
-  if (task.value?.reviewType === 'SCHEMATIC' && activeTab.value === 'optional-reply') return 'SCHEMATIC_REVIEW'
-  if (activeTab.value === 'mutual-reply') return 'MUTUAL_CHECK_ITEM,MUTUAL_EXTRA'
+  if (task.value?.reviewType === 'PCB' && activeTab.value === 'optional-reply') return joinOpinionSources(OpinionSource.PCB_PROCESS_REVIEW, OpinionSource.PCB_STRUCTURE_REVIEW)
+  if (task.value?.reviewType === 'SCHEMATIC' && activeTab.value === 'designer-reply') return joinOpinionSources(OpinionSource.MUTUAL_CHECK_ITEM, OpinionSource.MUTUAL_EXTRA)
+  if (task.value?.reviewType === 'SCHEMATIC' && activeTab.value === 'optional-reply') return OpinionSource.SCHEMATIC_REVIEW
+  if (activeTab.value === 'mutual-reply') return joinOpinionSources(OpinionSource.MUTUAL_CHECK_ITEM, OpinionSource.MUTUAL_EXTRA)
   return undefined
 }
-function opinionSourceType(): string | undefined {
+function opinionSourceType(): OpinionSourceType | undefined {
   return undefined
 }
-function opinionFilters(): { severity?: string; status?: string; sourceType?: string; sourceTypes?: string; scene: 'REVIEW_WORKSPACE' | 'DESIGNER_REPLY'; pageNo: number; pageSize: number } {
+function opinionFilters(): { severity?: Opinion['severity']; status?: string; sourceType?: OpinionSourceType; sourceTypes?: string; scene: 'REVIEW_WORKSPACE' | 'DESIGNER_REPLY'; pageNo: number; pageSize: number } {
   const filters = { severity: opinionListFilters.severity || undefined, status: opinionListFilters.status || undefined, pageNo: opinionPagination.pageNo, pageSize: opinionPagination.pageSize }
   if (['designer-reply', 'optional-reply', 'mutual-reply'].includes(activeTab.value)) return { ...filters, sourceType: opinionSourceType(), sourceTypes: opinionSourceTypes(), scene: 'DESIGNER_REPLY' }
-  if (activeTab.value === 'process-review') return { ...filters, sourceType: 'PCB_PROCESS_REVIEW', scene: 'REVIEW_WORKSPACE' }
-  if (activeTab.value === 'structure-review') return { ...filters, sourceType: 'PCB_STRUCTURE_REVIEW', scene: 'REVIEW_WORKSPACE' }
-  return { ...filters, sourceType: task.value?.reviewType === 'SCHEMATIC' ? 'SCHEMATIC_REVIEW' : 'PCB_REVIEW', scene: 'REVIEW_WORKSPACE' }
+  if (activeTab.value === 'process-review') return { ...filters, sourceType: OpinionSource.PCB_PROCESS_REVIEW, scene: 'REVIEW_WORKSPACE' }
+  if (activeTab.value === 'structure-review') return { ...filters, sourceType: OpinionSource.PCB_STRUCTURE_REVIEW, scene: 'REVIEW_WORKSPACE' }
+  return { ...filters, sourceType: task.value?.reviewType === 'SCHEMATIC' ? OpinionSource.SCHEMATIC_REVIEW : OpinionSource.PCB_REVIEW, scene: 'REVIEW_WORKSPACE' }
 }
 function normalizeOpinions(items: Opinion[]): Opinion[] { return items.map((item) => ({ ...item, comment: item.richText || item.comment, replies: item.replies ?? [] })) }
 function opinionImages(opinion: Opinion): string[] {
@@ -234,7 +234,20 @@ function moveOpinionImage(opinion: Opinion, direction: number): void {
   const current = opinionImageIndexes[opinion.id] ?? 0
   opinionImageIndexes[opinion.id] = (current + direction + images.length) % images.length
 }
-async function refreshOpinions(): Promise<void> { try { const page = await reviewApi.listOpinions(taskId.value, opinionFilters()); opinions.value = normalizeOpinions(page.items); opinionPagination.total = page.total; opinionPagination.pageNo = page.pageNo } catch { /* 页面主数据已加载时不打断其他区域 */ } }
+async function refreshOpinions(): Promise<void> {
+  try {
+    let page = await reviewApi.listOpinions(taskId.value, opinionFilters())
+    const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize))
+    // 删除当前页最后一条或筛选结果变少后，自动回到最后一个有效页，避免展示空白列表。
+    if (!page.items.length && page.total > 0 && page.pageNo > lastPage) {
+      opinionPagination.pageNo = lastPage
+      page = await reviewApi.listOpinions(taskId.value, opinionFilters())
+    }
+    opinions.value = normalizeOpinions(page.items)
+    opinionPagination.total = page.total
+    opinionPagination.pageNo = page.pageNo
+  } catch { /* 页面主数据已加载时不打断其他区域 */ }
+}
 async function refreshOpinionSummary(): Promise<void> { try { opinionSummary.value = await reviewApi.getOpinionSummary(taskId.value, opinionSourceTypes()) } catch { /* 不影响意见列表操作 */ } }
 async function refreshFinishStageSummaries(): Promise<void> {
   const stages = finishStages.value
@@ -268,9 +281,6 @@ function syncActiveTabForTaskStatus(): void {
   if (task.value?.status === 'MUTUAL_CHECK_REVIEWING' && activeTab.value === 'reviewers') {
     activeTab.value = 'check-items'
   }
-  if (task.value?.status === 'SCHEMATIC_REVIEWING' && activeTab.value === 'hardware-reviewers') {
-    activeTab.value = 'opinions'
-  }
 }
 function openStageTab(tab: string): void {
   if (task.value?.status === 'MUTUAL_CHECK_REVIEWING' && tab === 'reviewers') {
@@ -291,12 +301,12 @@ function filterOpinionsByStatus(status: string): void {
 }
 function changeOpinionPage(pageNo: number): void { if (pageNo < 1 || pageNo > Math.ceil(opinionPagination.total / opinionPagination.pageSize)) return; opinionPagination.pageNo = pageNo; void refreshOpinions() }
 async function loadAssignableReviewers(): Promise<void> {
-  if (!task.value || !['reviewers', 'hardware-reviewers'].includes(activeTab.value)) {
+  if (!task.value || activeTab.value !== 'reviewers') {
     assignableReviewers.value = []
     return
   }
   try {
-    assignableReviewers.value = await reviewApi.listAssignableReviewers(task.value.reviewType, task.value.status)
+    assignableReviewers.value = await reviewApi.listMutualCheckReviewers(task.value.reviewType)
   } catch {
     assignableReviewers.value = []
   }
@@ -342,7 +352,7 @@ async function raiseOpinion(): Promise<void> {
   } catch (cause) { setNotice(cause instanceof Error ? cause.message : '提交失败') }
 }
 function canManageOpinion(opinion: Opinion): boolean {
-  return !isDesignerReplyPage.value && (opinion.raisedBy === identity.userId || isAdministrator.value) && opinion.status === 'PENDING_REPLY'
+  return !isDesignerReplyPage.value && (opinion.raisedByEmployeeNo === identity.employeeNo || isAdministrator.value) && opinion.status === 'PENDING_REPLY'
 }
 function imageHtml(content: string): string {
   const template = document.createElement('template')
@@ -351,7 +361,7 @@ function imageHtml(content: string): string {
 }
 function editDraft(opinion: Opinion): OpinionEditDraft {
   return opinionEditDrafts[opinion.id] ??= {
-    severity: opinion.severity === 'PASS' ? 'GENERAL' : opinion.severity,
+    severity: opinion.severity,
     comment: opinionText(opinion),
     screenshots: imageHtml(opinion.richText || opinion.comment || '')
   }
@@ -404,14 +414,14 @@ function handleScreenshotPaste(event: ClipboardEvent): void {
   files.forEach((file) => { const reader = new FileReader(); reader.onload = () => { const dataUrl = String(reader.result); if (screenshotEditor.value) screenshotEditor.value.innerHTML += `<img src="${dataUrl}" alt="问题截图" />` }; reader.readAsDataURL(file) })
 }
 function currentOpinionSource(): Opinion['sourceType'] {
-  if (activeTab.value === 'process-review') return 'PCB_PROCESS_REVIEW'
-  if (activeTab.value === 'structure-review') return 'PCB_STRUCTURE_REVIEW'
-  return task.value?.reviewType === 'SCHEMATIC' ? 'SCHEMATIC_REVIEW' : 'PCB_REVIEW'
+  if (activeTab.value === 'process-review') return OpinionSource.PCB_PROCESS_REVIEW
+  if (activeTab.value === 'structure-review') return OpinionSource.PCB_STRUCTURE_REVIEW
+  return task.value?.reviewType === 'SCHEMATIC' ? OpinionSource.SCHEMATIC_REVIEW : OpinionSource.PCB_REVIEW
 }
-function currentNoOpinionSource(): 'PCB_REVIEW' | 'SCHEMATIC_REVIEW' | 'PCB_PROCESS_REVIEW' | 'PCB_STRUCTURE_REVIEW' {
-  if (activeTab.value === 'process-review') return 'PCB_PROCESS_REVIEW'
-  if (activeTab.value === 'structure-review') return 'PCB_STRUCTURE_REVIEW'
-  return task.value?.reviewType === 'SCHEMATIC' ? 'SCHEMATIC_REVIEW' : 'PCB_REVIEW'
+function currentNoOpinionSource(): Exclude<OpinionSourceType, typeof OpinionSource.MUTUAL_CHECK_ITEM | typeof OpinionSource.MUTUAL_EXTRA> {
+  if (activeTab.value === 'process-review') return OpinionSource.PCB_PROCESS_REVIEW
+  if (activeTab.value === 'structure-review') return OpinionSource.PCB_STRUCTURE_REVIEW
+  return task.value?.reviewType === 'SCHEMATIC' ? OpinionSource.SCHEMATIC_REVIEW : OpinionSource.PCB_REVIEW
 }
 function draft(opinion: Opinion): { replyNo: number; replyType: 'ACCEPT' | 'REJECT'; reason: string } {
   const nextReplyNo = opinion.replies.length + 1
@@ -438,23 +448,11 @@ function requireFinishStagesComplete(): boolean {
   return false
 }
 async function finishTask(): Promise<void> { if (!requireFinishStagesComplete()) return; try { await reviewApi.transition(taskId.value, { actions: ['FINISH'], comment: '在结束确认页确认任务结束' }); await load(); setNotice('任务已结束，归档记录已冻结。') } catch (cause) { setNotice(cause instanceof Error ? cause.message : '任务结束失败') } }
-async function startPcbStageReviews(): Promise<void> {
-  await reviewApi.transition(taskId.value, { actions: ['START_PCB_STRUCTURE_REVIEW', 'START_PCB_PROCESS_REVIEW'], comment: '工艺图、结构图已上传，同时开启工艺和结构评审' })
-  await load()
-  activeTab.value = 'process-review'
-  setNotice('已开启工艺和结构评审。')
-}
 async function startPcbMutualAssignment(): Promise<void> {
   try {
     await reviewApi.transition(taskId.value, { actions: ['START_PCB_MATUAL_ASSIGNMENT'], comment: '前序评审意见已闭环，开启互检单分配' })
     await load(); activeTab.value = 'reviewers'; setNotice('已进入互检单分配，请选择互检人员。')
   } catch (cause) { setNotice(cause instanceof Error ? cause.message : '暂不能开启互检单分配，请确认前序意见均已通过。') }
-}
-async function startSchematicExpertAssignment(): Promise<void> {
-  try {
-    await reviewApi.transition(taskId.value, { actions: ['START_SCHEMATIC_EXPERT_ASSIGNMENT'], comment: '互检单意见已闭环，开启硬件专家分配' })
-    await load(); activeTab.value = 'hardware-reviewers'; setNotice('已进入硬件专家分配，请选择评审专家。')
-  } catch (cause) { setNotice(cause instanceof Error ? cause.message : '暂不能开启硬件专家分配，请确认互检单意见均已通过。') }
 }
 async function prepareFinish(): Promise<void> {
   if (!requireFinishStagesComplete()) return
@@ -464,29 +462,28 @@ async function prepareFinish(): Promise<void> {
   } catch (cause) { setNotice(cause instanceof Error ? cause.message : '暂不能准备结束，请确认当前流程已完成。') }
 }
 async function saveReviewers(): Promise<void> {
-  const assignmentTab = activeTab.value
   const employeeNos = selectedReviewerEmployeeNos.value.length ? selectedReviewerEmployeeNos.value : reviewerEmployeeNos.value.split(',').map((value) => value.trim()).filter(Boolean)
   if (!employeeNos.length) {
-    setNotice(`请至少选择一名${assignmentTab === 'hardware-reviewers' ? '硬件专家' : '互检负责人'}。`)
+    setNotice('请至少选择一名互检负责人。')
     return
   }
   try {
     await reviewApi.transition(taskId.value, {
       actions: [reviewerAssignmentAction.value],
       reviewerEmployeeNos: employeeNos,
-      comment: assignmentTab === 'hardware-reviewers' ? '已分配硬件专家并开始原理图评审' : '已分配互检负责人并开启互检'
+      comment: '已分配互检负责人并开启互检'
     })
     await load()
     selectedReviewerEmployeeNos.value = []
     reviewerEmployeeNos.value = ''
-    // 分配动作已把任务推进到评审节点；继续停留在分配页会按新状态查询候选人，因而必然为空。
-    activeTab.value = assignmentTab === 'hardware-reviewers' ? 'opinions' : 'check-items'
-    setNotice(assignmentTab === 'hardware-reviewers' ? '硬件专家已分配，已进入原理图评审。' : '互检负责人已分配，已进入互检单评审。')
+    // 分配动作已把任务推进到互检节点；继续停留在分配页会按新状态查询候选人，因而必然为空。
+    activeTab.value = 'check-items'
+    setNotice('互检负责人已分配，已进入互检单评审。')
   } catch (cause) {
     setNotice(cause instanceof Error ? cause.message : '分配或流程推进失败')
   }
 }
-function userName(userId: number): string { return whitelistPeople.value.find((item) => item.id === userId)?.displayName ?? `白名单人员 #${userId}` }
+function userName(employeeNo: string): string { return whitelistPeople.value.find((item) => item.employeeNo === employeeNo)?.displayName ?? employeeNo }
 function reviewerRoleLabel(role: string): string {
   return ({
     HARDWARE_EXPERT: '硬件评审',
@@ -495,8 +492,6 @@ function reviewerRoleLabel(role: string): string {
     PROCESS_EXPERT: '工艺评审',
     STRUCTURE_EXPERT: '结构评审',
     PCB_MUTUAL_CHECK: 'PCB互检单评审',
-    SCHEMATIC_HARDWARE_EXPERT: '原理图硬件评审',
-    SCHEMATIC_OTHER_EXPERT: '原理图其他评审',
     SCHEMATIC_MUTUAL_CHECK: '原理图互检单评审',
     SCHEMATIC_LEADER: '原理图组长'
   } as Record<string, string>)[role] || role
@@ -532,24 +527,6 @@ async function uploadPcbReviewFile(): Promise<void> {
     pcbFirstReplyFileUploaded.pcb = true
     setNotice('最新 PCB 任务文件已上传，专家可下载该文件进行评审。')
   } catch (cause) { setNotice(cause instanceof Error ? cause.message : 'PCB 任务文件上传失败') }
-}
-async function uploadPcbFirstReplyStageFile(kind: 'PROCESS' | 'STRUCTURE'): Promise<void> {
-  const file = kind === 'PROCESS' ? processFile.value : structureFile.value
-  if (!file) { setNotice(`请选择需要上传的${kind === 'PROCESS' ? '工艺' : '结构'}文件。`); return }
-  const category = kind === 'PROCESS' ? 'PCB_PROCESS_REVIEW' : 'PCB_STRUCTURE_REVIEW'
-  try {
-    await reviewApi.uploadTaskFile(taskId.value, category, file)
-    if (kind === 'PROCESS') {
-      processFile.value = undefined
-      if (processFileInput.value) processFileInput.value.value = ''
-      pcbFirstReplyFileUploaded.process = true
-    } else {
-      structureFile.value = undefined
-      if (structureFileInput.value) structureFileInput.value.value = ''
-      pcbFirstReplyFileUploaded.structure = true
-    }
-    setNotice(`${kind === 'PROCESS' ? '工艺' : '结构'}文件已上传，可在三个文件均准备完成后开启评审。`)
-  } catch (cause) { setNotice(cause instanceof Error ? cause.message : `${kind === 'PROCESS' ? '工艺' : '结构'}文件上传失败`) }
 }
 async function uploadPcbReplyStageFile(kind: 'PROCESS' | 'STRUCTURE'): Promise<void> {
   const file = kind === 'PROCESS' ? processReplyFile.value : structureReplyFile.value
@@ -588,7 +565,7 @@ async function uploadSchematicFinalFile(): Promise<void> {
     await reviewApi.uploadTaskFile(taskId.value, 'SCHEMATIC_REVIEW', schematicFinalFile.value)
     schematicFinalFile.value = undefined
     if (schematicFinalFileInput.value) schematicFinalFileInput.value.value = ''
-    designerWorkflowMessage.value = '最新原理图文件已上传，可提交进入硬件专家分配。'
+    designerWorkflowMessage.value = '最新原理图文件已上传，可提交开启原理图评审。'
     setNotice('最终原理图文件已上传。')
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : '最终原理图文件上传失败'
@@ -603,13 +580,37 @@ async function uploadAndStartOptionalReview(): Promise<void> {
     setNotice(message)
     return
   }
-  pcbStageStartMessage.value = '正在校验已上传的工艺、结构文件并开启评审…'
+  const files: Array<{ fileCategory: 'PCB_PROCESS_REVIEW' | 'PCB_STRUCTURE_REVIEW'; file: File }> = []
+  const actions: string[] = []
+  if (processFile.value) {
+    files.push({ fileCategory: 'PCB_PROCESS_REVIEW', file: processFile.value })
+    actions.push('START_PCB_PROCESS_REVIEW')
+  }
+  if (structureFile.value) {
+    files.push({ fileCategory: 'PCB_STRUCTURE_REVIEW', file: structureFile.value })
+    actions.push('START_PCB_STRUCTURE_REVIEW')
+  }
+  if (files.length === 0) {
+    const message = '请至少选择一个工艺文件或结构文件，系统会在提交流程时上传并绑定任务。'
+    pcbStageStartMessage.value = message
+    setNotice(message)
+    return
+  }
+  pcbStageStartMessage.value = '正在上传文件并开启对应评审…'
   try {
-    // 此按钮只推进流程。工艺、结构文件须由各自的上传按钮先完成落库，
-    // 然后统一通过 WorkflowApplicationService#transition 的批量动作校验和推进。
-    await startPcbStageReviews()
+    await reviewApi.transitionWithFiles(taskId.value, {
+      actions,
+      comment: actions.length === 2 ? '上传工艺图、结构图并同时开启评审' : '上传阶段文件并开启对应评审'
+    }, files)
+    processFile.value = undefined
+    structureFile.value = undefined
+    if (processFileInput.value) processFileInput.value.value = ''
+    if (structureFileInput.value) structureFileInput.value.value = ''
+    await load()
+    activeTab.value = actions.includes('START_PCB_PROCESS_REVIEW') ? 'process-review' : 'structure-review'
+    setNotice(actions.length === 2 ? '工艺、结构文件已上传并开启评审。' : '阶段文件已上传并开启对应评审。')
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : '流程推进失败，请确认工艺和结构文件均已上传。'
+    const message = cause instanceof Error ? cause.message : '上传文件并推进流程失败。'
     pcbStageStartMessage.value = message
     setNotice(message)
   }
@@ -653,7 +654,7 @@ async function downloadLatestReviewFile(): Promise<void> {
   } catch (cause) { setNotice(cause instanceof Error ? cause.message : '下载失败') }
 }
 function format(value?: string): string { return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—' }
-function severityLabel(severity: Opinion['severity']): string { return ({ SERIOUS: '严重', GENERAL: '一般', MINOR: '轻微', PASS: '无问题' } as Record<Opinion['severity'], string>)[severity] }
+function severityLabel(severity: Opinion['severity']): string { return ({ [OpinionSeverity.SERIOUS]: '严重', [OpinionSeverity.GENERAL]: '一般', [OpinionSeverity.MINOR]: '轻微' } as Record<Opinion['severity'], string>)[severity] }
 function statusForCheck(item: CheckItemListItem): string { return item.opinion?.result ?? 'PENDING' }
 </script>
 
@@ -683,16 +684,16 @@ function statusForCheck(item: CheckItemListItem): string { return item.opinion?.
       </section>
       <div class="two-column">
         <div v-if="!isDesignerReplyPage" class="card review-submit-card">
-          <div class="review-submit-grid"><div class="screenshot-panel"><h2>问题截图</h2><div ref="screenshotEditor" class="screenshot-paste" contenteditable="true" data-placeholder="Ctrl + V 粘贴问题截图" @paste="handleScreenshotPaste" /></div><div class="review-opinion-panel"><header><h2>评审意见</h2><div class="action-row"><button class="btn primary" @click="raiseOpinion">提交评审意见</button></div></header><div class="review-content-field"><label>问题等级 *<select v-model="opinionForm.severity"><option value="SERIOUS">严重</option><option value="GENERAL">一般</option><option value="MINOR">轻微</option></select></label><label>具体评审意见 *<div ref="opinionEditor" class="rich-opinion-editor" contenteditable="true" data-placeholder="请输入具体、可执行的评审意见" /></label></div></div></div>
+          <div class="review-submit-grid"><div class="screenshot-panel"><h2>问题截图</h2><div ref="screenshotEditor" class="screenshot-paste" contenteditable="true" data-placeholder="Ctrl + V 粘贴问题截图" @paste="handleScreenshotPaste" /></div><div class="review-opinion-panel"><header><h2>评审意见</h2><div class="action-row"><button class="btn primary" @click="raiseOpinion">提交评审意见</button></div></header><div class="review-content-field"><label>问题等级 *<select v-model="opinionForm.severity"><option :value="OpinionSeverity.SERIOUS">严重</option><option :value="OpinionSeverity.GENERAL">一般</option><option :value="OpinionSeverity.MINOR">轻微</option></select></label><label>具体评审意见 *<div ref="opinionEditor" class="rich-opinion-editor" contenteditable="true" data-placeholder="请输入具体、可执行的评审意见" /></label></div></div></div>
         </div>
-        <div v-else class="card designer-opinion-board"><div class="section-head"><div><h2>意见看板 <span class="board-help">?</span></h2></div></div><div class="designer-stat-grid"><button type="button" class="reply-stat pending-reply" :class="{ active: opinionListFilters.status === 'PENDING_REPLY' }" @click="filterOpinionsByStatus('PENDING_REPLY')"><span>待答复意见</span><b>{{ opinionSummary?.pendingReply ?? 0 }}</b></button><button type="button" class="reply-stat pending-confirm" :class="{ active: opinionListFilters.status === 'PENDING_CONFIRMATION' }" @click="filterOpinionsByStatus('PENDING_CONFIRMATION')"><span>待确认意见</span><b>{{ opinionSummary?.pendingConfirmation ?? 0 }}</b></button><button type="button" class="reply-stat rejected-stat" :class="{ active: opinionListFilters.status === 'CONFIRMED_REJECTED' }" @click="filterOpinionsByStatus('CONFIRMED_REJECTED')"><span>确认不通过</span><b>{{ opinionSummary?.confirmedRejected ?? 0 }}</b></button><button type="button" class="reply-stat confirmed-stat" :class="{ active: opinionListFilters.status === 'CONFIRMED_PASS' }" @click="filterOpinionsByStatus('CONFIRMED_PASS')"><span>确认通过</span><b>{{ opinionSummary?.confirmedPass ?? 0 }}</b></button></div><div class="designer-insights"><span>设计者 {{ (opinionSummary?.pendingReply ?? 0) + (opinionSummary?.confirmedRejected ?? 0) }} 条未答复意见</span><span>{{ opinionSummary?.pendingConfirmation ?? 0 }} 条待专家确认</span><span v-if="opinionSummary?.confirmedRejected">{{ opinionSummary.confirmedRejected }} 条意见需重新答复</span><span v-for="reviewer in opinionSummary?.unsubmittedReviewers ?? []" :key="`${reviewer.reviewRole}-${reviewer.reviewerId}`" class="unsubmitted-reviewer">{{ reviewer.reviewerName }}未提交意见</span></div></div>
+        <div v-else class="card designer-opinion-board"><div class="section-head"><div><h2>意见看板 <span class="board-help">?</span></h2></div></div><div class="designer-stat-grid"><button type="button" class="reply-stat pending-reply" :class="{ active: opinionListFilters.status === 'PENDING_REPLY' }" @click="filterOpinionsByStatus('PENDING_REPLY')"><span>待答复意见</span><b>{{ opinionSummary?.pendingReply ?? 0 }}</b></button><button type="button" class="reply-stat pending-confirm" :class="{ active: opinionListFilters.status === 'PENDING_CONFIRMATION' }" @click="filterOpinionsByStatus('PENDING_CONFIRMATION')"><span>待确认意见</span><b>{{ opinionSummary?.pendingConfirmation ?? 0 }}</b></button><button type="button" class="reply-stat rejected-stat" :class="{ active: opinionListFilters.status === 'CONFIRMED_REJECTED' }" @click="filterOpinionsByStatus('CONFIRMED_REJECTED')"><span>确认不通过</span><b>{{ opinionSummary?.confirmedRejected ?? 0 }}</b></button><button type="button" class="reply-stat confirmed-stat" :class="{ active: opinionListFilters.status === 'CONFIRMED_PASS' }" @click="filterOpinionsByStatus('CONFIRMED_PASS')"><span>确认通过</span><b>{{ opinionSummary?.confirmedPass ?? 0 }}</b></button></div><div class="designer-insights"><span>设计者 {{ (opinionSummary?.pendingReply ?? 0) + (opinionSummary?.confirmedRejected ?? 0) }} 条未答复意见</span><span>{{ opinionSummary?.pendingConfirmation ?? 0 }} 条待专家确认</span><span v-if="opinionSummary?.confirmedRejected">{{ opinionSummary.confirmedRejected }} 条意见需重新答复</span><span v-for="reviewer in opinionSummary?.unsubmittedReviewers ?? []" :key="`${reviewer.reviewRole}-${reviewer.reviewerEmployeeNo}`" class="unsubmitted-reviewer">{{ reviewer.reviewerName }}未提交意见</span></div></div>
       </div>
       <section v-if="canUploadPcbFirstReplyFiles" class="card pcb-first-reply-file-upload">
-        <div class="section-head"><div><h2>上传评审文件</h2><p>首次设计者答复可在同一模块内分别更新 PCB、工艺和结构文件；工艺、结构文件上传完成后可开启下一阶段评审。</p></div></div>
+        <div class="section-head"><div><h2>上传评审文件</h2><p>PCB 文件可单独更新；工艺、结构文件会在点击“上传并开启评审”时由流程接口统一上传、绑定任务并推进节点。</p></div></div>
         <div class="first-reply-upload-grid">
           <label class="stage-file-choice"><span class="file-type-tag">PCB</span><b>PCB 评审文件</b><small>上传时固定传 <code>PCB_REVIEW</code>，供专家下载评审。</small><input ref="pcbReviewFileInput" type="file" @change="selectPcbReviewFile" /><em :class="{ uploaded: pcbFirstReplyFileUploaded.pcb, pending: pcbReviewFile }">{{ pcbReviewFile ? `待上传：${pcbReviewFile.name}` : pcbFirstReplyFileUploaded.pcb ? '已上传' : '未选择任何文件' }}</em><button type="button" class="btn primary stage-file-upload-button" :disabled="!pcbReviewFile" @click.prevent="uploadPcbReviewFile">上传 PCB 文件</button></label>
-          <label class="stage-file-choice"><span class="file-type-tag">工艺</span><b>工艺图文件</b><small>上传时固定传 <code>PCB_PROCESS_REVIEW</code>。</small><input ref="processFileInput" type="file" accept=".zip,.rar,.7z" @change="selectPcbStageFile('PROCESS', $event)" /><em :class="{ uploaded: pcbFirstReplyFileUploaded.process, pending: processFile }">{{ processFile ? `待上传：${processFile.name}` : pcbFirstReplyFileUploaded.process ? '已上传' : '未选择任何文件' }}</em><button type="button" class="btn primary stage-file-upload-button" :disabled="!processFile" @click.prevent="uploadPcbFirstReplyStageFile('PROCESS')">上传工艺文件</button></label>
-          <label class="stage-file-choice"><span class="file-type-tag">结构</span><b>结构图文件</b><small>上传时固定传 <code>PCB_STRUCTURE_REVIEW</code>。</small><input ref="structureFileInput" type="file" accept=".zip,.rar,.7z" @change="selectPcbStageFile('STRUCTURE', $event)" /><em :class="{ uploaded: pcbFirstReplyFileUploaded.structure, pending: structureFile }">{{ structureFile ? `待上传：${structureFile.name}` : pcbFirstReplyFileUploaded.structure ? '已上传' : '未选择任何文件' }}</em><button type="button" class="btn primary stage-file-upload-button" :disabled="!structureFile" @click.prevent="uploadPcbFirstReplyStageFile('STRUCTURE')">上传结构文件</button></label>
+          <label class="stage-file-choice"><span class="file-type-tag">工艺</span><b>工艺图文件</b><small>随流程提交时固定传 <code>PCB_PROCESS_REVIEW</code>。</small><input ref="processFileInput" type="file" accept=".zip,.rar,.7z" @change="selectPcbStageFile('PROCESS', $event)" /><em :class="{ uploaded: pcbFirstReplyFileUploaded.process, pending: processFile }">{{ processFile ? `待提交：${processFile.name}` : pcbFirstReplyFileUploaded.process ? '已有历史版本' : '未选择任何文件' }}</em></label>
+          <label class="stage-file-choice"><span class="file-type-tag">结构</span><b>结构图文件</b><small>随流程提交时固定传 <code>PCB_STRUCTURE_REVIEW</code>。</small><input ref="structureFileInput" type="file" accept=".zip,.rar,.7z" @change="selectPcbStageFile('STRUCTURE', $event)" /><em :class="{ uploaded: pcbFirstReplyFileUploaded.structure, pending: structureFile }">{{ structureFile ? `待提交：${structureFile.name}` : pcbFirstReplyFileUploaded.structure ? '已有历史版本' : '未选择任何文件' }}</em></label>
         </div>
         <footer class="form-footer"><p v-if="pcbStageStartMessage" class="stage-start-message">{{ pcbStageStartMessage }}</p><button class="btn primary" @click="uploadAndStartOptionalReview">上传完成，开启工艺/结构评审</button></footer>
       </section>
@@ -709,7 +710,7 @@ function statusForCheck(item: CheckItemListItem): string { return item.opinion?.
         <footer class="form-footer"><p v-if="designerWorkflowMessage" class="stage-start-message">{{ designerWorkflowMessage }}</p><div class="final-workflow-actions"><button class="btn" :disabled="!finalPcbFile" @click="uploadFinalPcbFile">↑ 上传最终文件</button><button class="btn primary" @click="submitDesignerWorkflow">提交流程并准备结束</button></div></footer>
       </section>
       <section v-if="isSchematicFirstReplyPage || isCombinedSchematicFinalWorkflow" class="card schematic-final-file-upload">
-        <div class="section-head"><div><h2>{{ isSchematicFirstReplyWorkflow ? '上传原理图文件并提交流程' : '上传最终原理图文件并准备结束' }}</h2><p>{{ isSchematicFirstReplyWorkflow ? '上传最新原理图文件后，提交进入硬件专家分配。' : '先上传最新原理图文件，再提交流程进入结束确认；上传本身不会推进流程。' }}</p></div></div>
+        <div class="section-head"><div><h2>{{ isSchematicFirstReplyWorkflow ? '上传原理图文件并提交流程' : '上传最终原理图文件并准备结束' }}</h2><p>{{ isSchematicFirstReplyWorkflow ? '上传最新原理图文件后，提交开启原理图评审。' : '先上传最新原理图文件，再提交流程进入结束确认；上传本身不会推进流程。' }}</p></div></div>
         <label class="designer-transition-file"><b>最终原理图文件</b><input ref="schematicFinalFileInput" type="file" @change="selectSchematicFinalFile" /><span>{{ schematicFinalFile?.name || '未选择任何文件' }}</span></label>
         <footer class="form-footer"><p v-if="designerWorkflowMessage" class="stage-start-message">{{ designerWorkflowMessage }}</p><p v-if="isSchematicFirstReplyWorkflow && !isSchematicFirstReplyNode" class="stage-start-message">当前任务不在互检单评审节点，文件上传和流程提交已不可操作。</p><p v-else-if="!canActAsDesigner" class="stage-start-message">当前用户不是任务设计者，不能上传文件或提交流程。</p><div class="final-workflow-actions"><button class="btn" :disabled="!schematicFinalFile || !canActAsDesigner || (isSchematicFirstReplyWorkflow && !isSchematicFirstReplyNode)" @click="uploadSchematicFinalFile">↑ 上传原理图文件</button><button class="btn primary" :disabled="!canActAsDesigner || (isSchematicFirstReplyWorkflow && !isSchematicFirstReplyNode)" @click="submitDesignerWorkflow">{{ isSchematicFirstReplyWorkflow ? '提交流程' : '提交流程并准备结束' }}</button></div></footer>
       </section>
@@ -719,22 +720,22 @@ function statusForCheck(item: CheckItemListItem): string { return item.opinion?.
         <footer class="form-footer"><p v-if="designerWorkflowMessage" class="stage-start-message">{{ designerWorkflowMessage }}</p><button class="btn primary" :disabled="Boolean(designerWorkflowStep.fileCategory && !designerWorkflowFile)" @click="submitDesignerWorkflow">{{ designerWorkflowStep.label }}</button></footer>
       </section>
       <section ref="opinionListSection" class="card opinion-section">
-        <header class="opinion-list-head"><h2>意见列表</h2><div class="opinion-filter"><select v-model="opinionListFilters.severity" @change="resetOpinionPage"><option value="">全部问题等级</option><option value="SERIOUS">严重</option><option value="GENERAL">一般</option><option value="MINOR">轻微</option></select><select v-model="opinionListFilters.status" @change="resetOpinionPage"><option value="">全部状态</option><option value="PENDING_REPLY">待答复</option><option value="PENDING_CONFIRMATION">待确认</option><option value="CONFIRMED_PASS">确认通过</option><option value="CONFIRMED_REJECTED">确认不通过</option></select><span class="tag">{{ opinionPagination.total }} 条</span></div></header>
+        <header class="opinion-list-head"><h2>意见列表</h2><div class="opinion-filter"><select v-model="opinionListFilters.severity" @change="resetOpinionPage"><option value="">全部问题等级</option><option :value="OpinionSeverity.SERIOUS">严重</option><option :value="OpinionSeverity.GENERAL">一般</option><option :value="OpinionSeverity.MINOR">轻微</option></select><select v-model="opinionListFilters.status" @change="resetOpinionPage"><option value="">全部状态</option><option value="PENDING_REPLY">待答复</option><option value="PENDING_CONFIRMATION">待确认</option><option value="CONFIRMED_PASS">确认通过</option><option value="CONFIRMED_REJECTED">确认不通过</option></select><span class="tag">{{ opinionPagination.total }} 条</span></div></header>
         <div class="opinion-list compact-opinion-list">
           <article v-for="opinion in opinions" :key="opinion.id" class="opinion-row" :class="{ 'retry-required': opinion.status === 'CONFIRMED_REJECTED', editing: editingOpinionId === opinion.id }">
             <div class="opinion-main">
-              <div class="opinion-meta"><span class="severity-chip" :class="opinion.severity.toLowerCase()">{{ severityLabel(opinion.severity) }}</span><StatusTag :value="opinion.status" /><span>提出人：{{ opinion.raisedByName || userName(opinion.raisedBy) }}</span><span>提出时间：{{ format(opinion.createdAt) }}</span></div>
+              <div class="opinion-meta"><span class="severity-chip" :class="opinion.severity.toLowerCase()">{{ severityLabel(opinion.severity) }}</span><StatusTag :value="opinion.status" /><span>提出人：{{ opinion.raisedByName || userName(opinion.raisedByEmployeeNo) }}</span><span>提出时间：{{ format(opinion.createdAt) }}</span></div>
               <div v-if="opinionText(opinion)" class="rich-opinion-content" v-html="opinionText(opinion)" />
               <div v-if="opinion.replies.length" class="reply-history"><b>设计者答复历史</b><div v-for="reply in opinion.replies" :key="reply.id" class="reply-history-row"><div>第 {{ reply.replyNo }} 轮：{{ reply.replyType === 'ACCEPT' ? '接受' : '不接受' }}｜{{ reply.reason || '未填写补充说明' }} <small>{{ format(reply.repliedAt) }}</small></div><div v-if="reply.confirmation" class="confirmation-history" :class="reply.confirmation.passed ? 'passed' : 'rejected'">专家{{ reply.confirmation.passed ? '确认通过' : '确认不通过' }}：{{ reply.confirmation.comment || '未填写确认意见' }} <small>{{ format(reply.confirmation.confirmedAt) }}</small></div><div v-else class="confirmation-history pending">等待专家确认</div></div></div>
               <div v-if="opinion.status === 'CONFIRMED_REJECTED'" class="retry-feedback"><b>专家未确认通过，请重新答复</b><span>退回原因：{{ latestConfirmation(opinion)?.comment || '专家未填写退回说明' }}</span></div>
               <section v-if="editingOpinionId === opinion.id" class="inline-opinion-editor">
                 <header><b>编辑评审意见</b><button type="button" class="btn compact" @click="cancelOpinionEdit">取消</button></header>
-                <div class="inline-opinion-edit-grid"><label>问题等级<select v-model="editDraft(opinion).severity"><option value="SERIOUS">严重</option><option value="GENERAL">一般</option><option value="MINOR">轻微</option></select></label><label>评审意见<div class="rich-opinion-editor" contenteditable="true" :innerHTML="editDraft(opinion).comment" data-placeholder="请输入具体、可执行的评审意见" @input="updateEditContent(opinion, $event)" /></label><label class="inline-edit-screenshots">问题截图<div class="screenshot-paste" contenteditable="true" :innerHTML="editDraft(opinion).screenshots" data-placeholder="Ctrl + V 粘贴问题截图" @input="updateEditScreenshots(opinion, $event)" @paste="handleEditScreenshotPaste(opinion, $event)" /></label></div>
+                <div class="inline-opinion-edit-grid"><label>问题等级<select v-model="editDraft(opinion).severity"><option :value="OpinionSeverity.SERIOUS">严重</option><option :value="OpinionSeverity.GENERAL">一般</option><option :value="OpinionSeverity.MINOR">轻微</option></select></label><label>评审意见<div class="rich-opinion-editor" contenteditable="true" :innerHTML="editDraft(opinion).comment" data-placeholder="请输入具体、可执行的评审意见" @input="updateEditContent(opinion, $event)" /></label><label class="inline-edit-screenshots">问题截图<div class="screenshot-paste" contenteditable="true" :innerHTML="editDraft(opinion).screenshots" data-placeholder="Ctrl + V 粘贴问题截图" @input="updateEditScreenshots(opinion, $event)" @paste="handleEditScreenshotPaste(opinion, $event)" /></label></div>
                 <footer class="form-footer"><button type="button" class="btn primary" @click="saveOpinionEdit(opinion)">保存修改</button></footer>
               </section>
               <div v-if="isDesignerReplyPage && canActAsDesigner && requiresReply(opinion)" class="inline-form reply-editor"><select v-model="draft(opinion).replyType"><option value="ACCEPT">接受并修改</option><option value="REJECT">不接受</option></select><textarea v-model="draft(opinion).reason" rows="3" :placeholder="opinion.status === 'CONFIRMED_REJECTED' ? '请填写本次重新答复说明（必填）' : '请填写答复说明（可选）'" /><button class="btn primary reply-submit" @click="replyOpinion(opinion)">{{ opinion.status === 'CONFIRMED_REJECTED' ? '重新提交答复' : '提交答复' }}</button></div>
               <div v-if="canManageOpinion(opinion)" class="action-row"><button class="btn compact" @click="editOpinion(opinion)">编辑</button><button class="btn compact danger" @click="deleteOpinion(opinion)">删除</button></div>
-              <div v-if="!isDesignerReplyPage && opinion.raisedBy === identity.userId && opinion.status === 'PENDING_CONFIRMATION'" class="action-row"><button class="btn compact" @click="confirmOpinion(opinion, true)">通过</button><button class="btn compact danger" @click="confirmOpinion(opinion, false)">不通过</button></div>
+              <div v-if="!isDesignerReplyPage && opinion.raisedByEmployeeNo === identity.employeeNo && opinion.status === 'PENDING_CONFIRMATION'" class="action-row"><button class="btn compact" @click="confirmOpinion(opinion, true)">通过</button><button class="btn compact danger" @click="confirmOpinion(opinion, false)">不通过</button></div>
             </div>
             <div v-if="opinionImages(opinion).length && editingOpinionId !== opinion.id" class="opinion-image-carousel">
               <button v-if="opinionImages(opinion).length > 1" type="button" class="carousel-control previous" aria-label="查看上一张问题截图" @click="moveOpinionImage(opinion, -1)">‹</button>
@@ -750,8 +751,7 @@ function statusForCheck(item: CheckItemListItem): string { return item.opinion?.
     </section>
     <section v-else-if="activeTab === 'check-items'" class="tab-panel"><MutualCheckForm :task-id="taskId" :categories="checkItemCategories" @submitted="refreshMutualCheckWorkspace" /></section>
     <section v-else-if="activeTab === 'reviewers' && task.reviewType === 'PCB' && ['PCB_EXPERT_REVIEWING', 'PCB_PROCESS_STRUCTURE_REVIEWING'].includes(task.status)" class="tab-panel"><div class="section-head"><div><h2>互检单负责人分配</h2><p>前序专家、工艺和结构评审意见全部通过后，先开启互检单分配。</p></div><StatusTag :value="task.status" /></div><div class="card"><footer class="form-footer"><button class="btn primary" @click="startPcbMutualAssignment">开启互检单分配</button></footer></div></section>
-    <section v-else-if="activeTab === 'hardware-reviewers' && task.reviewType === 'SCHEMATIC' && task.status === 'MUTUAL_CHECK_REVIEWING'" class="tab-panel"><div class="section-head"><div><h2>硬件专家分配</h2><p>互检单意见全部通过后，先开启硬件专家分配。</p></div><StatusTag :value="task.status" /></div><div class="card"><footer class="form-footer"><button class="btn primary" @click="startSchematicExpertAssignment">开启硬件专家分配</button></footer></div></section>
-    <section v-else-if="activeTab === 'reviewers' || activeTab === 'hardware-reviewers'" class="tab-panel"><div class="section-head"><div><h2>{{ activeTab === 'hardware-reviewers' ? '硬件专家分配' : '互检单负责人分配' }}</h2><p>{{ activeTab === 'hardware-reviewers' ? '由硬件开发部经理选择一名或多名硬件专家进行原理图评审。' : '选择一名或多名互检负责人；多人须全部完成后，阶段才算完成。' }}</p></div><StatusTag :value="task.status" /></div><div class="card"><div class="reviewer-picker"><label v-for="user in assignableReviewers" :key="user.employeeNo" class="reviewer-option"><input v-model="selectedReviewerEmployeeNos" type="checkbox" :value="user.employeeNo" /><span><b>{{ user.displayName }}</b><small>{{ user.employeeNo }} · {{ user.departmentName }}</small></span></label><div v-if="!assignableReviewers.length" class="empty">当前节点暂无已配置且可用的白名单人员</div></div><footer class="form-footer"><button class="btn primary" :disabled="!assignableReviewers.length" @click="saveReviewers()">{{ activeTab === 'hardware-reviewers' ? '分配专家并开始评审' : '分配并开启互检' }}</button></footer></div></section>
+    <section v-else-if="activeTab === 'reviewers'" class="tab-panel"><div class="section-head"><div><h2>互检单负责人分配</h2><p>选择一名或多名互检负责人；多人须全部完成后，阶段才算完成。</p></div><StatusTag :value="task.status" /></div><div class="card"><div class="reviewer-picker"><label v-for="user in assignableReviewers" :key="user.employeeNo" class="reviewer-option"><input v-model="selectedReviewerEmployeeNos" type="checkbox" :value="user.employeeNo" /><span><b>{{ user.displayName }}</b><small>{{ user.employeeNo }} · {{ user.departmentName }}</small></span></label><div v-if="!assignableReviewers.length" class="empty">当前节点暂无已配置且可用的白名单人员</div></div><footer class="form-footer"><button class="btn primary" :disabled="!assignableReviewers.length" @click="saveReviewers()">分配并开启互检</button></footer></div></section>
     <section v-else class="tab-panel"><div v-if="!archive" class="card unsupported"><div class="unsupported-icon">⌁</div><h2>任务尚未结束</h2><p>任务完成时，系统将冻结流程节点和阶段文件。</p></div><template v-else><div class="card"><div class="section-head"><div><h2>一、流程节点</h2><p>仅展示节点时间、节点名称、操作人姓名和流转意见，不包含评审意见。</p></div><button class="btn primary" @click="exportArchiveOpinions">导出评审意见 Excel</button></div><table class="data-table"><thead><tr><th>节点时间</th><th>节点名称</th><th>操作人姓名</th><th>流转意见</th></tr></thead><tbody><tr v-for="(item, index) in archive.flowNodes" :key="`${item.occurredAt}-${item.stageName}-${index}`"><td>{{ format(item.occurredAt) }}</td><td>{{ item.stageName }}</td><td>{{ item.operatorName }}</td><td>{{ item.content }}</td></tr><tr v-if="!archive.flowNodes.length"><td colspan="4" class="empty">暂无流程节点</td></tr></tbody></table></div><div class="card"><div class="section-head"><div><h2>二、阶段文件</h2><p>展示归档时冻结的各阶段文件记录。</p></div></div><table class="data-table"><thead><tr><th>流程节点</th><th>文件名称</th><th>格式</th><th>大小</th><th>上传人</th><th>上传时间</th><th>操作</th></tr></thead><tbody><tr v-for="file in archive.stageFiles" :key="file.fileId"><td>{{ file.stageName }}</td><td>{{ file.fileName }}</td><td>{{ file.fileFormat || '-' }}</td><td>{{ file.fileSize == null ? '-' : file.fileSize + ' B' }}</td><td>{{ file.uploaderName }}</td><td>{{ format(file.uploadedAt) }}</td><td><button class="btn mini primary" @click="download(file.fileId)">下载</button></td></tr><tr v-if="!archive.stageFiles.length"><td colspan="7" class="empty">暂无阶段文件</td></tr></tbody></table></div><div class="card"><div class="section-head"><div><h2>三、邮件记录</h2><p>展示归档时冻结的邮件投递结果。</p></div></div><table class="data-table"><thead><tr><th>事件</th><th>收件人</th><th>邮件模板</th><th>投递状态</th><th>失败原因</th><th>尝试时间</th></tr></thead><tbody><tr v-for="(mail, index) in archive.notificationRecords" :key="`${mail.recipient}-${mail.attemptedAt}-${index}`"><td>{{ mail.eventType }}</td><td>{{ mail.recipient }}</td><td>{{ mail.templateCode }}</td><td>{{ mail.deliveryStatus }}</td><td>{{ mail.failureReason || '—' }}</td><td>{{ format(mail.attemptedAt) }}</td></tr><tr v-if="!archive.notificationRecords.length"><td colspan="6" class="empty">暂无邮件记录</td></tr></tbody></table></div></template></section>
   </template>
 </template>

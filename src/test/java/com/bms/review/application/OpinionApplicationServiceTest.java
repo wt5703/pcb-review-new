@@ -1,10 +1,10 @@
 package com.bms.review.application;
 
 import com.bms.identity.application.CurrentUser;
-import com.bms.identity.application.TaskNodeAuthorizationService;
+import com.bms.task.application.TaskProcessorAuthorizationService;
 import com.bms.identity.domain.Role;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
-import com.bms.notification.application.OutboxEventPublisher;
+import com.bms.review.domain.OpinionSeverity;
 import com.bms.review.domain.OpinionSourceType;
 import com.bms.review.domain.OpinionStatus;
 import com.bms.review.domain.ReplyType;
@@ -40,11 +40,10 @@ class OpinionApplicationServiceTest {
     private final ReviewTaskMapper taskMapper = mock(ReviewTaskMapper.class);
     private final TaskCheckItemMapper taskCheckItemMapper = mock(TaskCheckItemMapper.class);
     private final TaskAssignmentAccessMapper assignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
-    private final TaskNodeAuthorizationService taskNodeAuthorizationService = mock(TaskNodeAuthorizationService.class);
-    private final OutboxEventPublisher outboxEventPublisher = mock(OutboxEventPublisher.class);
+    private final TaskProcessorAuthorizationService taskProcessorAuthorizationService = mock(TaskProcessorAuthorizationService.class);
     private final TaskFlowMapper flowMapper = mock(TaskFlowMapper.class);
     private final OpinionApplicationService service = new OpinionApplicationService(opinionMapper, taskMapper, taskCheckItemMapper,
-            assignmentAccessMapper, taskNodeAuthorizationService, outboxEventPublisher, flowMapper);
+            assignmentAccessMapper, taskProcessorAuthorizationService, flowMapper);
 
     @Test
     void shouldRaiseMutualExtraOpinion() {
@@ -53,7 +52,7 @@ class OpinionApplicationServiceTest {
         CurrentUser mutualReviewer = new CurrentUser(20L, Set.of(Role.PCB_LEADER));
 
         OpinionApplicationService.OpinionView view = service.raise(new OpinionApplicationService.RaiseOpinionCommand(1001L,
-                OpinionSourceType.MUTUAL_EXTRA, null, "补充检查发现的问题", "<p>补充检查发现的问题</p>", "GENERAL"), mutualReviewer);
+                OpinionSourceType.MUTUAL_EXTRA, null, "补充检查发现的问题", "<p>补充检查发现的问题</p>", OpinionSeverity.GENERAL), mutualReviewer);
 
         assertThat(view.id()).isEqualTo(31L);
         assertThat(view.status()).isEqualTo(OpinionStatus.PENDING_REPLY);

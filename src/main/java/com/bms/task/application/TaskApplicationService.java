@@ -2,10 +2,12 @@ package com.bms.task.application;
 
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
+import com.bms.file.application.FileApplicationService;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Permission;
 import com.bms.identity.domain.PermissionPolicy;
 import com.bms.identity.domain.Role;
+import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.notification.application.ReviewMailNotificationApplicationService;
 import com.bms.task.domain.ReviewTask;
@@ -48,47 +50,78 @@ public class TaskApplicationService {
     private final TaskFlowMapper flowMapper;
     private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService;
     private final ReviewMailNotificationApplicationService reviewMailNotificationApplicationService;
+    private final UserCenterUserProfileClient userProfileClient;
+    private final FileApplicationService fileApplicationService;
 
     @Autowired
     public TaskApplicationService(ReviewTaskMapper taskMapper,
                                   TaskAssignmentAccessMapper taskAssignmentAccessMapper, TaskFlowMapper flowMapper,
                                   ReviewerWhitelistApplicationService reviewerWhitelistApplicationService,
-                                  ReviewMailNotificationApplicationService reviewMailNotificationApplicationService) {
+                                  ReviewMailNotificationApplicationService reviewMailNotificationApplicationService,
+                                  UserCenterUserProfileClient userProfileClient,
+                                  FileApplicationService fileApplicationService) {
         this.taskMapper = taskMapper;
         this.taskAssignmentAccessMapper = taskAssignmentAccessMapper;
         this.flowMapper = flowMapper;
         this.reviewerWhitelistApplicationService = reviewerWhitelistApplicationService;
         this.reviewMailNotificationApplicationService = reviewMailNotificationApplicationService;
+        this.userProfileClient = userProfileClient;
+        this.fileApplicationService = fileApplicationService;
+    }
+
+    /**
+     * 保存任务表单并关联前端预上传的初始文件。文件只以 UUID 传入，实际绑定与任务保存保持同一事务。
+     */
+    @Transactional
+    public TaskView createWithInitialFiles(CreateTaskCommand command, List<String> fileIds,
+                                           boolean submit, CurrentUser currentUser) {
+        TaskView draft = create(command, currentUser);
+        List<Long> taskFileIds = bindInitialFiles(draft.id(), fileIds, currentUser);
+        return submit ? submit(draft.id(), taskFileIds, currentUser)
+                : taskFileIds.isEmpty() ? draft : saveDraftFiles(draft.id(), taskFileIds, currentUser);
+    }
+
+    /**
+     * 编辑草稿并关联本次传入的初始文件。已绑定到当前任务的 UUID 由文件服务幂等处理，不会重复关联。
+     */
+    @Transactional
+    public TaskView updateDraftWithInitialFiles(long taskId, CreateTaskCommand command, List<String> fileIds,
+                                                boolean submit, CurrentUser currentUser) {
+        TaskView draft = updateDraft(taskId, command, currentUser);
+        List<Long> taskFileIds = bindInitialFiles(taskId, fileIds, currentUser);
+        // 提交时直接将既有草稿文件与本次关联的文件统一写入任务，避免重复追加同一批文件 ID。
+        return submit ? submit(taskId, taskFileIds, currentUser)
+                : taskFileIds.isEmpty() ? draft : saveDraftFiles(taskId, taskFileIds, currentUser);
     }
 
     @Transactional
     public TaskView create(CreateTaskCommand command, CurrentUser currentUser) {
         require(currentUser, Permission.CREATE_TASK);
-        requireTaskDesigner(command.designerId(), currentUser, "创建");
+        requireTaskDesigner(command.designerEmployeeNo(), currentUser, "创建");
         validateReviewerAssignments(command);
         long id = nextId();
         ReviewTask task = ReviewTask.draft(id, command.reviewType(), command.taskName(), command.projectName(),
-                command.designerId(), command.designerName(), command.designName(), command.pcbType(), command.expectedCompletedDate(),
-                command.expertLeaderId(), command.expertLeaderName(), command.reviewRoles(), command.reviewerAssignments(), command.reviewDescription());
+                command.designerEmployeeNo(), command.designerName(), command.designName(), command.pcbType(), command.expectedCompletedDate(),
+                command.expertLeaderEmployeeNo(), command.expertLeaderName(), command.reviewRoles(), command.reviewerAssignments(), command.reviewDescription());
         taskMapper.insert(toRecord(task));
-        return TaskView.from(task);
+        return toTaskView(task);
     }
 
     @Transactional
     public TaskView submit(long taskId, List<Long> initialFileIds, CurrentUser currentUser) {
         ReviewTaskRecord existing = requireRecord(taskId);
         ReviewTask task = restore(existing);
-        requireTaskDesigner(task.designerId(), currentUser, "提交");
+        requireTaskDesigner(task.designerEmployeeNo(), currentUser, "提交");
         initialFileIds.forEach(task::addInitialFile);
         task.submit();
         if (taskMapper.update(toRecord(task)) != 1) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
         }
         // 任务提交后才激活 PCB、EMC 评审人员；工艺、结构人员要等对应评审节点真正开启。
-        updateActiveReviewers(taskId, initialActiveReviewerIds(task));
-        appendFlow(task.id(), WorkflowAction.CREATE, currentUser.id(), "提交评审任务");
+        updateActiveReviewers(taskId, initialActiveReviewerEmployeeNos(task));
+        appendFlow(task.id(), WorkflowAction.CREATE, currentUser.employeeNo(), "提交评审任务");
         reviewMailNotificationApplicationService.enqueueTaskCreated(task);
-        return TaskView.from(task);
+        return toTaskView(task);
     }
 
     @Transactional
@@ -97,38 +130,38 @@ public class TaskApplicationService {
         if (TaskStatus.DRAFT != TaskStatus.valueOf(existing.getStatus())) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已提交或已产生评审意见的任务不允许编辑");
         }
-        requireTaskDesigner(existing.getDesignerId(), currentUser, "编辑");
-        if (!existing.getDesignerId().equals(command.designerId())) {
+        requireTaskDesigner(existing.getDesignerEmployeeNo(), currentUser, "编辑");
+        if (!existing.getDesignerEmployeeNo().equals(command.designerEmployeeNo())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "编辑任务时不允许变更设计者");
         }
         validateReviewerAssignments(command);
         ReviewTask updated = ReviewTask.draft(taskId, command.reviewType(), command.taskName(), command.projectName(),
-                command.designerId(), command.designerName(), command.designName(), command.pcbType(), command.expectedCompletedDate(),
-                command.expertLeaderId(), command.expertLeaderName(), command.reviewRoles(), command.reviewerAssignments(), command.reviewDescription());
+                command.designerEmployeeNo(), command.designerName(), command.designName(), command.pcbType(), command.expectedCompletedDate(),
+                command.expertLeaderEmployeeNo(), command.expertLeaderName(), command.reviewRoles(), command.reviewerAssignments(), command.reviewDescription());
         existing.setReviewType(updated.reviewType().name()); existing.setTaskName(updated.taskName()); existing.setProjectName(updated.projectName());
         existing.setDesignerName(updated.designerName()); existing.setDesignName(updated.designName()); existing.setPcbType(updated.pcbType());
-        existing.setExpectedCompletedDate(updated.expectedCompletedDate()); existing.setExpertLeaderId(updated.expertLeaderId());
+        existing.setExpectedCompletedDate(updated.expectedCompletedDate()); existing.setExpertLeaderEmployeeNo(updated.expertLeaderEmployeeNo());
         existing.setExpertLeaderName(updated.expertLeaderName()); existing.setReviewRoles(updated.reviewRoles().stream().map(Enum::name).collect(Collectors.joining(",")));
         existing.setReviewerAssignments(TaskReviewerAssignmentCodec.encode(updated.reviewerAssignments()));
-        // 草稿不产生待办；assigned_reviewer_ids 仅表示已开启节点的实时处理人。
-        existing.setAssignedReviewerIds("");
+        // 草稿不产生待办；assigned_reviewer_employee_nos 仅表示已开启节点的实时处理人。
+        existing.setAssignedReviewerEmployeeNos("");
         existing.setReviewDescription(updated.reviewDescription());
         if (taskMapper.updateDraft(existing) != 1) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "任务已提交，不允许编辑");
         }
-        return TaskView.from(updated);
+        return toTaskView(updated);
     }
 
     @Transactional
     public TaskView saveDraftFiles(long taskId, List<Long> initialFileIds, CurrentUser currentUser) {
         ReviewTaskRecord existing = requireRecord(taskId);
         ReviewTask task = restore(existing);
-        requireTaskDesigner(task.designerId(), currentUser, "保存草稿文件");
+        requireTaskDesigner(task.designerEmployeeNo(), currentUser, "保存草稿文件");
         initialFileIds.forEach(task::addInitialFile);
         if (taskMapper.update(toRecord(task)) != 1) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
         }
-        return TaskView.from(task);
+        return toTaskView(task);
     }
 
     public TaskView get(long taskId, CurrentUser currentUser) {
@@ -140,7 +173,7 @@ public class TaskApplicationService {
         List<TaskFlowRecordView> flowRecords = flowMapper.findByTaskId(taskId).stream()
                 .map(this::toFlowRecordView)
                 .toList();
-        return TaskView.from(task, flowRecords);
+        return toTaskView(task, flowRecords);
     }
 
     public List<TaskView> list(CurrentUser currentUser) {
@@ -153,15 +186,33 @@ public class TaskApplicationService {
                 .filter(record -> canView(restore(record), currentUser))
                 .filter(record -> validQuery.matches(restore(record)))
                 .sorted(Comparator.comparing(ReviewTaskRecord::getId))
-                .map(record -> TaskView.from(restore(record)))
+                .map(record -> toTaskView(restore(record)))
                 .toList();
-        int fromIndex = Math.min((validQuery.pageNo() - 1) * validQuery.pageSize(), visible.size());
+        int fromIndex = (int) Math.min((long) (validQuery.pageNo() - 1) * validQuery.pageSize(), visible.size());
         int toIndex = Math.min(fromIndex + validQuery.pageSize(), visible.size());
         return new TaskPage(visible.size(), validQuery.pageNo(), validQuery.pageSize(), visible.subList(fromIndex, toIndex));
     }
 
     private synchronized long nextId() {
         return taskMapper.nextId();
+    }
+
+    private List<Long> bindInitialFiles(long taskId, List<String> fileIds, CurrentUser currentUser) {
+        return fileApplicationService.bindPendingInitialFiles(taskId, fileIds, currentUser).stream()
+                .map(FileApplicationService.FileView::id)
+                .toList();
+    }
+
+    private TaskView toTaskView(ReviewTask task) {
+        return TaskView.from(task, employeeName(task.designerEmployeeNo()), employeeName(task.expertLeaderEmployeeNo()), List.of());
+    }
+
+    private TaskView toTaskView(ReviewTask task, List<TaskFlowRecordView> flowRecords) {
+        return TaskView.from(task, employeeName(task.designerEmployeeNo()), employeeName(task.expertLeaderEmployeeNo()), flowRecords);
+    }
+
+    private String employeeName(String employeeNo) {
+        return employeeNo == null || employeeNo.isBlank() ? null : userProfileClient.getByEmployeeNo(employeeNo).displayName();
     }
 
     private ReviewTaskRecord requireRecord(long taskId) {
@@ -172,20 +223,20 @@ public class TaskApplicationService {
         return record;
     }
 
-    private void appendFlow(long taskId, WorkflowAction action, long operateId, String comment) {
+    private void appendFlow(long taskId, WorkflowAction action, String operateEmployeeNo, String comment) {
         TaskFlowRecord record = new TaskFlowRecord();
         record.setId(flowMapper.nextId());
         record.setTaskId(taskId);
         record.setAction(action.name());
         record.setActionName(action.actionName());
-        record.setOperateId(operateId);
+        record.setOperateEmployeeNo(operateEmployeeNo);
         record.setComment(comment);
         flowMapper.insert(record);
     }
 
     private TaskFlowRecordView toFlowRecordView(TaskFlowRecord record) {
-        String operatorName = record.getOperateId() != null && record.getOperateId() == 1L ? "王鹏飞" : "用户#" + record.getOperateId();
-        return new TaskFlowRecordView(record.getId(), record.getAction(), record.getActionName(), record.getOperateId(),
+        String operatorName = userProfileClient.getByEmployeeNo(record.getOperateEmployeeNo()).displayName();
+        return new TaskFlowRecordView(record.getId(), record.getAction(), record.getActionName(), record.getOperateEmployeeNo(),
                 operatorName, record.getComment(), record.getCreatedAt());
     }
 
@@ -194,7 +245,7 @@ public class TaskApplicationService {
             return true;
         }
         return permissionPolicy.canViewCurrentTask(currentUser.roles(),
-                taskAssignmentAccessMapper.isAssignedToTask(task.id(), currentUser.id()));
+                taskAssignmentAccessMapper.isAssignedToTask(task.id(), currentUser.employeeNo()));
     }
 
     private void require(CurrentUser currentUser, Permission permission) {
@@ -203,12 +254,12 @@ public class TaskApplicationService {
         }
     }
 
-    private void requireTaskDesigner(Long designerId, CurrentUser currentUser, String action) {
-        if (designerId == null) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "任务设计者不能为空");
+    private void requireTaskDesigner(String designerEmployeeNo, CurrentUser currentUser, String action) {
+        if (designerEmployeeNo == null || designerEmployeeNo.isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "任务设计者工号不能为空");
         }
         if (!permissionPolicy.isAdministrator(currentUser.roles())
-                && (!currentUser.roles().contains(Role.DESIGNER) || !designerId.equals(currentUser.id()))) {
+                && (!currentUser.roles().contains(Role.DESIGNER) || !designerEmployeeNo.equals(currentUser.employeeNo()))) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "仅任务设计者可以" + action + "该任务");
         }
     }
@@ -236,64 +287,56 @@ public class TaskApplicationService {
         if (assignments.isEmpty()) {
             return;
         }
-        Map<ReviewRole, List<Long>> reviewersByRole = assignments.stream().collect(Collectors.toMap(
-                TaskReviewerAssignment::reviewRole, TaskReviewerAssignment::reviewerIds,
+        Map<ReviewRole, List<String>> reviewersByRole = assignments.stream().collect(Collectors.toMap(
+                TaskReviewerAssignment::reviewRole, TaskReviewerAssignment::reviewerEmployeeNos,
                 (left, right) -> { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "同一评审角色只能选择一组专家"); }));
         if (!reviewersByRole.keySet().equals(Set.copyOf(roles)) || reviewersByRole.values().stream().anyMatch(List::isEmpty)) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "每个已勾选的评审角色都必须选择至少一名专家");
         }
         for (ReviewRole role : roles) {
-            Set<Long> whitelistUserIds = reviewerWhitelistApplicationService.listAssignableUsers(
+            Set<String> whitelistEmployeeNos = reviewerWhitelistApplicationService.listAssignableUsers(
                             List.of(ReviewerWhitelistRole.fromReviewRole(role))).stream()
-                    .map(ReviewerWhitelistApplicationService.AssignableReviewerView::userId)
+                    .map(ReviewerWhitelistApplicationService.AssignableReviewerView::employeeNo)
                     .collect(Collectors.toSet());
-            if (!whitelistUserIds.containsAll(reviewersByRole.get(role))) {
+            if (!whitelistEmployeeNos.containsAll(reviewersByRole.get(role))) {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "所选专家不属于“" + role.name() + "”角色白名单");
             }
         }
     }
 
-    public record CreateTaskCommand(ReviewType reviewType, String taskName, String projectName, Long designerId, String designerName,
-                                    String designName, String pcbType, LocalDate expectedCompletedDate, Long expertLeaderId,
+    public record CreateTaskCommand(ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo, String designerName,
+                                    String designName, String pcbType, LocalDate expectedCompletedDate, String expertLeaderEmployeeNo,
                                     String expertLeaderName, List<ReviewRole> reviewRoles,
                                     List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription) {
         public CreateTaskCommand {
             reviewRoles = reviewRoles == null ? List.of() : List.copyOf(reviewRoles);
             reviewerAssignments = reviewerAssignments == null ? List.of() : List.copyOf(reviewerAssignments);
         }
-        public CreateTaskCommand(ReviewType reviewType, String taskName, String projectName, Long designerId, String designerName,
-                                 String designName, String pcbType, LocalDate expectedCompletedDate, Long expertLeaderId,
+        public CreateTaskCommand(ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo, String designerName,
+                                 String designName, String pcbType, LocalDate expectedCompletedDate, String expertLeaderEmployeeNo,
                                  String expertLeaderName, List<ReviewRole> reviewRoles, String reviewDescription) {
-            this(reviewType, taskName, projectName, designerId, designerName, designName, pcbType, expectedCompletedDate,
-                    expertLeaderId, expertLeaderName, reviewRoles, List.of(), reviewDescription);
+            this(reviewType, taskName, projectName, designerEmployeeNo, designerName, designName, pcbType, expectedCompletedDate,
+                    expertLeaderEmployeeNo, expertLeaderName, reviewRoles, List.of(), reviewDescription);
         }
-        public CreateTaskCommand(ReviewType reviewType, String taskName, String projectName, Long designerId, String designName, String pcbType) {
-            this(reviewType, taskName, projectName, designerId, "设计者#" + designerId, designName, pcbType, LocalDate.now(),
-                    designerId, "专家/组长#" + designerId, List.of(ReviewRole.PCB_EXPERT), List.of(), null);
+        public CreateTaskCommand(ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo, String designName, String pcbType) {
+            this(reviewType, taskName, projectName, designerEmployeeNo, designerEmployeeNo, designName, pcbType, LocalDate.now(),
+                    designerEmployeeNo, designerEmployeeNo, List.of(ReviewRole.PCB_EXPERT), List.of(), null);
         }
     }
 
-    public record TaskView(Long id, ReviewType reviewType, String taskName, String projectName, Long designerId, String designerName,
-                           String designName, String pcbType, LocalDate expectedCompletedDate, Long expertLeaderId, String expertLeaderName,
+    public record TaskView(Long id, ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo, String designerName,
+                           String designName, String pcbType, LocalDate expectedCompletedDate, String expertLeaderEmployeeNo, String expertLeaderName,
                            List<ReviewRole> reviewRoles, List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription, String status,
                            List<TaskFlowRecordView> flowRecords) {
-        static TaskView from(ReviewTask task) {
-            return new TaskView(task.id(), task.reviewType(), task.taskName(), task.projectName(), task.designerId(), task.designerName(),
-                    task.designName(), task.pcbType(), task.expectedCompletedDate(), task.expertLeaderId(), task.expertLeaderName(),
-                    task.reviewRoles(), task.reviewerAssignments(), task.reviewDescription(), task.status().name(), List.of());
-        }
-
-        static TaskView from(ReviewTask task, List<TaskFlowRecordView> flowRecords) {
-            TaskView taskView = from(task);
-            return new TaskView(taskView.id(), taskView.reviewType(), taskView.taskName(), taskView.projectName(),
-                    taskView.designerId(), taskView.designerName(), taskView.designName(), taskView.pcbType(),
-                    taskView.expectedCompletedDate(), taskView.expertLeaderId(), taskView.expertLeaderName(),
-                    taskView.reviewRoles(), taskView.reviewerAssignments(), taskView.reviewDescription(), taskView.status(), List.copyOf(flowRecords));
+        static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords) {
+            return new TaskView(task.id(), task.reviewType(), task.taskName(), task.projectName(), task.designerEmployeeNo(), designerName,
+                    task.designName(), task.pcbType(), task.expectedCompletedDate(), task.expertLeaderEmployeeNo(), expertLeaderName,
+                    task.reviewRoles(), task.reviewerAssignments(), task.reviewDescription(), task.status().name(), List.copyOf(flowRecords));
         }
     }
 
     /** 任务详情中的流程审计记录；邮件投递记录不属于任务详情返回范围。 */
-    public record TaskFlowRecordView(Long id, String action, String actionName, Long operatorId, String operatorName,
+    public record TaskFlowRecordView(Long id, String action, String actionName, String operatorEmployeeNo, String operatorName,
                                      String comment, java.time.LocalDateTime operatedAt) { }
 
     public record TaskPage(long total, int pageNo, int pageSize, List<TaskView> items) {
@@ -337,12 +380,12 @@ public class TaskApplicationService {
     private ReviewTaskRecord toRecord(ReviewTask task) {
         ReviewTaskRecord record = new ReviewTaskRecord();
         record.setId(task.id()); record.setReviewType(task.reviewType().name()); record.setTaskName(task.taskName());
-        record.setProjectName(task.projectName()); record.setDesignerId(task.designerId()); record.setDesignerName(task.designerName()); record.setDesignName(task.designName());
-        record.setPcbType(task.pcbType()); record.setExpectedCompletedDate(task.expectedCompletedDate()); record.setExpertLeaderId(task.expertLeaderId());
+        record.setProjectName(task.projectName()); record.setDesignerEmployeeNo(task.designerEmployeeNo()); record.setDesignerName(task.designerName()); record.setDesignName(task.designName());
+        record.setPcbType(task.pcbType()); record.setExpectedCompletedDate(task.expectedCompletedDate()); record.setExpertLeaderEmployeeNo(task.expertLeaderEmployeeNo());
         record.setExpertLeaderName(task.expertLeaderName()); record.setReviewRoles(task.reviewRoles().stream().map(Enum::name).collect(Collectors.joining(",")));
         record.setReviewerAssignments(TaskReviewerAssignmentCodec.encode(task.reviewerAssignments()));
         // 创建、保存草稿时不预先激活未来节点的专家。
-        record.setAssignedReviewerIds("");
+        record.setAssignedReviewerEmployeeNos("");
         record.setReviewDescription(task.reviewDescription()); record.setStatus(task.status().name());
         record.setInitialFileIds(task.initialFileIds().stream().map(String::valueOf).collect(Collectors.joining(",")));
         record.setVersion(0L); return record;
@@ -353,33 +396,33 @@ public class TaskApplicationService {
         List<ReviewRole> roles = record.getReviewRoles() == null || record.getReviewRoles().isBlank() ? List.of(ReviewRole.PCB_EXPERT)
                 : java.util.Arrays.stream(record.getReviewRoles().split(",")).map(ReviewRole::valueOf).toList();
         List<TaskReviewerAssignment> reviewerAssignments = TaskReviewerAssignmentCodec.decode(record.getReviewerAssignments());
-        return ReviewTask.restore(record.getId(), ReviewType.valueOf(record.getReviewType()), record.getTaskName(), record.getProjectName(), record.getDesignerId(),
-                record.getDesignerName() == null || record.getDesignerName().isBlank() ? "设计者#" + record.getDesignerId() : record.getDesignerName(),
+        return ReviewTask.restore(record.getId(), ReviewType.valueOf(record.getReviewType()), record.getTaskName(), record.getProjectName(), record.getDesignerEmployeeNo(),
+                record.getDesignerName() == null || record.getDesignerName().isBlank() ? record.getDesignerEmployeeNo() : record.getDesignerName(),
                 record.getDesignName(), record.getPcbType(), record.getExpectedCompletedDate() == null ? LocalDate.now() : record.getExpectedCompletedDate(),
-                record.getExpertLeaderId() == null ? record.getDesignerId() : record.getExpertLeaderId(),
-                record.getExpertLeaderName() == null || record.getExpertLeaderName().isBlank() ? "专家/组长#" + record.getDesignerId() : record.getExpertLeaderName(),
+                record.getExpertLeaderEmployeeNo() == null ? record.getDesignerEmployeeNo() : record.getExpertLeaderEmployeeNo(),
+                record.getExpertLeaderName() == null || record.getExpertLeaderName().isBlank() ? record.getExpertLeaderEmployeeNo() : record.getExpertLeaderName(),
                 roles, reviewerAssignments, record.getReviewDescription(), TaskStatus.valueOf(record.getStatus()), fileIds);
     }
 
-    private List<Long> initialActiveReviewerIds(ReviewTask task) {
+    private List<String> initialActiveReviewerEmployeeNos(ReviewTask task) {
         if (task.reviewType() != ReviewType.PCB) {
             return List.of();
         }
-        List<Long> ids = task.reviewerAssignments().stream()
+        List<String> employeeNos = task.reviewerAssignments().stream()
                 .filter(assignment -> assignment.reviewRole() == ReviewRole.PCB_EXPERT
                         || assignment.reviewRole() == ReviewRole.EMC_EXPERT)
-                .flatMap(assignment -> assignment.reviewerIds().stream())
+                .flatMap(assignment -> assignment.reviewerEmployeeNos().stream())
                 .distinct()
                 .toList();
         // 兼容没有角色—人员映射的旧任务。
-        return ids.isEmpty() && task.expertLeaderId() != null ? List.of(task.expertLeaderId()) : ids;
+        return employeeNos.isEmpty() && task.expertLeaderEmployeeNo() != null ? List.of(task.expertLeaderEmployeeNo()) : employeeNos;
     }
 
-    private void updateActiveReviewers(long taskId, List<Long> reviewerIds) {
+    private void updateActiveReviewers(long taskId, List<String> reviewerEmployeeNos) {
         ReviewTaskRecord update = new ReviewTaskRecord();
         update.setId(taskId);
-        update.setAssignedReviewerIds(TaskReviewerAssignmentCodec.encodeReviewerIds(reviewerIds));
-        if (taskMapper.updateAssignedReviewerIds(update) != 1) {
+        update.setAssignedReviewerEmployeeNos(TaskReviewerAssignmentCodec.encodeReviewerEmployeeNos(reviewerEmployeeNos));
+        if (taskMapper.updateAssignedReviewerEmployeeNos(update) != 1) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
         }
     }

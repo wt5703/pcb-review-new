@@ -12,7 +12,6 @@ public enum WorkflowAction {
     START_PCB_MATUAL_ASSIGNMENT("开启互检单分配"),
     START_PCB_MATUAL_REVIEW("开启互检单评审"),
     START_SCHEMATIC_MATUAL_REVIEW("开启互检单评审"),
-    START_SCHEMATIC_EXPERT_ASSIGNMENT("开启硬件专家分配"),
     START_SCHEMATIC_EXPERT_REVIEW("开启原理图专家评审"),
     PREPARE_FINISH("准备结束"),
     FINISH("结束任务");

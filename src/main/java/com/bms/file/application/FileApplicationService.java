@@ -81,7 +81,7 @@ public class FileApplicationService {
                 }
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "该文件已绑定到其他任务，不能重复关联");
             }
-            if (!currentUser.id().equals(pending.getUploadedBy())
+            if (!currentUser.employeeNo().equals(pending.getUploadedByEmployeeNo())
                     && !currentUser.roles().contains(Role.HARDWARE_DEPARTMENT_MANAGER)) {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "仅文件上传人可以将该文件关联到任务");
             }
@@ -114,7 +114,7 @@ public class FileApplicationService {
         record.setId(nextId()); record.setFileId(resource.resourceId()); record.setTaskId(null); record.setFileCategory(category.name());
         record.setFileName(file.getOriginalFilename());
         record.setFileFormat(fileFormat(file.getOriginalFilename())); record.setFileSize(file.getSize()); record.setMd5(md5(file));
-        record.setResourcePath(resource.resourcePath()); record.setLatest(true); record.setUploadedBy(currentUser.id()); record.setUploadedStage(null);
+        record.setResourcePath(resource.resourcePath()); record.setLatest(true); record.setUploadedByEmployeeNo(currentUser.employeeNo()); record.setUploadedStage(null);
         fileMapper.insert(record);
         return new UploadedFileView(record.getFileId(), record.getId(), record.getFileName(), record.getFileSize(), category);
     }
@@ -126,7 +126,6 @@ public class FileApplicationService {
         }
         ReviewTaskRecord task = requireTaskAccess(taskId, currentUser, category, true);
         String md5 = md5(file);
-        fileMapper.markLatestAsHistorical(taskId, category.name());
         String fileId = UUID.randomUUID().toString();
         ResourceServiceClient.StoredResource resource = resourceServiceClient.upload(file, fileId);
         ReviewFileRecord record = new ReviewFileRecord();
@@ -140,8 +139,10 @@ public class FileApplicationService {
         record.setFileId(resource.resourceId());
         record.setResourcePath(resource.resourcePath());
         record.setLatest(true);
-        record.setUploadedBy(currentUser.id());
+        record.setUploadedByEmployeeNo(currentUser.employeeNo());
         record.setUploadedStage(task.getStatus());
+        // 仅当资源服务上传成功后才淘汰旧版本，保证上传异常时原最新文件仍可继续下载和评审。
+        fileMapper.markLatestAsHistorical(taskId, category.name());
         fileMapper.insert(record);
         return FileView.from(record);
     }
@@ -177,13 +178,13 @@ public class FileApplicationService {
         }
         if (upload && (category == FileCategory.PCB_REVIEW || category == FileCategory.SCHEMATIC_REVIEW
                 || category == FileCategory.PCB_PROCESS_REVIEW || category == FileCategory.PCB_STRUCTURE_REVIEW) && currentUser.roles().contains(Role.DESIGNER)
-                && !task.getDesignerId().equals(currentUser.id())
+                && !task.getDesignerEmployeeNo().equals(currentUser.employeeNo())
                 && !currentUser.roles().contains(Role.PCB_LEADER)
                 && !currentUser.roles().contains(Role.HARDWARE_DEPARTMENT_MANAGER)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "仅任务设计者可以上传该任务的 PCB 或原理图文件");
         }
         if (!permissionPolicy.canViewAllTasks(currentUser.roles())
-                && !taskAssignmentAccessMapper.isAssignedToTask(taskId, currentUser.id())) {
+                && !taskAssignmentAccessMapper.isAssignedToTask(taskId, currentUser.employeeNo())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该任务的文件");
         }
         return task;
@@ -239,11 +240,11 @@ public class FileApplicationService {
     }
 
     public record FileView(Long id, Long taskId, FileCategory category, String fileName, String fileFormat,
-                           Long fileSize, String md5, String fileId, String resourcePath, Long uploadedBy, java.time.LocalDateTime uploadedAt,
+                           Long fileSize, String md5, String fileId, String resourcePath, String uploadedByEmployeeNo, java.time.LocalDateTime uploadedAt,
                            String uploadedStage, boolean latest) {
         static FileView from(ReviewFileRecord record) {
             return new FileView(record.getId(), record.getTaskId(), FileCategory.valueOf(record.getFileCategory()), record.getFileName(),
-                    record.getFileFormat(), record.getFileSize(), record.getMd5(), record.getFileId(), record.getResourcePath(), record.getUploadedBy(),
+                    record.getFileFormat(), record.getFileSize(), record.getMd5(), record.getFileId(), record.getResourcePath(), record.getUploadedByEmployeeNo(),
                     record.getUploadedAt(), record.getUploadedStage(), Boolean.TRUE.equals(record.getLatest()));
         }
     }

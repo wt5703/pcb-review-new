@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { reviewApi } from '@/api/review-api'
+import { OpinionSeverity, OpinionSource } from '@/api/types'
 import type { CheckItemCategory, CheckItemListItem, Opinion } from '@/api/types'
 
 const props = defineProps<{ taskId: number; categories: CheckItemCategory[] }>()
@@ -15,11 +16,12 @@ const saving = ref(false)
 const savingItemId = ref<number>()
 const extraOpinionMessage = ref('')
 const extraOpinionSaving = ref(false)
-const extraOpinionForm = reactive({ severity: 'GENERAL' as 'SERIOUS' | 'GENERAL' | 'MINOR' })
+const extraOpinionForm = reactive({ severity: OpinionSeverity.GENERAL })
 const extraOpinionEditor = ref<HTMLElement>()
 const extraOpinionScreenshotEditor = ref<HTMLElement>()
 const extraOpinions = ref<Opinion[]>([])
 const extraOpinionsLoading = ref(false)
+const extraOpinionPagination = reactive({ pageNo: 1, pageSize: 20, total: 0 })
 const checkItems = computed<CheckItemListItem[]>(() => props.categories.flatMap((category) => category.items))
 
 function edit(item: CheckItemListItem): EditValue { return edits[item.id] }
@@ -68,7 +70,7 @@ function handleExtraOpinionScreenshotPaste(event: ClipboardEvent): void {
   })
 }
 function severityLabel(severity: Opinion['severity']): string {
-  return ({ SERIOUS: '严重', GENERAL: '一般', MINOR: '轻微', PASS: '无意见' })[severity]
+  return ({ [OpinionSeverity.SERIOUS]: '严重', [OpinionSeverity.GENERAL]: '一般', [OpinionSeverity.MINOR]: '轻微' })[severity]
 }
 function opinionStatusLabel(status: Opinion['status']): string {
   return ({ PENDING_REPLY: '待答复', PENDING_CONFIRMATION: '待确认', CONFIRMED_PASS: '确认通过', CONFIRMED_REJECTED: '确认不通过', WITHDRAWN: '已撤回' })[status]
@@ -92,12 +94,22 @@ function extraOpinionImages(opinion: Opinion): string[] {
 async function loadExtraOpinions(): Promise<void> {
   extraOpinionsLoading.value = true
   try {
-    const page = await reviewApi.listOpinions(props.taskId, {
-      sourceType: 'MUTUAL_EXTRA', scene: 'REVIEW_WORKSPACE', pageNo: 1, pageSize: 100
+    let page = await reviewApi.listOpinions(props.taskId, {
+      sourceType: OpinionSource.MUTUAL_EXTRA, scene: 'REVIEW_WORKSPACE', pageNo: extraOpinionPagination.pageNo, pageSize: extraOpinionPagination.pageSize
     })
+    const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize))
+    if (!page.items.length && page.total > 0 && page.pageNo > lastPage) {
+      extraOpinionPagination.pageNo = lastPage
+      page = await reviewApi.listOpinions(props.taskId, {
+        sourceType: OpinionSource.MUTUAL_EXTRA, scene: 'REVIEW_WORKSPACE', pageNo: extraOpinionPagination.pageNo, pageSize: extraOpinionPagination.pageSize
+      })
+    }
     extraOpinions.value = page.items
+    extraOpinionPagination.total = page.total
+    extraOpinionPagination.pageNo = page.pageNo
   } catch {
     extraOpinions.value = []
+    extraOpinionPagination.total = 0
   } finally {
     extraOpinionsLoading.value = false
   }
@@ -122,10 +134,11 @@ async function raiseExtraOpinion(): Promise<void> {
   extraOpinionSaving.value = true
   extraOpinionMessage.value = ''
   try {
-    await reviewApi.raiseOpinion(props.taskId, { sourceType: 'MUTUAL_EXTRA', severity: extraOpinionForm.severity, comment: richText, richText })
+    await reviewApi.raiseOpinion(props.taskId, { sourceType: OpinionSource.MUTUAL_EXTRA, severity: extraOpinionForm.severity, comment: richText, richText })
     if (extraOpinionEditor.value) extraOpinionEditor.value.innerHTML = ''
     if (extraOpinionScreenshotEditor.value) extraOpinionScreenshotEditor.value.innerHTML = ''
     extraOpinionMessage.value = '额外评审意见已提交。'
+    extraOpinionPagination.pageNo = 1
     await loadExtraOpinions()
   } catch (cause) {
     extraOpinionMessage.value = cause instanceof Error ? cause.message : '额外评审意见提交失败。'
@@ -232,7 +245,7 @@ onMounted(loadExtraOpinions)
     <div class="extra-opinion-grid">
       <label class="extra-screenshot-field"><b>问题截图</b><div ref="extraOpinionScreenshotEditor" class="mutual-screenshot-editor extra-screenshot-editor" contenteditable="true" data-placeholder="Ctrl + V 粘贴问题截图" @paste="handleExtraOpinionScreenshotPaste" /></label>
       <div class="extra-opinion-fields">
-        <label>问题等级 *<select v-model="extraOpinionForm.severity"><option value="GENERAL">一般</option><option value="SERIOUS">严重</option><option value="MINOR">轻微</option></select></label>
+        <label>问题等级 *<select v-model="extraOpinionForm.severity"><option :value="OpinionSeverity.GENERAL">一般</option><option :value="OpinionSeverity.SERIOUS">严重</option><option :value="OpinionSeverity.MINOR">轻微</option></select></label>
         <label>具体评审意见 *<div ref="extraOpinionEditor" class="extra-opinion-editor" contenteditable="true" data-placeholder="请输入具体、可执行的评审意见" /></label>
       </div>
     </div>
@@ -248,11 +261,16 @@ onMounted(loadExtraOpinions)
       </article>
       <p v-if="extraOpinionsLoading" class="empty">正在加载额外意见…</p>
       <p v-else-if="!extraOpinions.length" class="empty">暂无额外意见</p>
+      <footer v-if="extraOpinionPagination.total > extraOpinionPagination.pageSize" class="extra-opinion-pagination">
+        <button class="btn compact" :disabled="extraOpinionsLoading || extraOpinionPagination.pageNo <= 1" @click="extraOpinionPagination.pageNo--; loadExtraOpinions()">上一页</button>
+        <span>第 {{ extraOpinionPagination.pageNo }} / {{ Math.ceil(extraOpinionPagination.total / extraOpinionPagination.pageSize) }} 页</span>
+        <button class="btn compact" :disabled="extraOpinionsLoading || extraOpinionPagination.pageNo >= Math.ceil(extraOpinionPagination.total / extraOpinionPagination.pageSize)" @click="extraOpinionPagination.pageNo++; loadExtraOpinions()">下一页</button>
+      </footer>
     </div>
   </section>
 </template>
 
 <style scoped>
-.mutual-review-workspace{margin-top:16px}.extra-opinion-grid{display:grid;grid-template-columns:340px minmax(0,1fr);gap:20px}.extra-screenshot-field,.extra-opinion-fields label{display:grid;gap:8px;color:#30384e;font-size:13px;font-weight:700}.extra-screenshot-field{min-height:260px;padding:14px;border:1px solid #e0e4ef;border-radius:10px;background:#fbfcff}.extra-screenshot-editor{min-height:190px;height:100%}.extra-opinion-fields{display:grid;grid-template-rows:auto minmax(170px,1fr);gap:16px}.extra-opinion-fields select{width:100%;padding:10px;border:1px solid #dce1ec;border-radius:8px;background:#fff}.extra-opinion-editor{min-height:170px;padding:12px;border:1px solid #dce1ec;border-radius:8px;background:#fbfcff;line-height:1.6;outline:none}.extra-opinion-editor:empty:before{content:attr(data-placeholder);color:#858ba0;font-weight:400}.extra-opinion-list{margin-top:22px;padding-top:18px;border-top:1px solid #e7eaf1}.extra-opinion-list-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.extra-opinion-list-head h3{margin:0;color:#29334b;font-size:15px}.extra-opinion-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,280px);gap:24px;padding:16px 0;border-bottom:1px solid #eef0f5}.extra-opinion-meta{display:flex;align-items:center;flex-wrap:wrap;gap:8px;color:#7c8395;font-size:12px}.severity-chip,.opinion-status{padding:4px 8px;border-radius:13px;font-size:12px}.severity-chip{background:#eaf3ff;color:#2870cb}.severity-chip.serious{background:#fff0f0;color:#d44747}.severity-chip.minor{background:#edf8ff;color:#2d88d8}.opinion-status{background:#fff5e8;color:#bd7620}.extra-opinion-content{margin-top:10px;color:#30384e;line-height:1.7}.extra-opinion-rich-text{display:grid;align-content:start;gap:8px}.extra-opinion-rich-text img{display:block;width:100%;max-height:180px;border-radius:6px;object-fit:contain;background:#f5f7fb}.extra-opinion-actions{display:flex;gap:8px;margin-top:12px}
+.mutual-review-workspace{margin-top:16px}.extra-opinion-grid{display:grid;grid-template-columns:340px minmax(0,1fr);gap:20px}.extra-screenshot-field,.extra-opinion-fields label{display:grid;gap:8px;color:#30384e;font-size:13px;font-weight:700}.extra-screenshot-field{min-height:260px;padding:14px;border:1px solid #e0e4ef;border-radius:10px;background:#fbfcff}.extra-screenshot-editor{min-height:190px;height:100%}.extra-opinion-fields{display:grid;grid-template-rows:auto minmax(170px,1fr);gap:16px}.extra-opinion-fields select{width:100%;padding:10px;border:1px solid #dce1ec;border-radius:8px;background:#fff}.extra-opinion-editor{min-height:170px;padding:12px;border:1px solid #dce1ec;border-radius:8px;background:#fbfcff;line-height:1.6;outline:none}.extra-opinion-editor:empty:before{content:attr(data-placeholder);color:#858ba0;font-weight:400}.extra-opinion-list{margin-top:22px;padding-top:18px;border-top:1px solid #e7eaf1}.extra-opinion-list-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.extra-opinion-list-head h3{margin:0;color:#29334b;font-size:15px}.extra-opinion-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,280px);gap:24px;padding:16px 0;border-bottom:1px solid #eef0f5}.extra-opinion-meta{display:flex;align-items:center;flex-wrap:wrap;gap:8px;color:#7c8395;font-size:12px}.severity-chip,.opinion-status{padding:4px 8px;border-radius:13px;font-size:12px}.severity-chip{background:#eaf3ff;color:#2870cb}.severity-chip.serious{background:#fff0f0;color:#d44747}.severity-chip.minor{background:#edf8ff;color:#2d88d8}.opinion-status{background:#fff5e8;color:#bd7620}.extra-opinion-content{margin-top:10px;color:#30384e;line-height:1.7}.extra-opinion-rich-text{display:grid;align-content:start;gap:8px}.extra-opinion-rich-text img{display:block;width:100%;max-height:180px;border-radius:6px;object-fit:contain;background:#f5f7fb}.extra-opinion-actions{display:flex;gap:8px;margin-top:12px}.extra-opinion-pagination{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:14px;color:#737c91;font-size:13px}
 .mutual-groups{display:grid;gap:14px}.mutual-category{overflow:hidden;border:1px solid #dfe3ed;border-radius:11px;background:#fff}.mutual-category-head{display:flex;align-items:center;gap:13px;min-height:66px;padding:0 17px;border-bottom:1px solid #e9ecf3;background:#fafbfe}.category-number,.item-number{display:grid;place-items:center;flex:none;width:28px;height:28px;border-radius:50%;background:#f1f3f8;color:#606981;font-size:12px}.category-badge{display:inline-block;margin-right:10px;padding:5px 8px;border-radius:6px;background:#eeeaff;color:#6557ce;font-size:12px}.mutual-category-head b{color:#273149;font-size:16px}.mutual-category-head small{margin-left:9px;color:#7b8295;font-size:13px}.mutual-items{display:grid}.mutual-item{padding:0 17px;border-bottom:1px solid #edf0f4}.mutual-item:last-child{border-bottom:0}.mutual-item-head{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:10px;min-height:58px}.mutual-item-title{color:#30384e;font-size:14px;font-weight:600;line-height:1.55}.mutual-item-title :deep(img){display:block;max-width:100%;max-height:220px;margin:8px 0;border-radius:4px;object-fit:contain}.result-control{display:flex;align-items:center;gap:9px}.result-control select{width:116px;padding:7px 9px;border:1px solid #dce1ec;border-radius:7px;background:#fff}.result-badge{min-width:46px;padding:4px 8px;border-radius:13px;background:#f1f3f8;color:#687087;text-align:center;font-size:12px}.result-badge.pass{background:#eaf8ef;color:#268052}.result-badge.fail{background:#fff0ef;color:#cc4845}.result-badge.nc{background:#fff6e7;color:#b57318}.mutual-item-feedback{margin:-4px 0 12px 40px;color:#c84343;font-size:12px;line-height:1.5}.mutual-item-feedback.success{color:#278355}.mutual-detail-grid{display:grid;grid-template-columns:minmax(240px,1fr) minmax(240px,1fr);gap:14px;padding:0 0 16px}.mutual-detail-grid label{display:grid;gap:7px;color:#525a70;font-size:13px;font-weight:700}.mutual-detail-grid textarea{width:100%;min-height:106px;padding:10px;border:1px solid #dce1ec;border-radius:8px;resize:vertical;outline:0}.mutual-screenshot-editor{min-height:106px;padding:10px;border:1px dashed #bfc8df;border-radius:8px;background:#fbfcff;line-height:1.6;outline:0}.mutual-screenshot-editor:empty:before{content:attr(data-placeholder);color:#858ba0;font-size:12px;font-weight:400}.mutual-screenshot-editor :deep(img){display:block;max-width:100%;max-height:180px;margin:6px 0;border-radius:4px;object-fit:contain}.mutual-pass-note,.mutual-unselected-note{padding:0 0 15px 40px;font-size:12px}.mutual-pass-note{color:#548064}.mutual-unselected-note{color:#858ba0}@media(max-width:760px){.extra-opinion-grid,.extra-opinion-row{grid-template-columns:1fr}.extra-screenshot-field{min-height:180px}.extra-screenshot-editor{min-height:140px}.mutual-detail-grid{grid-template-columns:1fr}.mutual-item-head{grid-template-columns:30px minmax(0,1fr)}.result-control{grid-column:2;justify-self:start;padding-bottom:12px}.mutual-category-head{align-items:flex-start;padding-top:15px;padding-bottom:15px}}
 </style>

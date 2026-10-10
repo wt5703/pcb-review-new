@@ -4,11 +4,10 @@ import com.bms.common.ApiResponse;
 import com.bms.common.TraceIdFilter;
 import com.bms.identity.application.CurrentUserHolder;
 import com.bms.identity.application.CurrentUser;
-import com.bms.review.application.ReviewerWhitelistDirectoryApplicationService;
+import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.task.application.TaskApplicationService;
 import com.bms.task.application.MyTaskApplicationService;
-import com.bms.task.application.TaskFileReferenceApplicationService;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.domain.TaskReviewerAssignment;
@@ -46,16 +45,13 @@ import java.time.LocalDate;
 public class TaskController {
     private final TaskApplicationService taskService;
     private final MyTaskApplicationService myTaskApplicationService;
-    private final TaskFileReferenceApplicationService taskFileReferenceApplicationService;
-    private final ReviewerWhitelistDirectoryApplicationService whitelistDirectoryApplicationService;
+    private final ReviewerWhitelistApplicationService whitelistApplicationService;
 
     public TaskController(TaskApplicationService taskService, MyTaskApplicationService myTaskApplicationService,
-                          TaskFileReferenceApplicationService taskFileReferenceApplicationService,
-                          ReviewerWhitelistDirectoryApplicationService whitelistDirectoryApplicationService) {
+                          ReviewerWhitelistApplicationService whitelistApplicationService) {
         this.taskService = taskService;
         this.myTaskApplicationService = myTaskApplicationService;
-        this.taskFileReferenceApplicationService = taskFileReferenceApplicationService;
-        this.whitelistDirectoryApplicationService = whitelistDirectoryApplicationService;
+        this.whitelistApplicationService = whitelistApplicationService;
     }
 
     @PostMapping("/save")
@@ -75,11 +71,11 @@ public class TaskController {
     }
 
     @GetMapping
-    @Operation(summary = "分页查询评审任务", description = "使用 URL 查询参数筛选当前用户有权限查看的任务。keyword 同时匹配项目名称、任务名称和设计者名称；任务状态可多选。每个列表项均返回 reviewerAssignments（评审角色及实际分配的白名单人员 ID），与任务详情字段保持一致。")
+    @Operation(summary = "分页查询评审任务", description = "使用 URL 查询参数筛选当前用户有权限查看的任务。keyword 同时匹配项目名称、任务名称和设计者名称；任务状态可多选。每个列表项均返回 reviewerAssignments（评审角色及实际分配的人员工号），与任务详情字段保持一致。")
     ApiResponse<TaskApplicationService.TaskPage> list(
             @RequestParam(required = false) @Parameter(description = "关键字，同时模糊匹配项目名称、任务名称和设计者名称") String keyword,
             @RequestParam(required = false) @Parameter(description = "评审类型：PCB 或 SCHEMATIC") ReviewType reviewType,
-            @RequestParam(required = false) @Parameter(description = "任务状态，可传多个同名参数，互检单列表传 FINISHED、MUTUAL_CHECK_REVIEWING、SCHEMATIC_REVIEWING、SCHEMATIC_PENDING_HARDWARE_EXPERT_ASSIGNMENT") List<TaskStatus> statuses,
+            @RequestParam(required = false) @Parameter(description = "任务状态，可传多个同名参数，互检单列表可传 FINISHED、MUTUAL_CHECK_REVIEWING、SCHEMATIC_REVIEWING") List<TaskStatus> statuses,
             @RequestParam(defaultValue = "1") @Parameter(description = "页码，从 1 开始") Integer pageNo,
             @RequestParam(defaultValue = "20") @Parameter(description = "每页条数，最大 100") Integer pageSize,
             HttpServletRequest servletRequest) {
@@ -105,9 +101,9 @@ public class TaskController {
         CurrentUser currentUser = CurrentUserHolder.require();
         TaskApplicationService.CreateTaskCommand command = toCreateCommand(request, currentUser);
         if (taskId == null) {
-            return taskFileReferenceApplicationService.create(command, files, submit, currentUser);
+            return taskService.createWithInitialFiles(command, files, submit, currentUser);
         }
-        return taskFileReferenceApplicationService.updateDraft(taskId, command, files, submit, currentUser);
+        return taskService.updateDraftWithInitialFiles(taskId, command, files, submit, currentUser);
     }
     private List<String> taskFileIds(List<String> files) {
         if (files == null) { return List.of(); }
@@ -118,17 +114,17 @@ public class TaskController {
                 && (request.expertLeaderEmployeeNo() == null || request.expertLeaderEmployeeNo().isBlank())) {
             throw new IllegalArgumentException("原理图评审必须选择组长并传入组长工号");
         }
-        ReviewerWhitelistDirectoryApplicationService.WhitelistPersonView leader = request.expertLeaderEmployeeNo() == null || request.expertLeaderEmployeeNo().isBlank()
-                ? new ReviewerWhitelistDirectoryApplicationService.WhitelistPersonView(currentUser.id(), null, currentUser.displayName(), null, null, null)
-                : whitelistDirectoryApplicationService.findByEmployeeNo(request.expertLeaderEmployeeNo());
-        return new TaskApplicationService.CreateTaskCommand(request.reviewType(), request.taskName(), request.projectName(), currentUser.id(),
+        ReviewerWhitelistApplicationService.WhitelistPersonView leader = request.expertLeaderEmployeeNo() == null || request.expertLeaderEmployeeNo().isBlank()
+                ? new ReviewerWhitelistApplicationService.WhitelistPersonView(currentUser.employeeNo(), currentUser.displayName(), null, null, null)
+                : whitelistApplicationService.findByEmployeeNo(request.expertLeaderEmployeeNo());
+        return new TaskApplicationService.CreateTaskCommand(request.reviewType(), request.taskName(), request.projectName(), currentUser.employeeNo(),
                 currentUser.displayName(), request.designName(), request.pcbType(), request.expectedCompletedDate() == null ? LocalDate.now() : request.expectedCompletedDate(),
-                leader.id(), leader.displayName(),
+                leader.employeeNo(), leader.displayName(),
                 request.reviewRoles() == null || request.reviewRoles().isEmpty() ? List.of(ReviewRole.PCB_EXPERT) : request.reviewRoles(),
                 (request.reviewerAssignments() == null ? List.<ReviewerAssignmentRequest>of() : request.reviewerAssignments()).stream()
-                        .map(assignment -> new TaskReviewerAssignment(assignment.reviewRole(), whitelistDirectoryApplicationService
+                        .map(assignment -> new TaskReviewerAssignment(assignment.reviewRole(), whitelistApplicationService
                                 .findByRoleAndEmployeeNos(ReviewerWhitelistRole.fromReviewRole(assignment.reviewRole()), assignment.reviewerEmployeeNos()).stream()
-                                .map(ReviewerWhitelistDirectoryApplicationService.WhitelistPersonView::id).toList())).toList(),
+                                .map(ReviewerWhitelistApplicationService.WhitelistPersonView::employeeNo).toList())).toList(),
                 request.reviewDescription());
     }
 

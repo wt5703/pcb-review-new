@@ -3,14 +3,14 @@ import { computed } from 'vue'
 
 const props = defineProps<{ status: string; reviewType: string }>()
 const pcbSteps = ['草稿', '专家评审', '工艺/结构评审', '互检单待分配', '互检单评审', '结束']
-const schematicSteps = ['草稿', '互检单待分配', '互检单评审', '待分配硬件专家', '原理图评审', '结束']
+const schematicSteps = ['草稿', '互检单待分配', '互检单评审', '原理图评审', '结束']
 const pcbActiveStep = computed(() => ({
   DRAFT: 1, PCB_EXPERT_REVIEWING: 2, PCB_PROCESS_STRUCTURE_REVIEWING: 3,
   MUTUAL_CHECK_PENDING_ASSIGNMENT: 4, MUTUAL_CHECK_REVIEWING: 5, FINISHED: 6
 }[props.status] ?? 1))
 const schematicActiveStep = computed(() => ({
   DRAFT: 1, MUTUAL_CHECK_PENDING_ASSIGNMENT: 2, MUTUAL_CHECK_REVIEWING: 3,
-  SCHEMATIC_PENDING_HARDWARE_EXPERT_ASSIGNMENT: 4, SCHEMATIC_REVIEWING: 5, FINISHED: 6
+  SCHEMATIC_REVIEWING: 4, FINISHED: 5
 }[props.status] ?? 1))
 </script>
 

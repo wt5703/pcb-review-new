@@ -57,7 +57,7 @@ public class ReviewMailNotificationApplicationService {
 
     /** 任务提交后通知 PCB 的硬件/EMC 专家，或通知原理图任务的实际分配专家。 */
     public void enqueueTaskCreated(ReviewTask task) {
-        List<TaskReviewerAssignment> assignments = assignments(task.reviewerAssignments(), task.expertLeaderId(), task.reviewRoles());
+        List<TaskReviewerAssignment> assignments = assignments(task.reviewerAssignments(), task.expertLeaderEmployeeNo(), task.reviewRoles());
         if (task.reviewType() == ReviewType.PCB) {
             List<TaskReviewerAssignment> receivers = filter(assignments, assignment -> assignment.reviewRole() == ReviewRole.HARDWARE_EXPERT
                     || assignment.reviewRole() == ReviewRole.EMC_EXPERT);
@@ -144,18 +144,18 @@ public class ReviewMailNotificationApplicationService {
     }
 
     private List<TaskReviewerAssignment> assignments(ReviewTaskRecord task) {
-        return assignments(TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments()), task.getExpertLeaderId(), parseRoles(task.getReviewRoles()));
+        return assignments(TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments()), task.getExpertLeaderEmployeeNo(), parseRoles(task.getReviewRoles()));
     }
 
-    private List<TaskReviewerAssignment> assignments(List<TaskReviewerAssignment> assignments, Long fallbackUserId, List<ReviewRole> roles) {
+    private List<TaskReviewerAssignment> assignments(List<TaskReviewerAssignment> assignments, String fallbackEmployeeNo, List<ReviewRole> roles) {
         if (assignments != null && !assignments.isEmpty()) {
             return assignments;
         }
-        if (fallbackUserId == null) {
+        if (fallbackEmployeeNo == null || fallbackEmployeeNo.isBlank()) {
             return List.of();
         }
         ReviewRole fallbackRole = roles.isEmpty() ? ReviewRole.HARDWARE_EXPERT : roles.get(0);
-        return List.of(new TaskReviewerAssignment(fallbackRole, List.of(fallbackUserId)));
+        return List.of(new TaskReviewerAssignment(fallbackRole, List.of(fallbackEmployeeNo)));
     }
 
     private List<ReviewRole> parseRoles(String reviewRoles) {
@@ -172,8 +172,8 @@ public class ReviewMailNotificationApplicationService {
 
     private List<MailMessage.MailRecipient> recipients(List<TaskReviewerAssignment> assignments) {
         Map<String, MailMessage.MailRecipient> recipients = new LinkedHashMap<>();
-        assignments.stream().flatMap(item -> item.reviewerIds().stream()).distinct().forEach(whitelistId -> {
-            ReviewerWhitelistRecord person = whitelistMapper.findById(whitelistId);
+        assignments.stream().flatMap(item -> item.reviewerEmployeeNos().stream()).distinct().forEach(employeeNo -> {
+            ReviewerWhitelistRecord person = whitelistMapper.findActiveByEmployeeNo(employeeNo);
             if (person != null && person.getEmail() != null && !person.getEmail().isBlank()) {
                 recipients.putIfAbsent(emailKey(person.getEmail()), new MailMessage.MailRecipient(person.getDisplayName(), person.getEmail()));
             }

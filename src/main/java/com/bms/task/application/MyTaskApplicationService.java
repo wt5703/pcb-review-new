@@ -1,6 +1,7 @@
 package com.bms.task.application;
 
 import com.bms.identity.application.CurrentUser;
+import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import com.bms.identity.domain.Permission;
 import com.bms.identity.domain.PermissionPolicy;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
@@ -31,23 +32,25 @@ public class MyTaskApplicationService {
     private final ReviewTaskMapper taskMapper;
     private final TaskAssignmentAccessMapper assignmentAccessMapper;
     private final ReviewOpinionMapper opinionMapper;
+    private final UserCenterUserProfileClient userProfileClient;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public MyTaskApplicationService(ReviewTaskMapper taskMapper, TaskAssignmentAccessMapper assignmentAccessMapper,
-                                    ReviewOpinionMapper opinionMapper) {
+                                    ReviewOpinionMapper opinionMapper, UserCenterUserProfileClient userProfileClient) {
         this.taskMapper = taskMapper;
         this.assignmentAccessMapper = assignmentAccessMapper;
         this.opinionMapper = opinionMapper;
+        this.userProfileClient = userProfileClient;
     }
 
     public List<MyTaskView> list(CurrentUser currentUser) {
-        Set<Long> pendingReplyTaskIds = Set.copyOf(opinionMapper.findPendingReplyTaskIdsForDesigner(currentUser.id()));
-        Set<Long> pendingConfirmationTaskIds = Set.copyOf(opinionMapper.findPendingConfirmationTaskIdsForRaiser(currentUser.id()));
+        Set<Long> pendingReplyTaskIds = Set.copyOf(opinionMapper.findPendingReplyTaskIdsForDesignerEmployeeNo(currentUser.employeeNo()));
+        Set<Long> pendingConfirmationTaskIds = Set.copyOf(opinionMapper.findPendingConfirmationTaskIdsForRaiserEmployeeNo(currentUser.employeeNo()));
         Map<Long, EnumSet<MyTaskAction>> actions = new HashMap<>();
         List<ReviewTaskRecord> unfinishedTasks = taskMapper.findAllUnfinished();
         for (ReviewTaskRecord task : unfinishedTasks) {
             EnumSet<MyTaskAction> taskActions = EnumSet.noneOf(MyTaskAction.class);
-            if (assignmentAccessMapper.isCurrentTaskProcessor(task.getId(), currentUser.id())) {
+            if (assignmentAccessMapper.isCurrentTaskProcessor(task.getId(), currentUser.employeeNo())) {
                 taskActions.add(MyTaskAction.REVIEW);
             }
             if (pendingReplyTaskIds.contains(task.getId())) {
@@ -62,7 +65,12 @@ public class MyTaskApplicationService {
             }
         }
         return unfinishedTasks.stream().filter(task -> actions.containsKey(task.getId()))
-                .map(task -> MyTaskView.from(task, actions.get(task.getId()))).toList();
+                .map(task -> toView(task, actions.get(task.getId()))).toList();
+    }
+
+    private MyTaskView toView(ReviewTaskRecord task, EnumSet<MyTaskAction> actions) {
+        return MyTaskView.from(task, userProfileClient.getByEmployeeNo(task.getDesignerEmployeeNo()).displayName(),
+                userProfileClient.getByEmployeeNo(task.getExpertLeaderEmployeeNo()).displayName(), actions);
     }
 
     private void addManagementAction(ReviewTaskRecord task, CurrentUser currentUser, EnumSet<MyTaskAction> actions) {
@@ -72,9 +80,8 @@ public class MyTaskApplicationService {
                 && permissionPolicy.has(currentUser.roles(), Permission.ASSIGN_PCB_MUTUAL_CHECK)) {
             actions.add(MyTaskAction.ASSIGN_REVIEWERS);
         }
-        if (type == ReviewType.SCHEMATIC && (status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT || status == TaskStatus.SCHEMATIC_PENDING_HARDWARE_EXPERT_ASSIGNMENT)
-                && (permissionPolicy.has(currentUser.roles(), Permission.ASSIGN_SCHEMATIC_MUTUAL_CHECK)
-                || permissionPolicy.has(currentUser.roles(), Permission.ASSIGN_SCHEMATIC_HARDWARE_EXPERT))) {
+        if (type == ReviewType.SCHEMATIC && status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT
+                && permissionPolicy.has(currentUser.roles(), Permission.ASSIGN_SCHEMATIC_MUTUAL_CHECK)) {
             actions.add(MyTaskAction.ASSIGN_REVIEWERS);
         }
         if (((type == ReviewType.PCB && status == TaskStatus.MUTUAL_CHECK_REVIEWING)
@@ -84,15 +91,15 @@ public class MyTaskApplicationService {
         }
     }
 
-    public record MyTaskView(Long id, ReviewType reviewType, String taskName, String projectName, Long designerId, String designerName,
-                             String designName, String pcbType, LocalDate expectedCompletedDate, Long expertLeaderId, String expertLeaderName,
+    public record MyTaskView(Long id, ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo, String designerName,
+                             String designName, String pcbType, LocalDate expectedCompletedDate, String expertLeaderEmployeeNo, String expertLeaderName,
                              List<ReviewRole> reviewRoles, String reviewDescription, TaskStatus status, List<MyTaskAction> actions) {
-        static MyTaskView from(ReviewTaskRecord record, EnumSet<MyTaskAction> actions) {
+        static MyTaskView from(ReviewTaskRecord record, String designerName, String expertLeaderName, EnumSet<MyTaskAction> actions) {
             List<ReviewRole> reviewRoles = record.getReviewRoles() == null || record.getReviewRoles().isBlank() ? List.of()
                     : java.util.Arrays.stream(record.getReviewRoles().split(",")).map(ReviewRole::valueOf).toList();
             return new MyTaskView(record.getId(), ReviewType.valueOf(record.getReviewType()), record.getTaskName(), record.getProjectName(),
-                    record.getDesignerId(), record.getDesignerName(), record.getDesignName(), record.getPcbType(), record.getExpectedCompletedDate(),
-                    record.getExpertLeaderId(), record.getExpertLeaderName(), reviewRoles, record.getReviewDescription(),
+                    record.getDesignerEmployeeNo(), designerName, record.getDesignName(), record.getPcbType(), record.getExpectedCompletedDate(),
+                    record.getExpertLeaderEmployeeNo(), expertLeaderName, reviewRoles, record.getReviewDescription(),
                     TaskStatus.valueOf(record.getStatus()), List.copyOf(actions));
         }
     }

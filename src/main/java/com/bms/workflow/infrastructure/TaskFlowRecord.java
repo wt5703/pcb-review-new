@@ -12,7 +12,7 @@ public class TaskFlowRecord {
     private Long taskId;
     private String action;
     private String actionName;
-    private Long operateId;
+    private String operateEmployeeNo;
     private String comment;
     private LocalDateTime createdAt;
 
@@ -24,8 +24,8 @@ public class TaskFlowRecord {
     public void setAction(String action) { this.action = action; }
     public String getActionName() { return actionName; }
     public void setActionName(String actionName) { this.actionName = actionName; }
-    public Long getOperateId() { return operateId; }
-    public void setOperateId(Long operateId) { this.operateId = operateId; }
+    public String getOperateEmployeeNo() { return operateEmployeeNo; }
+    public void setOperateEmployeeNo(String operateEmployeeNo) { this.operateEmployeeNo = operateEmployeeNo; }
     public String getComment() { return comment; }
     public void setComment(String comment) { this.comment = comment; }
     public LocalDateTime getCreatedAt() { return createdAt; }

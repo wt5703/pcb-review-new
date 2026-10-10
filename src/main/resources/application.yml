@@ -33,3 +33,7 @@ resource-service:
 user-center:
   # 用户中心当前用户接口尚未联通时留空，系统使用王鹏飞全权限 Mock 用户。
   current-user-url: ${USER_CENTER_CURRENT_USER_URL:}
+  # 白名单展示资料以员工工号从公司用户中心获取；开发环境默认不访问内网并展示员工工号。
+  user-profile-url-template: ${USER_CENTER_USER_PROFILE_URL_TEMPLATE:}
+  # 当前登录用户详情使用独立路径，仍由服务端当前身份取得工号，前端不传任何人员参数。
+  current-user-profile-url-template: ${USER_CENTER_CURRENT_USER_PROFILE_URL_TEMPLATE:}

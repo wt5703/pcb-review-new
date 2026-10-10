@@ -12,19 +12,13 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 
-/**
- * @author 王涛
- * @date 2026-09-10
- * @description 将用户中心返回的当前用户写入请求上下文；用户中心不可用时使用统一 Mock 用户，不接受前端用户 ID 或角色。
- */
-
-
+/** 将用户中心解析出的当前用户写入请求上下文，并在请求结束后清理线程变量。 */
 @Component
 @Order(1)
-public class MockIdentityFilter implements Filter {
+public class CurrentUserContextFilter implements Filter {
     private final UserCenterCurrentUserClient userCenterCurrentUserClient;
 
-    public MockIdentityFilter(UserCenterCurrentUserClient userCenterCurrentUserClient) {
+    public CurrentUserContextFilter(UserCenterCurrentUserClient userCenterCurrentUserClient) {
         this.userCenterCurrentUserClient = userCenterCurrentUserClient;
     }
 
@@ -38,5 +32,4 @@ public class MockIdentityFilter implements Filter {
             CurrentUserHolder.clear();
         }
     }
-
 }

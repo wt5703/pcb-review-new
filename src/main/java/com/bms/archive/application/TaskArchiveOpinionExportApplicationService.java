@@ -2,13 +2,14 @@ package com.bms.archive.application;
 
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
+import com.bms.identity.infrastructure.UserCenterUserProfileClient;
+import com.bms.review.domain.OpinionSeverity;
+import com.bms.review.domain.OpinionSourceType;
 import com.bms.review.domain.ReviewRole;
 import com.bms.review.infrastructure.OpinionConfirmationRecord;
 import com.bms.review.infrastructure.OpinionReplyRecord;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.infrastructure.ReviewOpinionRecord;
-import com.bms.task.domain.TaskReviewerAssignment;
-import com.bms.task.domain.TaskReviewerAssignmentCodec;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
@@ -27,8 +28,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -44,14 +45,21 @@ public class TaskArchiveOpinionExportApplicationService {
     private static final List<String> SHEET_ROLE_ORDER = List.of(
             ReviewRole.HARDWARE_EXPERT.name(), ReviewRole.EMC_EXPERT.name(), ReviewRole.PCB_EXPERT.name(),
             ReviewRole.PROCESS_EXPERT.name(), ReviewRole.STRUCTURE_EXPERT.name());
-    private static final String UNCLASSIFIED_EXPERT_ROLE = "PCB_REVIEW";
+    private static final Set<OpinionSourceType> EXPERT_OPINION_SOURCE_TYPES = EnumSet.of(
+            OpinionSourceType.PCB_REVIEW,
+            OpinionSourceType.SCHEMATIC_REVIEW,
+            OpinionSourceType.PCB_PROCESS_REVIEW,
+            OpinionSourceType.PCB_STRUCTURE_REVIEW);
     private static final String[] HEADERS = {"序号", "评审阶段", "位置", "问题描述", "提出人", "严重等级", "处理情况", "提出人确认"};
     private final ReviewTaskMapper taskMapper;
     private final ReviewOpinionMapper opinionMapper;
+    private final UserCenterUserProfileClient userProfileClient;
 
-    public TaskArchiveOpinionExportApplicationService(ReviewTaskMapper taskMapper, ReviewOpinionMapper opinionMapper) {
+    public TaskArchiveOpinionExportApplicationService(ReviewTaskMapper taskMapper, ReviewOpinionMapper opinionMapper,
+                                                       UserCenterUserProfileClient userProfileClient) {
         this.taskMapper = taskMapper;
         this.opinionMapper = opinionMapper;
+        this.userProfileClient = userProfileClient;
     }
 
     public ExportedExcel export(long taskId) {
@@ -68,12 +76,11 @@ public class TaskArchiveOpinionExportApplicationService {
     }
 
     private Map<String, List<ExportRow>> exportRows(ReviewTaskRecord task) {
-        Map<Long, Set<ReviewRole>> rolesByReviewer = rolesByReviewer(task.getReviewerAssignments());
         Map<String, List<ExportRow>> result = new LinkedHashMap<>();
         opinionMapper.findByTaskId(task.getId()).stream().filter(this::isExpertOpinion)
-                .filter(opinion -> !"PASS".equalsIgnoreCase(opinion.getSeverity()))
+                .filter(opinion -> !opinion.isNoOpinion())
                 .sorted(Comparator.comparing(ReviewOpinionRecord::getId)).forEach(opinion ->
-                        rolesForOpinion(opinion, rolesByReviewer).forEach(role -> result.computeIfAbsent(role, ignored -> new ArrayList<>()).addAll(rowsForOpinion(opinion))));
+                        result.computeIfAbsent(rolesForOpinion(opinion).name(), ignored -> new ArrayList<>()).addAll(rowsForOpinion(opinion)));
         Map<String, List<ExportRow>> ordered = new LinkedHashMap<>();
         SHEET_ROLE_ORDER.stream().filter(result::containsKey).forEach(role -> ordered.put(role, result.get(role)));
         result.forEach((role, rows) -> ordered.putIfAbsent(role, rows));
@@ -81,16 +88,17 @@ public class TaskArchiveOpinionExportApplicationService {
     }
 
     private boolean isExpertOpinion(ReviewOpinionRecord opinion) {
-        return "PCB_REVIEW".equals(opinion.getSourceType()) || "SCHEMATIC_REVIEW".equals(opinion.getSourceType())
-                || "PCB_PROCESS_REVIEW".equals(opinion.getSourceType()) || "PCB_STRUCTURE_REVIEW".equals(opinion.getSourceType());
+        return EXPERT_OPINION_SOURCE_TYPES.contains(opinion.getSourceType());
     }
 
-    private Set<String> rolesForOpinion(ReviewOpinionRecord opinion, Map<Long, Set<ReviewRole>> rolesByReviewer) {
-        if ("PCB_PROCESS_REVIEW".equals(opinion.getSourceType())) return Set.of(ReviewRole.PROCESS_EXPERT.name());
-        if ("PCB_STRUCTURE_REVIEW".equals(opinion.getSourceType())) return Set.of(ReviewRole.STRUCTURE_EXPERT.name());
-        Set<ReviewRole> roles = new LinkedHashSet<>(rolesByReviewer.getOrDefault(opinion.getRaisedBy(), Set.of()));
-        roles.removeIf(role -> role != ReviewRole.HARDWARE_EXPERT && role != ReviewRole.EMC_EXPERT && role != ReviewRole.PCB_EXPERT);
-        return roles.isEmpty() ? Set.of(UNCLASSIFIED_EXPERT_ROLE) : roles.stream().map(Enum::name).collect(Collectors.toSet());
+    private ReviewRole rolesForOpinion(ReviewOpinionRecord opinion) {
+        return switch (opinion.getSourceType()) {
+            case PCB_REVIEW -> ReviewRole.EMC_EXPERT;
+            case SCHEMATIC_REVIEW -> ReviewRole.HARDWARE_EXPERT;
+            case PCB_PROCESS_REVIEW -> ReviewRole.PROCESS_EXPERT;
+            case PCB_STRUCTURE_REVIEW -> ReviewRole.STRUCTURE_EXPERT;
+            case MUTUAL_CHECK_ITEM, MUTUAL_EXTRA -> throw new BusinessException(ErrorCode.VALIDATION_ERROR, "互检意见不支持归档专家意见导出");
+        };
     }
 
     private List<ExportRow> rowsForOpinion(ReviewOpinionRecord opinion) {
@@ -106,14 +114,6 @@ public class TaskArchiveOpinionExportApplicationService {
     private ExportRow row(ReviewOpinionRecord opinion, String handling, String confirmation) {
         return new ExportRow(phaseName(opinion.getSourceType()), richTextToPlainText(opinion.getRichText()), opinion.getComment(),
                 raisedByName(opinion), severityName(opinion.getSeverity()), handling, confirmation);
-    }
-
-    private Map<Long, Set<ReviewRole>> rolesByReviewer(String persistedAssignments) {
-        Map<Long, Set<ReviewRole>> result = new LinkedHashMap<>();
-        for (TaskReviewerAssignment assignment : TaskReviewerAssignmentCodec.decode(persistedAssignments)) {
-            for (Long reviewerId : assignment.reviewerIds()) result.computeIfAbsent(reviewerId, ignored -> new LinkedHashSet<>()).add(assignment.reviewRole());
-        }
-        return result;
     }
 
     private void createSheet(XSSFWorkbook workbook, String sheetName, ReviewTaskRecord task, List<ExportRow> rows) {
@@ -153,11 +153,13 @@ public class TaskArchiveOpinionExportApplicationService {
         return java.util.Arrays.stream(ReviewRole.values()).filter(value -> value.name().equals(role)).findFirst()
                 .map(ReviewRole::displayName).orElse("专家评审");
     }
-    private String phaseName(String sourceType) { return switch (sourceType) { case "PCB_PROCESS_REVIEW" -> "工艺评审"; case "PCB_STRUCTURE_REVIEW" -> "结构评审"; default -> "专家评审"; }; }
-    private String severityName(String severity) { return switch (severity == null ? "" : severity) { case "SERIOUS" -> "严重"; case "MINOR" -> "轻微"; case "GENERAL" -> "一般"; default -> severity == null || severity.isBlank() ? "一般" : severity; }; }
+    private String phaseName(OpinionSourceType sourceType) { return switch (sourceType) { case PCB_PROCESS_REVIEW -> "工艺评审"; case PCB_STRUCTURE_REVIEW -> "结构评审"; default -> "专家评审"; }; }
+    private String severityName(OpinionSeverity severity) { return severity == null ? OpinionSeverity.GENERAL.displayName() : severity.displayName(); }
     private String handlingName(OpinionReplyRecord reply) { String action = switch (reply.getReplyType()) { case "ACCEPT" -> "接受并修改"; case "ACCEPT_NO_CHANGE" -> "接受不修改"; case "REJECT" -> "不接受"; default -> reply.getReplyType(); }; return reply.getReason() == null || reply.getReason().isBlank() ? action : action + "：" + reply.getReason(); }
     private String confirmationName(OpinionConfirmationRecord confirmation) { if (confirmation == null) return "待专家确认"; String result = Boolean.TRUE.equals(confirmation.getPassed()) ? "确认通过" : "确认不通过"; return confirmation.getComment() == null || confirmation.getComment().isBlank() ? result : result + "：" + confirmation.getComment(); }
-    private String raisedByName(ReviewOpinionRecord opinion) { return opinion.getRaisedByName() == null || opinion.getRaisedByName().isBlank() ? "用户#" + opinion.getRaisedBy() : opinion.getRaisedByName(); }
+    private String raisedByName(ReviewOpinionRecord opinion) {
+        return userProfileClient.getByEmployeeNo(opinion.getRaisedByEmployeeNo()).displayName();
+    }
     private String richTextToPlainText(String richText) { if (richText == null || richText.isBlank()) return ""; return richText.replaceAll("(?i)<br\\s*/?>", "\\n").replaceAll("(?i)</(p|div|li|tr|h[1-6])>", "\\n").replaceAll("(?s)<img[^>]*>", "[图片]").replaceAll("(?s)<[^>]+>", "").replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replaceAll("\\n{3,}", "\\n\\n").trim(); }
     private String fileName(ReviewTaskRecord task) { return (task.getProjectName() + "_" + task.getDesignName() + "_评审意见").replaceAll("[\\\\/:*?\"<>|]", "_") + ".xlsx"; }
 

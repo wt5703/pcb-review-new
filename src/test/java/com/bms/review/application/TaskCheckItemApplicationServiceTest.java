@@ -2,7 +2,7 @@ package com.bms.review.application;
 
 import com.bms.common.BusinessException;
 import com.bms.identity.application.CurrentUser;
-import com.bms.identity.application.TaskNodeAuthorizationService;
+import com.bms.task.application.TaskProcessorAuthorizationService;
 import com.bms.identity.domain.Role;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.review.domain.CheckResult;
@@ -40,10 +40,10 @@ class TaskCheckItemApplicationServiceTest {
     private final CheckItemTemplateMapper templateMapper = mock(CheckItemTemplateMapper.class);
     private final TaskCheckItemMapper taskCheckItemMapper = mock(TaskCheckItemMapper.class);
     private final TaskAssignmentAccessMapper assignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
-    private final TaskNodeAuthorizationService taskNodeAuthorizationService = mock(TaskNodeAuthorizationService.class);
+    private final TaskProcessorAuthorizationService taskProcessorAuthorizationService = mock(TaskProcessorAuthorizationService.class);
     private final ReviewOpinionMapper opinionMapper = mock(ReviewOpinionMapper.class);
     private final TaskCheckItemApplicationService service = new TaskCheckItemApplicationService(taskMapper, templateMapper,
-            taskCheckItemMapper, assignmentAccessMapper, taskNodeAuthorizationService, opinionMapper);
+            taskCheckItemMapper, assignmentAccessMapper, taskProcessorAuthorizationService, opinionMapper);
     private final CurrentUser pcbLeader = new CurrentUser(1L, Set.of(Role.PCB_LEADER));
 
     @Test

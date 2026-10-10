@@ -18,9 +18,7 @@ public enum TaskStatus {
     MUTUAL_CHECK_PENDING_ASSIGNMENT("互检单待分配"),
     /** 互检单评审：已分配人员正在填写互检单。 */
     MUTUAL_CHECK_REVIEWING("互检单评审"),
-    /** 待分配硬件专家：原理图互检完成，等待硬件专家分配。 */
-    SCHEMATIC_PENDING_HARDWARE_EXPERT_ASSIGNMENT("待分配硬件专家"),
-    /** 原理图评审：已分配硬件专家正在评审原理图。 */
+    /** 原理图评审：互检意见闭环后，创建任务时已指定的评审专家正在评审原理图。 */
     SCHEMATIC_REVIEWING("原理图评审"),
     /** 结束：任务流程已结束并可归档。 */
     FINISHED("结束");

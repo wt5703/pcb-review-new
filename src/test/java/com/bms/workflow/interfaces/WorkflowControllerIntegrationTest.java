@@ -40,7 +40,7 @@ class WorkflowControllerIntegrationTest {
         fileMapper.insert(file(taskId));
 
         mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
-                        .header("X-Mock-User-Id", "1")
+                        .header("X-Mock-Employee-No", "BMS001")
                         .header("X-Mock-Roles", "PCB_LEADER")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"actions\":[\"FINISH\"],\"comment\":\"完成\"}"))
@@ -48,13 +48,13 @@ class WorkflowControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.toStatus").value("FINISHED"));
 
         mockMvc.perform(get("/tasks/{taskId}/archive", taskId)
-                        .header("X-Mock-User-Id", "1")
+                        .header("X-Mock-Employee-No", "BMS001")
                         .header("X-Mock-Roles", "PCB_LEADER"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.finalStatus").value("FINISHED"));
 
         mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
-                        .header("X-Mock-User-Id", "1")
+                        .header("X-Mock-Employee-No", "BMS001")
                         .header("X-Mock-Roles", "PCB_LEADER")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"actions\":[\"FINISH\"]}"))
@@ -73,7 +73,7 @@ class WorkflowControllerIntegrationTest {
         fileMapper.insert(file(taskId, 8305L, "PCB_STRUCTURE_REVIEW"));
 
         mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
-                        .header("X-Mock-User-Id", "10")
+                        .header("X-Mock-Employee-No", "BMS010")
                         .header("X-Mock-Roles", "DESIGNER")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""

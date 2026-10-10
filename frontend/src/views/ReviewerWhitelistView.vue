@@ -50,11 +50,17 @@ async function load(resetPage = false): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    const [mappingPage, candidatePage] = await Promise.all([
+    const [initialMappingPage, candidateMappings] = await Promise.all([
       reviewApi.listReviewerWhitelists({ keyword: keyword.value || undefined, pageNo: pageNo.value, pageSize }),
-      reviewApi.listReviewerWhitelists({ pageNo: 1, pageSize: 1000 })
+      reviewApi.listAllReviewerWhitelists()
     ])
-    const candidateMappings = candidatePage.items
+    let mappingPage = initialMappingPage
+    const lastPage = Math.max(1, Math.ceil(mappingPage.total / pageSize))
+    // 删除当前页最后一条记录或缩小查询结果后，避免停留在已失效的空白页。
+    if (!mappingPage.items.length && mappingPage.total > 0 && pageNo.value > lastPage) {
+      pageNo.value = lastPage
+      mappingPage = await reviewApi.listReviewerWhitelists({ keyword: keyword.value || undefined, pageNo: pageNo.value, pageSize })
+    }
     users.value = [...new Map(candidateMappings.map((item) => [item.employeeNo, { id: item.id, employeeNo: item.employeeNo, displayName: item.displayName || item.employeeNo, email: item.email || '', mobile: item.mobile, departmentName: item.departmentName || '', roles: candidateMappings.filter((mapping) => mapping.employeeNo === item.employeeNo).map((mapping) => mapping.reviewRole) }])).values()]
     mappings.value = mappingPage.items
     total.value = mappingPage.total

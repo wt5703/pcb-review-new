@@ -1,28 +1,28 @@
--- PCB / 原理图评审平台最终 DDL（仅用于全新数据库）
+-- PCB / 原理图评审平台最终结构（新库只执行此文件与 V2 初始化数据）
 
 CREATE TABLE review_task (
     id BIGINT PRIMARY KEY,
     review_type VARCHAR(32) NOT NULL,
     task_name VARCHAR(200) NOT NULL,
     project_name VARCHAR(200) NOT NULL,
-    designer_id BIGINT NOT NULL,
-    design_name VARCHAR(200) NOT NULL,
+    designer_employee_no VARCHAR(64) NOT NULL,
     designer_name VARCHAR(100) NOT NULL DEFAULT '',
+    design_name VARCHAR(200) NOT NULL,
     pcb_type VARCHAR(64),
     status VARCHAR(64) NOT NULL,
     initial_file_ids VARCHAR(1000) NOT NULL,
     expected_completed_date DATE,
-    expert_leader_id BIGINT,
+    expert_leader_employee_no VARCHAR(64),
     expert_leader_name VARCHAR(100),
     review_roles VARCHAR(500) NOT NULL DEFAULT '',
     reviewer_assignments VARCHAR(4000) NOT NULL DEFAULT '',
-    assigned_reviewer_ids VARCHAR(2000) NOT NULL DEFAULT '',
+    assigned_reviewer_employee_nos VARCHAR(2000) NOT NULL DEFAULT '',
     review_description VARCHAR(2000),
     version BIGINT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX idx_review_task_query ON review_task (review_type, status, designer_id);
+CREATE INDEX idx_review_task_query ON review_task (review_type, status, designer_employee_no);
 CREATE INDEX idx_review_task_designer_name ON review_task (designer_name);
 
 CREATE TABLE review_opinion (
@@ -31,15 +31,16 @@ CREATE TABLE review_opinion (
     source_type VARCHAR(64) NOT NULL,
     source_item_id BIGINT,
     severity VARCHAR(32) NOT NULL,
-    content LONGTEXT NOT NULL,
+    is_no_opinion BOOLEAN NOT NULL DEFAULT FALSE,
+    comment LONGTEXT NOT NULL,
     rich_text_content LONGTEXT,
-    raised_by BIGINT NOT NULL,
+    raised_by_employee_no VARCHAR(64) NOT NULL,
     raised_by_name VARCHAR(100) NOT NULL,
     status VARCHAR(64) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-CREATE INDEX idx_review_opinion_task_status ON review_opinion (task_id, status, raised_by);
+CREATE INDEX idx_review_opinion_task_status ON review_opinion (task_id, status, raised_by_employee_no);
 
 CREATE TABLE review_file (
     id BIGINT PRIMARY KEY,
@@ -53,18 +54,18 @@ CREATE TABLE review_file (
     resource_path VARCHAR(1024) NOT NULL,
     is_latest BOOLEAN NOT NULL,
     uploaded_stage VARCHAR(64),
-    uploaded_by BIGINT NOT NULL,
+    uploaded_by_employee_no VARCHAR(64) NOT NULL,
     uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_review_file_latest ON review_file (task_id, file_category, is_latest);
-CREATE INDEX idx_review_file_owner ON review_file (uploaded_by, uploaded_at);
+CREATE INDEX idx_review_file_owner ON review_file (uploaded_by_employee_no, uploaded_at);
 
 CREATE TABLE opinion_reply (
     id BIGINT PRIMARY KEY,
     opinion_id BIGINT NOT NULL,
     reply_type VARCHAR(32) NOT NULL,
     reason VARCHAR(2000),
-    replied_by BIGINT NOT NULL,
+    replied_by_employee_no VARCHAR(64) NOT NULL,
     reply_no INTEGER NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (opinion_id, reply_no)
@@ -77,7 +78,7 @@ CREATE TABLE opinion_confirmation (
     reply_id BIGINT NOT NULL,
     passed BOOLEAN NOT NULL,
     comment VARCHAR(2000),
-    confirmed_by BIGINT NOT NULL,
+    confirmed_by_employee_no VARCHAR(64) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_opinion_confirmation_opinion ON opinion_confirmation (opinion_id, created_at);
@@ -119,7 +120,7 @@ CREATE TABLE task_flow_record (
     task_id BIGINT NOT NULL,
     action VARCHAR(64) NOT NULL,
     action_name VARCHAR(100) NOT NULL,
-    operate_id BIGINT NOT NULL,
+    operate_employee_no VARCHAR(64) NOT NULL,
     comment VARCHAR(2000),
     create_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -141,64 +142,42 @@ CREATE INDEX idx_outbox_event_status_created ON outbox_event (status, created_at
 CREATE TABLE notification_send_record (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     outbox_event_id BIGINT NOT NULL,
+    task_id BIGINT,
     event_type VARCHAR(64) NOT NULL,
-    recipient VARCHAR(320) NOT NULL,
+    recipient TEXT NOT NULL,
+    carbon_copies TEXT,
+    attachments TEXT,
+    subject VARCHAR(500),
     template_code VARCHAR(128) NOT NULL,
     delivery_status VARCHAR(32) NOT NULL,
     failure_reason VARCHAR(2000),
     attempted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX idx_notification_send_record_outbox ON notification_send_record (outbox_event_id, attempted_at);
+CREATE INDEX idx_notification_send_record_task ON notification_send_record (task_id, attempted_at);
 
 CREATE TABLE task_archive_snapshot (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     task_id BIGINT NOT NULL UNIQUE,
     file_snapshot TEXT NOT NULL,
-    notification_snapshot TEXT NOT NULL,
+    flow_snapshot TEXT NOT NULL DEFAULT '[]',
+    notification_snapshot TEXT NOT NULL DEFAULT '[]',
     archived_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE user_account (
-    id BIGINT PRIMARY KEY,
-    employee_no VARCHAR(64),
-    display_name VARCHAR(100) NOT NULL,
-    email VARCHAR(200) NOT NULL,
-    mobile VARCHAR(32),
-    department_name VARCHAR(100) NOT NULL,
-    enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (employee_no),
-    UNIQUE (email)
-);
-CREATE INDEX idx_user_account_department ON user_account (department_name, enabled);
-
-CREATE TABLE role_definition (
-    role_code VARCHAR(64) PRIMARY KEY,
-    role_name VARCHAR(100) NOT NULL,
-    role_description VARCHAR(500) NOT NULL,
-    enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE user_role (
-    user_id BIGINT NOT NULL,
-    role_code VARCHAR(64) NOT NULL,
-    assigned_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (user_id, role_code),
-    CONSTRAINT fk_user_role_account FOREIGN KEY (user_id) REFERENCES user_account (id),
-    CONSTRAINT fk_user_role_definition FOREIGN KEY (role_code) REFERENCES role_definition (role_code)
-);
-CREATE INDEX idx_user_role_role_code ON user_role (role_code, user_id);
-
+-- PCB 系统不维护用户账号及用户角色，只维护可分配评审人员的白名单资料。
 CREATE TABLE reviewer_whitelist (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     review_role VARCHAR(64) NOT NULL,
     employee_no VARCHAR(64) NOT NULL,
-    created_by BIGINT NOT NULL,
+    display_name VARCHAR(100),
+    email VARCHAR(200),
+    mobile VARCHAR(32),
+    department_name VARCHAR(100),
+    created_by_employee_no VARCHAR(64) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted BOOLEAN NOT NULL DEFAULT FALSE,
-    deleted_by BIGINT,
+    deleted_by_employee_no VARCHAR(64),
     deleted_at TIMESTAMP,
     UNIQUE (review_role, employee_no)
 );
