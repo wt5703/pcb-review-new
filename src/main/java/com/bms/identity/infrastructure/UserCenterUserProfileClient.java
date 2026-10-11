@@ -21,23 +21,15 @@ import java.util.stream.Collectors;
 public class UserCenterUserProfileClient {
     private final RestClient restClient;
     private final String profileUrlTemplate;
-    private final String currentUserProfileUrlTemplate;
 
     public UserCenterUserProfileClient(
-            @Value("${user-center.user-profile-url-template:}") String profileUrlTemplate,
-            @Value("${user-center.current-user-profile-url-template:}") String currentUserProfileUrlTemplate) {
+            @Value("${user-center.user-profile-url-template:}") String profileUrlTemplate) {
         this.restClient = RestClient.create();
         this.profileUrlTemplate = profileUrlTemplate;
-        this.currentUserProfileUrlTemplate = currentUserProfileUrlTemplate;
     }
 
     public UserProfile getByEmployeeNo(String employeeNo) {
         return getByEmployeeNo(employeeNo, profileUrlTemplate);
-    }
-
-    /** 当前用户详情使用独立的配置路径；员工工号仅来自服务端当前身份，绝不由前端传入。 */
-    public UserProfile getCurrentUserProfile(String employeeNo) {
-        return getByEmployeeNo(employeeNo, currentUserProfileUrlTemplate);
     }
 
     private UserProfile getByEmployeeNo(String employeeNo, String urlTemplate) {

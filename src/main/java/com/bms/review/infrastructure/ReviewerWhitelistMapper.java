@@ -68,7 +68,7 @@ public interface ReviewerWhitelistMapper {
             + "ORDER BY review_role, employee_no, id LIMIT #{limit} OFFSET #{offset}"
             + "</script>")
     List<ReviewerWhitelistRecord> findPageByKeyword(@Param("keyword") String keyword,
-                                                      @Param("offset") int offset,
+                                                      @Param("offset") long offset,
                                                       @Param("limit") int limit);
 
     @Select("<script>"

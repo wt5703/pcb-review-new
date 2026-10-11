@@ -1,0 +1,10 @@
+.git
+.idea
+.mvn
+docs
+frontend
+src
+README.md
+pom.xml
+target/*
+!target/pcb-review-1.0-SNAPSHOT.jar

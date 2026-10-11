@@ -160,8 +160,8 @@ CREATE TABLE task_archive_snapshot (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     task_id BIGINT NOT NULL UNIQUE,
     file_snapshot TEXT NOT NULL,
-    flow_snapshot TEXT NOT NULL DEFAULT '[]',
-    notification_snapshot TEXT NOT NULL DEFAULT '[]',
+    flow_snapshot TEXT NOT NULL ,
+    notification_snapshot TEXT NOT NULL,
     archived_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

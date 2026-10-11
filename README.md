@@ -44,14 +44,24 @@ pnpm build
 
 当前后端尚未提供全局邮件记录、用户目录、模板列表查询及任务版本号读取接口；前端相应位置会明确展示接口待提供状态，避免以静态数据冒充真实接口结果。
 
-本地身份 Mock 由下列请求头提供：
+## Docker 部署
 
-| 请求头 | 示例 | 说明 |
-| --- | --- | --- |
-| `X-Mock-User-Id` | `10` | 当前用户 ID，未传时默认为 `1`。 |
-| `X-Mock-Roles` | `DESIGNER` | 当前角色；多角色用英文逗号分隔。 |
+后端构建会生成可执行 JAR `target/pcb-review-1.0-SNAPSHOT.jar`。Docker 镜像直接使用该 JAR，并通过 `docker/startup.sh` 启动，避免为单模块 Spring Boot 项目额外引入打包插件。
 
-常用角色包括 `DESIGNER`、`PCB_LEADER`、`SCHEMATIC_LEADER`、`HARDWARE_EXPERT`、`EMC_EXPERT`、`PROCESS_EXPERT`、`STRUCTURE_EXPERT` 和 `HARDWARE_DEPARTMENT_MANAGER`。
+```powershell
+mvn -Dmaven.test.skip=true package
+docker build -f docker/Dockerfile -t pcb-review:1.0-SNAPSHOT .
+docker run --rm -p 8080:8080 `
+  -e SPRING_PROFILES_ACTIVE=prod `
+  -e SPRING_DATASOURCE_URL='jdbc:mysql://mysql-host:3306/pcb_review?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai' `
+  -e SPRING_DATASOURCE_USERNAME='pcb_review' `
+  -e SPRING_DATASOURCE_PASSWORD='请通过部署平台安全注入' `
+  pcb-review:1.0-SNAPSHOT
+```
+
+镜像不固化数据库、资源服务、用户中心、邮件等环境配置。部署平台应通过 `SPRING_DATASOURCE_*`、`RESOURCE_SERVICE_*`、`USER_CENTER_*`、`MAIL_*` 和可选的 `JAVA_OPTS` 环境变量注入对应环境配置；服务默认暴露 `8080` 端口和 `/leapmotor/pcb_review` 上下文路径。
+
+开发环境未配置 `USER_CENTER_CURRENT_USER_URL` 时，后端使用王鹏飞全权限 Mock 身份，方便本地联调；不再接受前端通过请求头、工号或用户 ID 伪造当前用户。生产环境必须配置当前用户接口地址。该接口不带员工工号，后端仅转发浏览器/网关注入的 `Authorization` 登录态，由用户中心识别当前登录人员。
 
 ## 启用 MySQL
 

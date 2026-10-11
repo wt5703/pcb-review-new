@@ -21,7 +21,6 @@ import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
-import com.bms.task.domain.TaskReviewerAssignment;
 import com.bms.task.domain.TaskReviewerAssignmentCodec;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
@@ -110,8 +109,7 @@ public class WorkflowApplicationService {
     }
 
     /**
-     * 在开启 PCB 工艺/结构评审时接收本次阶段文件：文件上传、旧版本淘汰和流程推进处于同一业务事务中。
-     * 普通 JSON 流转仍复用无文件重载，保持既有调用兼容。
+     * 推进流程
      */
     @Transactional
     public WorkflowView transition(long taskId, TransitionBatchCommand command, List<TransitionFileCommand> files,

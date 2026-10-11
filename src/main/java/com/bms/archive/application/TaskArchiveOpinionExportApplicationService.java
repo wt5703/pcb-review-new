@@ -10,6 +10,7 @@ import com.bms.review.infrastructure.OpinionConfirmationRecord;
 import com.bms.review.infrastructure.OpinionReplyRecord;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.infrastructure.ReviewOpinionRecord;
+import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
@@ -26,6 +27,8 @@ import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -38,7 +41,7 @@ import java.util.stream.Collectors;
 /**
  * @author 王涛
  * @date 2026-09-28
- * @description 导出已归档任务的专家评审意见。按评审角色拆分工作表，每个设计者答复占一行，便于线下评审记录留档。
+ * @description 导出已归档任务的专家评审意见。PCB 按评审角色拆分工作表；原理图使用“评审问题记录”模板；每个设计者答复占一行，便于线下评审记录留档。
  */
 @Service
 public class TaskArchiveOpinionExportApplicationService {
@@ -51,6 +54,9 @@ public class TaskArchiveOpinionExportApplicationService {
             OpinionSourceType.PCB_PROCESS_REVIEW,
             OpinionSourceType.PCB_STRUCTURE_REVIEW);
     private static final String[] HEADERS = {"序号", "评审阶段", "位置", "问题描述", "提出人", "严重等级", "处理情况", "提出人确认"};
+    private static final String[] SCHEMATIC_HEADERS = {"评审问题序号", "评审问题提出时间", "评审对象", "问题描述", "问题等级", "原因分析",
+            "处理措施", "计划解决时间", "实际解决时间", "责任人", "状态", "备注"};
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy/M/d");
     private final ReviewTaskMapper taskMapper;
     private final ReviewOpinionMapper opinionMapper;
     private final UserCenterUserProfileClient userProfileClient;
@@ -64,10 +70,14 @@ public class TaskArchiveOpinionExportApplicationService {
 
     public ExportedExcel export(long taskId) {
         ReviewTaskRecord task = requireFinishedTask(taskId);
-        Map<String, List<ExportRow>> rowsByRole = exportRows(task);
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            if (rowsByRole.isEmpty()) createSheet(workbook, "专家评审", task, List.of());
-            else rowsByRole.forEach((role, rows) -> createSheet(workbook, sheetName(role), task, rows));
+            if (ReviewType.SCHEMATIC.name().equals(task.getReviewType())) {
+                createSchematicSheet(workbook, task, exportSchematicRows(task));
+            } else {
+                Map<String, List<ExportRow>> rowsByRole = exportRows(task);
+                if (rowsByRole.isEmpty()) createSheet(workbook, "专家评审", task, List.of());
+                else rowsByRole.forEach((role, rows) -> createSheet(workbook, sheetName(role), task, rows));
+            }
             workbook.write(output);
             return new ExportedExcel(fileName(task), output.toByteArray());
         } catch (IOException exception) {
@@ -87,6 +97,35 @@ public class TaskArchiveOpinionExportApplicationService {
         return ordered;
     }
 
+    /** 原理图归档固定使用用户提供的“评审问题记录”单 Sheet 模板，只导出原理图专家意见。 */
+    private List<SchematicExportRow> exportSchematicRows(ReviewTaskRecord task) {
+        String reviewObject = task.getProjectName() + "项目_" + task.getDesignName();
+        String responsiblePerson = employeeName(task.getDesignerEmployeeNo());
+        return opinionMapper.findByTaskId(task.getId()).stream()
+                .filter(opinion -> opinion.getSourceType() == OpinionSourceType.SCHEMATIC_REVIEW)
+                .filter(opinion -> !opinion.isNoOpinion())
+                .sorted(Comparator.comparing(ReviewOpinionRecord::getId))
+                .flatMap(opinion -> schematicRowsForOpinion(opinion, reviewObject, responsiblePerson).stream())
+                .toList();
+    }
+
+    private List<SchematicExportRow> schematicRowsForOpinion(ReviewOpinionRecord opinion, String reviewObject,
+                                                              String responsiblePerson) {
+        List<OpinionReplyRecord> replies = opinionMapper.findRepliesByOpinionId(opinion.getId());
+        Map<Long, OpinionConfirmationRecord> confirmations = confirmationsByReply(opinion.getId());
+        if (replies == null || replies.isEmpty()) {
+            return List.of(new SchematicExportRow(opinion.getCreatedAt(), reviewObject, opinion.getComment(),
+                    severityName(opinion.getSeverity()), "", "待设计者答复", null, responsiblePerson, "Open", "待专家确认"));
+        }
+        return replies.stream().map(reply -> {
+            OpinionConfirmationRecord confirmation = confirmations.get(reply.getId());
+            return new SchematicExportRow(opinion.getCreatedAt(), reviewObject, opinion.getComment(),
+                    severityName(opinion.getSeverity()), "", handlingName(reply), reply.getCreatedAt(), responsiblePerson,
+                    Boolean.TRUE.equals(confirmation == null ? null : confirmation.getPassed()) ? "Close" : "Open",
+                    confirmationName(confirmation));
+        }).toList();
+    }
+
     private boolean isExpertOpinion(ReviewOpinionRecord opinion) {
         return EXPERT_OPINION_SOURCE_TYPES.contains(opinion.getSourceType());
     }
@@ -103,12 +142,17 @@ public class TaskArchiveOpinionExportApplicationService {
 
     private List<ExportRow> rowsForOpinion(ReviewOpinionRecord opinion) {
         List<OpinionReplyRecord> replies = opinionMapper.findRepliesByOpinionId(opinion.getId());
-        List<OpinionConfirmationRecord> confirmationRecords = opinionMapper.findConfirmationsByOpinionId(opinion.getId());
-        Map<Long, OpinionConfirmationRecord> confirmations = (confirmationRecords == null ? List.<OpinionConfirmationRecord>of() : confirmationRecords).stream()
-                .filter(confirmation -> confirmation.getReplyId() != null).collect(Collectors.toMap(OpinionConfirmationRecord::getReplyId, item -> item,
-                        (left, right) -> left.getId() >= right.getId() ? left : right));
+        Map<Long, OpinionConfirmationRecord> confirmations = confirmationsByReply(opinion.getId());
         if (replies == null || replies.isEmpty()) return List.of(row(opinion, "待设计者答复", "待专家确认"));
         return replies.stream().map(reply -> row(opinion, handlingName(reply), confirmationName(confirmations.get(reply.getId())))).toList();
+    }
+
+    private Map<Long, OpinionConfirmationRecord> confirmationsByReply(long opinionId) {
+        List<OpinionConfirmationRecord> confirmationRecords = opinionMapper.findConfirmationsByOpinionId(opinionId);
+        return (confirmationRecords == null ? List.<OpinionConfirmationRecord>of() : confirmationRecords).stream()
+                .filter(confirmation -> confirmation.getReplyId() != null)
+                .collect(Collectors.toMap(OpinionConfirmationRecord::getReplyId, item -> item,
+                        (left, right) -> left.getId() >= right.getId() ? left : right));
     }
 
     private ExportRow row(ReviewOpinionRecord opinion, String handling, String confirmation) {
@@ -132,9 +176,48 @@ public class TaskArchiveOpinionExportApplicationService {
         sheet.setAutoFilter(new CellRangeAddress(3, Math.max(4, rows.size() + 3), 0, HEADERS.length - 1)); sheet.createFreezePane(0, 4);
     }
 
+    private void createSchematicSheet(XSSFWorkbook workbook, ReviewTaskRecord task, List<SchematicExportRow> rows) {
+        var sheet = workbook.createSheet("评审问题记录");
+        sheet.setDisplayGridlines(false);
+        int[] widths = {17, 18, 30, 42, 14, 32, 32, 18, 18, 16, 12, 28};
+        for (int index = 0; index < widths.length; index++) sheet.setColumnWidth(index, widths[index] * 256);
+        CellStyle titleStyle = schematicTitleStyle(workbook), headerStyle = headerStyle(workbook), bodyStyle = bodyStyle(workbook);
+        var titleRow = sheet.createRow(0);
+        titleRow.setHeightInPoints(28);
+        Cell title = titleRow.createCell(0);
+        title.setCellValue("评审问题记录");
+        title.setCellStyle(titleStyle);
+        sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, SCHEMATIC_HEADERS.length - 1));
+        var headerRow = sheet.createRow(1);
+        for (int index = 0; index < SCHEMATIC_HEADERS.length; index++) write(headerRow, index, SCHEMATIC_HEADERS[index], headerStyle);
+        for (int index = 0; index < rows.size(); index++) {
+            SchematicExportRow row = rows.get(index);
+            var excelRow = sheet.createRow(index + 2);
+            excelRow.setHeightInPoints(48);
+            write(excelRow, 0, index + 1, bodyStyle);
+            write(excelRow, 1, formatDate(row.raisedAt()), bodyStyle);
+            write(excelRow, 2, row.reviewObject(), bodyStyle);
+            write(excelRow, 3, row.description(), bodyStyle);
+            write(excelRow, 4, row.severity(), bodyStyle);
+            write(excelRow, 5, row.causeAnalysis(), bodyStyle);
+            write(excelRow, 6, row.handlingMeasure(), bodyStyle);
+            write(excelRow, 7, "", bodyStyle);
+            write(excelRow, 8, formatDate(row.resolvedAt()), bodyStyle);
+            write(excelRow, 9, row.responsiblePerson(), bodyStyle);
+            write(excelRow, 10, row.status(), bodyStyle);
+            write(excelRow, 11, row.remark(), bodyStyle);
+        }
+        sheet.setAutoFilter(new CellRangeAddress(1, Math.max(2, rows.size() + 1), 0, SCHEMATIC_HEADERS.length - 1));
+        sheet.createFreezePane(0, 2);
+    }
+
     private CellStyle titleStyle(XSSFWorkbook workbook) {
         CellStyle style = workbook.createCellStyle(); style.setFillForegroundColor((short) 17); style.setFillPattern(FillPatternType.SOLID_FOREGROUND); style.setAlignment(HorizontalAlignment.CENTER); style.setVerticalAlignment(VerticalAlignment.CENTER);
         XSSFFont font = workbook.createFont(); font.setBold(true); font.setFontHeightInPoints((short) 16); font.setColor((short) 9); style.setFont(font); return style;
+    }
+    private CellStyle schematicTitleStyle(XSSFWorkbook workbook) {
+        CellStyle style = workbook.createCellStyle(); style.setAlignment(HorizontalAlignment.CENTER); style.setVerticalAlignment(VerticalAlignment.CENTER);
+        XSSFFont font = workbook.createFont(); font.setBold(true); font.setFontHeightInPoints((short) 16); style.setFont(font); return style;
     }
     private CellStyle headerStyle(XSSFWorkbook workbook) {
         CellStyle style = workbook.createCellStyle(); style.setFillForegroundColor((short) 42); style.setFillPattern(FillPatternType.SOLID_FOREGROUND); style.setAlignment(HorizontalAlignment.CENTER); style.setVerticalAlignment(VerticalAlignment.CENTER); style.setWrapText(true); setBorders(style);
@@ -158,11 +241,16 @@ public class TaskArchiveOpinionExportApplicationService {
     private String handlingName(OpinionReplyRecord reply) { String action = switch (reply.getReplyType()) { case "ACCEPT" -> "接受并修改"; case "ACCEPT_NO_CHANGE" -> "接受不修改"; case "REJECT" -> "不接受"; default -> reply.getReplyType(); }; return reply.getReason() == null || reply.getReason().isBlank() ? action : action + "：" + reply.getReason(); }
     private String confirmationName(OpinionConfirmationRecord confirmation) { if (confirmation == null) return "待专家确认"; String result = Boolean.TRUE.equals(confirmation.getPassed()) ? "确认通过" : "确认不通过"; return confirmation.getComment() == null || confirmation.getComment().isBlank() ? result : result + "：" + confirmation.getComment(); }
     private String raisedByName(ReviewOpinionRecord opinion) {
-        return userProfileClient.getByEmployeeNo(opinion.getRaisedByEmployeeNo()).displayName();
+        return employeeName(opinion.getRaisedByEmployeeNo());
     }
+    private String employeeName(String employeeNo) { return userProfileClient.getByEmployeeNo(employeeNo).displayName(); }
+    private String formatDate(LocalDateTime dateTime) { return dateTime == null ? "" : DATE_FORMATTER.format(dateTime); }
     private String richTextToPlainText(String richText) { if (richText == null || richText.isBlank()) return ""; return richText.replaceAll("(?i)<br\\s*/?>", "\\n").replaceAll("(?i)</(p|div|li|tr|h[1-6])>", "\\n").replaceAll("(?s)<img[^>]*>", "[图片]").replaceAll("(?s)<[^>]+>", "").replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replaceAll("\\n{3,}", "\\n\\n").trim(); }
     private String fileName(ReviewTaskRecord task) { return (task.getProjectName() + "_" + task.getDesignName() + "_评审意见").replaceAll("[\\\\/:*?\"<>|]", "_") + ".xlsx"; }
 
     public record ExportedExcel(String fileName, byte[] content) { }
     private record ExportRow(String phase, String location, String description, String raisedByName, String severity, String handling, String confirmation) { }
+    private record SchematicExportRow(LocalDateTime raisedAt, String reviewObject, String description, String severity,
+                                      String causeAnalysis, String handlingMeasure, LocalDateTime resolvedAt,
+                                      String responsiblePerson, String status, String remark) { }
 }

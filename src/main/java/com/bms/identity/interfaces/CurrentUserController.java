@@ -4,7 +4,6 @@ import com.bms.common.ApiResponse;
 import com.bms.common.TraceIdFilter;
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.application.CurrentUserHolder;
-import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,19 +18,12 @@ import java.util.List;
 @RequestMapping("/identity")
 @Tag(name = "当前登录用户", description = "返回当前请求对应的用户中心资料，不接收前端用户 ID 或员工工号。")
 public class CurrentUserController {
-    private final UserCenterUserProfileClient userProfileClient;
-
-    public CurrentUserController(UserCenterUserProfileClient userProfileClient) {
-        this.userProfileClient = userProfileClient;
-    }
-
     @GetMapping("/current-user")
-    @Operation(summary = "获取当前登录用户详情", description = "不传任何人员参数。后端从当前登录身份取得员工工号，再查询用户中心获取姓名、邮箱、手机号和部门。")
+    @Operation(summary = "获取当前登录用户详情", description = "不传任何人员参数。后端转发当前请求登录态到用户中心，由用户中心识别当前人员并返回工号、姓名、邮箱、手机号和部门。")
     ApiResponse<CurrentUserView> currentUser(HttpServletRequest request) {
         CurrentUser currentUser = CurrentUserHolder.require();
-        UserCenterUserProfileClient.UserProfile profile = userProfileClient.getCurrentUserProfile(currentUser.employeeNo());
-        return ApiResponse.ok(new CurrentUserView(currentUser.employeeNo(), profile.displayName(), profile.email(),
-                        profile.mobile(), profile.departmentName(),
+        return ApiResponse.ok(new CurrentUserView(currentUser.employeeNo(), currentUser.resolvedDisplayName(), currentUser.email(),
+                        currentUser.mobile(), currentUser.departmentName(),
                         currentUser.roles().stream().map(Enum::name).sorted().toList()),
                 request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString());
     }

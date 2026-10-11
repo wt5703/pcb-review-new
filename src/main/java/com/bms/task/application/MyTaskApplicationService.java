@@ -1,11 +1,11 @@
 package com.bms.task.application;
 
 import com.bms.identity.application.CurrentUser;
-import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import com.bms.identity.domain.Permission;
 import com.bms.identity.domain.PermissionPolicy;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
+import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.task.domain.MyTaskAction;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
@@ -14,7 +14,6 @@ import com.bms.task.infrastructure.ReviewTaskRecord;
 import com.bms.review.domain.ReviewRole;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -32,15 +31,16 @@ public class MyTaskApplicationService {
     private final ReviewTaskMapper taskMapper;
     private final TaskAssignmentAccessMapper assignmentAccessMapper;
     private final ReviewOpinionMapper opinionMapper;
-    private final UserCenterUserProfileClient userProfileClient;
+    private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService;
     private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public MyTaskApplicationService(ReviewTaskMapper taskMapper, TaskAssignmentAccessMapper assignmentAccessMapper,
-                                    ReviewOpinionMapper opinionMapper, UserCenterUserProfileClient userProfileClient) {
+                                    ReviewOpinionMapper opinionMapper,
+                                    ReviewerWhitelistApplicationService reviewerWhitelistApplicationService) {
         this.taskMapper = taskMapper;
         this.assignmentAccessMapper = assignmentAccessMapper;
         this.opinionMapper = opinionMapper;
-        this.userProfileClient = userProfileClient;
+        this.reviewerWhitelistApplicationService = reviewerWhitelistApplicationService;
     }
 
     public List<MyTaskView> list(CurrentUser currentUser) {
@@ -69,8 +69,9 @@ public class MyTaskApplicationService {
     }
 
     private MyTaskView toView(ReviewTaskRecord task, EnumSet<MyTaskAction> actions) {
-        return MyTaskView.from(task, userProfileClient.getByEmployeeNo(task.getDesignerEmployeeNo()).displayName(),
-                userProfileClient.getByEmployeeNo(task.getExpertLeaderEmployeeNo()).displayName(), actions);
+        return MyTaskView.from(task,
+                reviewerWhitelistApplicationService.findDisplayNameOrDefault(task.getDesignerEmployeeNo(), task.getDesignerName()),
+                reviewerWhitelistApplicationService.findDisplayNameOrDefault(task.getExpertLeaderEmployeeNo(), task.getExpertLeaderName()), actions);
     }
 
     private void addManagementAction(ReviewTaskRecord task, CurrentUser currentUser, EnumSet<MyTaskAction> actions) {

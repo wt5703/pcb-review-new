@@ -11,9 +11,14 @@ import java.util.Set;
  */
 
 
-public record CurrentUser(String employeeNo, String displayName, Set<Role> roles) {
+public record CurrentUser(String employeeNo, String displayName, String email, String mobile,
+                          String departmentName, Set<Role> roles) {
+    public CurrentUser(String employeeNo, String displayName, Set<Role> roles) {
+        this(employeeNo, displayName, null, null, null, roles);
+    }
+
     public CurrentUser(String employeeNo, Set<Role> roles) {
-        this(employeeNo, employeeNo, roles);
+        this(employeeNo, employeeNo, null, null, null, roles);
     }
 
     public String resolvedDisplayName() {

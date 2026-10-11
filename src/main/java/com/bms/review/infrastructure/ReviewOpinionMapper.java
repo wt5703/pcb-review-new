@@ -3,6 +3,7 @@ package com.bms.review.infrastructure;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 import com.bms.review.domain.OpinionSourceType;
@@ -36,6 +37,54 @@ public interface ReviewOpinionMapper {
     @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, is_no_opinion AS noOpinion, comment, rich_text_content AS richText, raised_by_employee_no AS raisedByEmployeeNo, raised_by_name AS raisedByName, "
             + "status, created_at AS createdAt FROM review_opinion WHERE task_id=#{taskId} ORDER BY id")
     List<ReviewOpinionRecord> findByTaskId(long taskId);
+
+    /**
+     * 意见列表的过滤、计数和分页均在数据库执行；无意见审计记录不进入问题列表。
+     * sourceTypes 非空时优先于兼容参数 sourceType，raisedByEmployeeNo 非空时仅查询当前评审人工作台数据。
+     */
+    @Select("<script>"
+            + "SELECT COUNT(*) FROM review_opinion "
+            + "<where>"
+            + "task_id=#{taskId} AND is_no_opinion=FALSE "
+            + "<if test='severity != null'>AND severity=#{severity} </if>"
+            + "<if test='status != null and status != \"\"'>AND status=#{status} </if>"
+            + "<choose>"
+            + "<when test='sourceTypes != null and sourceTypes.size() > 0'>"
+            + "AND source_type IN <foreach collection='sourceTypes' item='sourceType' open='(' separator=',' close=')'>#{sourceType}</foreach> "
+            + "</when>"
+            + "<when test='sourceType != null'>AND source_type=#{sourceType} </when>"
+            + "</choose>"
+            + "<if test='raisedByEmployeeNo != null and raisedByEmployeeNo != \"\"'>AND raised_by_employee_no=#{raisedByEmployeeNo} </if>"
+            + "</where>"
+            + "</script>")
+    long countPage(@Param("taskId") long taskId, @Param("severity") com.bms.review.domain.OpinionSeverity severity,
+                   @Param("status") String status, @Param("sourceType") OpinionSourceType sourceType,
+                   @Param("sourceTypes") List<OpinionSourceType> sourceTypes,
+                   @Param("raisedByEmployeeNo") String raisedByEmployeeNo);
+
+    @Select("<script>"
+            + "SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, is_no_opinion AS noOpinion, comment, rich_text_content AS richText, raised_by_employee_no AS raisedByEmployeeNo, raised_by_name AS raisedByName, "
+            + "status, created_at AS createdAt FROM review_opinion "
+            + "<where>"
+            + "task_id=#{taskId} AND is_no_opinion=FALSE "
+            + "<if test='severity != null'>AND severity=#{severity} </if>"
+            + "<if test='status != null and status != \"\"'>AND status=#{status} </if>"
+            + "<choose>"
+            + "<when test='sourceTypes != null and sourceTypes.size() > 0'>"
+            + "AND source_type IN <foreach collection='sourceTypes' item='sourceType' open='(' separator=',' close=')'>#{sourceType}</foreach> "
+            + "</when>"
+            + "<when test='sourceType != null'>AND source_type=#{sourceType} </when>"
+            + "</choose>"
+            + "<if test='raisedByEmployeeNo != null and raisedByEmployeeNo != \"\"'>AND raised_by_employee_no=#{raisedByEmployeeNo} </if>"
+            + "</where>"
+            + "ORDER BY created_at DESC, id DESC LIMIT #{limit} OFFSET #{offset}"
+            + "</script>")
+    List<ReviewOpinionRecord> findPage(@Param("taskId") long taskId,
+                                       @Param("severity") com.bms.review.domain.OpinionSeverity severity,
+                                       @Param("status") String status, @Param("sourceType") OpinionSourceType sourceType,
+                                       @Param("sourceTypes") List<OpinionSourceType> sourceTypes,
+                                       @Param("raisedByEmployeeNo") String raisedByEmployeeNo,
+                                       @Param("offset") long offset, @Param("limit") int limit);
 
     @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, is_no_opinion AS noOpinion, comment, rich_text_content AS richText, raised_by_employee_no AS raisedByEmployeeNo, raised_by_name AS raisedByName, " +
             "status, created_at AS createdAt FROM review_opinion " +

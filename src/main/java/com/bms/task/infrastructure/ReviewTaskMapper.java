@@ -2,6 +2,7 @@ package com.bms.task.infrastructure;
 
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
@@ -34,6 +35,58 @@ public interface ReviewTaskMapper {
             "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, review_description AS reviewDescription, " +
             "status, initial_file_ids AS initialFileIds, version FROM review_task ORDER BY id")
     List<ReviewTaskRecord> findAll();
+
+    /**
+     * 任务列表筛选和数据范围均在数据库执行，避免分页前把全部任务加载到应用内存。
+     * 非“查看全部”用户仅能读取自己设计、担任组长或当前流程已分配给自己的任务。
+     */
+    @Select("<script>"
+            + "SELECT COUNT(*) FROM review_task "
+            + "<where>"
+            + "<if test='keyword != null and keyword != \"\"'>"
+            + "AND (task_name LIKE CONCAT('%', #{keyword}, '%') OR project_name LIKE CONCAT('%', #{keyword}, '%') OR designer_name LIKE CONCAT('%', #{keyword}, '%')) "
+            + "</if>"
+            + "<if test='reviewType != null and reviewType != \"\"'>AND review_type=#{reviewType} </if>"
+            + "<if test='statuses != null and statuses.size() > 0'>"
+            + "AND status IN <foreach collection='statuses' item='status' open='(' separator=',' close=')'>#{status}</foreach> "
+            + "</if>"
+            + "<if test='taskId != null'>AND id=#{taskId} </if>"
+            + "<if test='!canViewAll'>"
+            + "AND (designer_employee_no=#{employeeNo} OR expert_leader_employee_no=#{employeeNo} "
+            + "OR CONCAT(',', COALESCE(assigned_reviewer_employee_nos, ''), ',') LIKE CONCAT('%,', #{employeeNo}, ',%')) "
+            + "</if>"
+            + "</where>"
+            + "</script>")
+    long countPage(@Param("keyword") String keyword, @Param("reviewType") String reviewType,
+                   @Param("statuses") List<String> statuses, @Param("taskId") Long taskId,
+                   @Param("employeeNo") String employeeNo, @Param("canViewAll") boolean canViewAll);
+
+    @Select("<script>"
+            + "SELECT id, review_type AS reviewType, task_name AS taskName, project_name AS projectName, designer_employee_no AS designerEmployeeNo, "
+            + "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, "
+            + "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, "
+            + "assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, review_description AS reviewDescription, status, initial_file_ids AS initialFileIds, version "
+            + "FROM review_task "
+            + "<where>"
+            + "<if test='keyword != null and keyword != \"\"'>"
+            + "AND (task_name LIKE CONCAT('%', #{keyword}, '%') OR project_name LIKE CONCAT('%', #{keyword}, '%') OR designer_name LIKE CONCAT('%', #{keyword}, '%')) "
+            + "</if>"
+            + "<if test='reviewType != null and reviewType != \"\"'>AND review_type=#{reviewType} </if>"
+            + "<if test='statuses != null and statuses.size() > 0'>"
+            + "AND status IN <foreach collection='statuses' item='status' open='(' separator=',' close=')'>#{status}</foreach> "
+            + "</if>"
+            + "<if test='taskId != null'>AND id=#{taskId} </if>"
+            + "<if test='!canViewAll'>"
+            + "AND (designer_employee_no=#{employeeNo} OR expert_leader_employee_no=#{employeeNo} "
+            + "OR CONCAT(',', COALESCE(assigned_reviewer_employee_nos, ''), ',') LIKE CONCAT('%,', #{employeeNo}, ',%')) "
+            + "</if>"
+            + "</where>"
+            + "ORDER BY id LIMIT #{limit} OFFSET #{offset}"
+            + "</script>")
+    List<ReviewTaskRecord> findPage(@Param("keyword") String keyword, @Param("reviewType") String reviewType,
+                                    @Param("statuses") List<String> statuses, @Param("taskId") Long taskId,
+                                    @Param("employeeNo") String employeeNo, @Param("canViewAll") boolean canViewAll,
+                                    @Param("offset") long offset, @Param("limit") int limit);
 
     /** 我的待办只需要处理中任务，避免将已结束任务加载到应用层再过滤。 */
     @Select("SELECT id, review_type AS reviewType, task_name AS taskName, project_name AS projectName, designer_employee_no AS designerEmployeeNo, "

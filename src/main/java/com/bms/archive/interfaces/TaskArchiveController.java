@@ -41,14 +41,14 @@ public class TaskArchiveController {
     @GetMapping
     @Operation(summary = "查询任务归档记录", description = "仅可读取已结束任务的归档快照；返回流程节点时间/节点名称/操作人姓名/流转意见、阶段文件及邮件投递记录")
     ApiResponse<TaskArchiveApplicationService.ArchiveView> get(@PathVariable long taskId, HttpServletRequest servletRequest) {
-        taskApplicationService.get(taskId, CurrentUserHolder.require());
+        taskApplicationService.getTaskDetail(taskId, CurrentUserHolder.require());
         return ApiResponse.ok(taskArchiveApplicationService.get(taskId), traceId(servletRequest));
     }
 
     @GetMapping("/export")
-    @Operation(summary = "导出归档评审意见 Excel", description = "仅支持已结束且已归档任务。按评审角色拆分工作表；一条意见存在多轮设计者答复时，每轮答复导出一行。仅导出专家、工艺和结构评审意见，不包含互检单意见。")
+    @Operation(summary = "导出归档评审意见 Excel", description = "仅支持已结束且已归档任务。PCB 按评审角色拆分工作表；原理图使用“评审问题记录”单工作表模板。一条意见存在多轮设计者答复时，每轮答复导出一行；不包含互检单意见。")
     ResponseEntity<byte[]> exportOpinions(@PathVariable long taskId) {
-        taskApplicationService.get(taskId, CurrentUserHolder.require());
+        taskApplicationService.getTaskDetail(taskId, CurrentUserHolder.require());
         taskArchiveApplicationService.get(taskId);
         TaskArchiveOpinionExportApplicationService.ExportedExcel excel = taskArchiveOpinionExportApplicationService.export(taskId);
         return ResponseEntity.ok()

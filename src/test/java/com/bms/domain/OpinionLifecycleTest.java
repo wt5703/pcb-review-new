@@ -1,5 +1,6 @@
 package com.bms.domain;
 
+import com.bms.review.domain.OpinionSourceType;
 import com.bms.review.domain.OpinionStatus;
 import com.bms.review.domain.ReviewOpinion;
 import com.bms.review.domain.ReplyType;
@@ -19,7 +20,7 @@ class OpinionLifecycleTest {
 
     @Test
     void opinionShouldFollowReplyConfirmAndRetryLifecycle() {
-        ReviewOpinion opinion = ReviewOpinion.raise(1L, "PCB_EXPERT", "严重问题", "BMS010");
+        ReviewOpinion opinion = ReviewOpinion.raise(1L, OpinionSourceType.PCB_REVIEW, "严重问题", "BMS010");
 
         opinion.reply("BMS020", ReplyType.ACCEPT, null);
         assertThat(opinion.status()).isEqualTo(OpinionStatus.PENDING_CONFIRMATION);
@@ -34,7 +35,7 @@ class OpinionLifecycleTest {
 
     @Test
     void onlyRaiserMayConfirmOpinion() {
-        ReviewOpinion opinion = ReviewOpinion.raise(1L, "PCB_EXPERT", "问题", "BMS010");
+        ReviewOpinion opinion = ReviewOpinion.raise(1L, OpinionSourceType.PCB_REVIEW, "问题", "BMS010");
         opinion.reply("BMS020", ReplyType.ACCEPT, null);
 
         assertThatThrownBy(() -> opinion.confirm("BMS011", true, ""))

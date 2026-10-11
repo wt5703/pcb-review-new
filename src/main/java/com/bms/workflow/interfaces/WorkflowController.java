@@ -19,16 +19,16 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.http.MediaType;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -38,7 +38,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping
-@Tag(name = "任务流程", description = "推进 PCB 或原理图评审任务的当前流程节点；已结束任务绝不允许重新打开。")
+@Tag(name = "任务流程", description = "推进 PCB 或原理图评审任务的当前流程节点")
 public class WorkflowController {
     private final WorkflowApplicationService workflowApplicationService;
     private final ReviewerWhitelistApplicationService whitelistApplicationService;
@@ -49,46 +49,31 @@ public class WorkflowController {
         this.whitelistApplicationService = whitelistApplicationService;
     }
 
-    @PostMapping(value = "/tasks/{taskId}/workflow/transitions", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(value = "/tasks/{taskId}/workflow/transitions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "按业务动作推进任务流程", description = """
             <b>传参说明</b><br/>
-            CREATE 不调用本接口，创建任务请调用任务提交接口。<br/>
-            需要分配人员时，传 reviewerEmployeeNos；<br/><br/>
+            所有流程推进均使用 multipart/form-data。CREATE 不调用本接口，创建任务请调用任务提交接口。<br/>
+            需要分配人员时，传 reviewerEmployeeNos；不上传文件时无需传 files。<br/>
+            流程文件必须按对象传递：files[0].fileCategory + files[0].file，二者表示同一个文件，不能使用分离的文件类型数组。<br/><br/>
             1. 开启工艺/结构评审：可单独传 START_PCB_STRUCTURE_REVIEW 或 START_PCB_PROCESS_REVIEW，也可同时传二者。<br/>
             2. 开启互检单分配：传 START_PCB_MATUAL_ASSIGNMENT。<br/>
             3. 分配互检人员并开启互检：传 START_PCB_MATUAL_REVIEW + reviewerEmployeeNos。<br/>
             4. 分配互检人员并开启互检：传 START_SCHEMATIC_MATUAL_REVIEW + reviewerEmployeeNos。<br/>
             5. 设计者在互检意见闭环后开启原理图评审：传 START_SCHEMATIC_EXPERT_REVIEW；评审人员取创建任务时的角色分配。<br/>
             6. 设计者准备结束：传 PREPARE_FINISH；组长结束任务：传 FINISH。
+            
+            关于文件：只有pcb评审开启工艺评审或者结构评审的时候需要上传文件
             """)
     ApiResponse<WorkflowApplicationService.WorkflowView> transition(@PathVariable long taskId,
-                                                                      @Valid @RequestBody TransitionRequest request,
+                                                                      @Valid @ModelAttribute TransitionRequest request,
                                                                       HttpServletRequest servletRequest) {
         CurrentUser currentUser = CurrentUserHolder.require();
-        return ApiResponse.ok(workflowApplicationService.transition(taskId, request.command(whitelistApplicationService), currentUser), traceId(servletRequest));
-    }
-
-    @PostMapping(value = "/tasks/{taskId}/workflow/transitions", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "上传工艺/结构文件并开启评审", description = "仅用于 PCB 工艺或结构评审。command 为与 JSON 流转相同的请求对象；files 与 fileCategories 按下标一一对应，文件类型必须和 START_PCB_PROCESS_REVIEW、START_PCB_STRUCTURE_REVIEW 动作完全匹配。")
-    ApiResponse<WorkflowApplicationService.WorkflowView> transitionWithFiles(
-            @PathVariable long taskId,
-            @Valid @RequestPart("command") TransitionRequest request,
-            @RequestPart("files") List<MultipartFile> files,
-            @RequestParam("fileCategories") List<FileCategory> fileCategories,
-            HttpServletRequest servletRequest) {
-        if (files == null || fileCategories == null || files.size() != fileCategories.size()) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "files 与 fileCategories 必须一一对应");
-        }
-        List<WorkflowApplicationService.TransitionFileCommand> transitionFiles = java.util.stream.IntStream.range(0, files.size())
-                .mapToObj(index -> new WorkflowApplicationService.TransitionFileCommand(fileCategories.get(index), files.get(index)))
-                .toList();
-        CurrentUser currentUser = CurrentUserHolder.require();
         return ApiResponse.ok(workflowApplicationService.transition(taskId,
-                request.command(whitelistApplicationService), transitionFiles, currentUser), traceId(servletRequest));
+                request.command(whitelistApplicationService), request.fileCommands(), currentUser), traceId(servletRequest));
     }
 
     @GetMapping("/workflow/assignable-reviewers")
-    @Operation(summary = "按评审类型查询可选专家", description = "仅传 reviewType：PCB 返回 EMC、PCB 评审白名单；原理图返回硬件评审白名单。人员资料从白名单表读取，包含姓名、邮箱、手机号、部门、白名单角色与创建时间。")
+    @Operation(summary = "按评审类型查询可选专家", description = "PCB任务返回 EMC、PCB 评审白名单；原理图任务返回硬件评审白名单")
     ApiResponse<List<ReviewerWhitelistApplicationService.AssignableReviewerView>> listAssignableReviewers(
             @RequestParam @Schema(description = "PCB 或 SCHEMATIC", requiredMode = Schema.RequiredMode.REQUIRED) ReviewType reviewType,
             HttpServletRequest servletRequest) {
@@ -96,7 +81,7 @@ public class WorkflowController {
     }
 
     @GetMapping("/workflow/mutual-check-reviewers")
-    @Operation(summary = "查询互检单可分配人员", description = "仅传 reviewType。PCB 返回 PCB 互检单角色，原理图返回原理图互检单角色；该接口仅用于互检人员分配。")
+    @Operation(summary = "查询互检单可分配人员", description = "PCB任务返回 PCB 互检单角色，原理图任务返回原理图互检单角色")
     ApiResponse<List<ReviewerWhitelistApplicationService.AssignableReviewerView>> listMutualCheckReviewers(
             @RequestParam @Schema(description = "PCB 或 SCHEMATIC", requiredMode = Schema.RequiredMode.REQUIRED) ReviewType reviewType,
             HttpServletRequest servletRequest) {
@@ -108,10 +93,28 @@ public class WorkflowController {
         return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString();
     }
 
-    @Schema(description = "任务流程推进请求")
-    record TransitionRequest(@Schema(description = "流程动作数组；默认只传一个动作，PCB 工艺和结构评审可同时传两个动作", requiredMode = Schema.RequiredMode.REQUIRED) @NotEmpty List<WorkflowAction> actions,
-                             @Schema(description = "流转意见或说明") String comment,
-                             @Schema(description = "随本次动作分配的评审人员企业工号；需要分配人员的动作至少传一名，支持多人。") List<String> reviewerEmployeeNos) {
+    @Schema(description = "任务流程推进 multipart/form-data 请求")
+    public static class TransitionRequest {
+        @Schema(description = "流程动作数组；使用多个 actions 表单字段传递。默认只传一个动作，PCB 工艺和结构评审可同时传两个动作", requiredMode = Schema.RequiredMode.REQUIRED)
+        @NotEmpty
+        private List<WorkflowAction> actions = new ArrayList<>();
+        @Schema(description = "流转意见或说明")
+        private String comment;
+        @Schema(description = "随本次动作分配的评审人员企业工号；使用多个 reviewerEmployeeNos 表单字段传递。需要分配人员的动作至少传一名，支持多人。")
+        private List<String> reviewerEmployeeNos = new ArrayList<>();
+        @Schema(description = "本次流程上传文件；每项必须同时传 files[i].fileCategory 和 files[i].file。普通流程不传。")
+        @Valid
+        private List<TransitionFileRequest> files = new ArrayList<>();
+
+        public List<WorkflowAction> getActions() { return actions; }
+        public void setActions(List<WorkflowAction> actions) { this.actions = actions == null ? new ArrayList<>() : actions; }
+        public String getComment() { return comment; }
+        public void setComment(String comment) { this.comment = comment; }
+        public List<String> getReviewerEmployeeNos() { return reviewerEmployeeNos; }
+        public void setReviewerEmployeeNos(List<String> reviewerEmployeeNos) { this.reviewerEmployeeNos = reviewerEmployeeNos == null ? new ArrayList<>() : reviewerEmployeeNos; }
+        public List<TransitionFileRequest> getFiles() { return files; }
+        public void setFiles(List<TransitionFileRequest> files) { this.files = files == null ? new ArrayList<>() : files; }
+
         WorkflowApplicationService.TransitionBatchCommand command(ReviewerWhitelistApplicationService whitelistApplicationService) {
             ReviewerWhitelistRole whitelistRole = whitelistRoleForAssignment();
             if (whitelistRole == null) {
@@ -125,6 +128,11 @@ public class WorkflowController {
             return new WorkflowApplicationService.TransitionBatchCommand(actions, comment, resolvedEmployeeNos);
         }
 
+        List<WorkflowApplicationService.TransitionFileCommand> fileCommands() {
+            return files.stream().map(file -> new WorkflowApplicationService.TransitionFileCommand(
+                    file.getFileCategory(), file.getFile())).toList();
+        }
+
         private ReviewerWhitelistRole whitelistRoleForAssignment() {
             if (actions == null || actions.size() != 1) {
                 return null;
@@ -135,5 +143,20 @@ public class WorkflowController {
                 default -> null;
             };
         }
+    }
+
+    @Schema(description = "单个流程文件；文件类型与文件本身必须在同一个 files[i] 对象中传递")
+    public static class TransitionFileRequest {
+        @Schema(description = "文件类型。工艺文件传 PCB_PROCESS_REVIEW，结构文件传 PCB_STRUCTURE_REVIEW", requiredMode = Schema.RequiredMode.REQUIRED)
+        @jakarta.validation.constraints.NotNull
+        private FileCategory fileCategory;
+        @Schema(description = "对应文件", requiredMode = Schema.RequiredMode.REQUIRED)
+        @jakarta.validation.constraints.NotNull
+        private MultipartFile file;
+
+        public FileCategory getFileCategory() { return fileCategory; }
+        public void setFileCategory(FileCategory fileCategory) { this.fileCategory = fileCategory; }
+        public MultipartFile getFile() { return file; }
+        public void setFile(MultipartFile file) { this.file = file; }
     }
 }

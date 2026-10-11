@@ -87,15 +87,15 @@ export const reviewApi = {
   uploadTaskFile: (taskId: number, fileCategory: string, file: File) => uploadResource(file, fileCategory, taskId),
   latestFiles: (taskId: number, fileCategory: string) => request<TaskFile[]>(`/files/latest${queryString({ taskId, fileCategory })}`),
   downloadContent: (fileId: number) => requestBinary(`/files/download${queryString({ fileId })}`, { method: 'POST' }),
-  transition: (taskId: number, body: { actions: string[]; comment?: string; reviewerEmployeeNos?: string[] }) =>
-    request<{ taskId: number; fromStatus: string; toStatus: string; assignedReviewerEmployeeNos: string[] }>(`/tasks/${taskId}/workflow/transitions`, { method: 'POST', body: JSON.stringify(body) }),
-  transitionWithFiles: (taskId: number, body: { actions: string[]; comment?: string; reviewerEmployeeNos?: string[] },
-                        files: Array<{ fileCategory: 'PCB_PROCESS_REVIEW' | 'PCB_STRUCTURE_REVIEW'; file: File }>) => {
+  transition: (taskId: number, body: { actions: string[]; comment?: string; reviewerEmployeeNos?: string[] },
+               files: Array<{ fileCategory: 'PCB_PROCESS_REVIEW' | 'PCB_STRUCTURE_REVIEW'; file: File }> = []) => {
     const form = new FormData()
-    form.set('command', new Blob([JSON.stringify(body)], { type: 'application/json' }))
-    files.forEach(({ fileCategory, file }) => {
-      form.append('files', file, file.name)
-      form.append('fileCategories', fileCategory)
+    body.actions.forEach((action) => form.append('actions', action))
+    if (body.comment) form.set('comment', body.comment)
+    body.reviewerEmployeeNos?.forEach((employeeNo) => form.append('reviewerEmployeeNos', employeeNo))
+    files.forEach(({ fileCategory, file }, index) => {
+      form.set(`files[${index}].fileCategory`, fileCategory)
+      form.set(`files[${index}].file`, file, file.name)
     })
     return request<{ taskId: number; fromStatus: string; toStatus: string; assignedReviewerEmployeeNos: string[] }>(
       `/tasks/${taskId}/workflow/transitions`, { method: 'POST', body: form })

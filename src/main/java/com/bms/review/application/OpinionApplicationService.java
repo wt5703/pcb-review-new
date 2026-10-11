@@ -276,10 +276,21 @@ public class OpinionApplicationService {
         if (normalizedPageNo < 1 || normalizedPageSize < 1 || normalizedPageSize > 100) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "意见分页参数不合法");
         }
-        List<OpinionView> all = list(taskId, severity, status, sourceType, sourceTypes, scene, currentUser);
-        int fromIndex = (int) Math.min((long) (normalizedPageNo - 1) * normalizedPageSize, all.size());
-        int toIndex = Math.min(fromIndex + normalizedPageSize, all.size());
-        return new OpinionPage(all.size(), normalizedPageNo, normalizedPageSize, all.subList(fromIndex, toIndex));
+        requireOpenOrFinishedTaskVisible(taskId, currentUser);
+        List<OpinionSourceType> normalizedSourceTypes = sourceTypes == null ? List.of() : sourceTypes.stream().distinct().toList();
+        String raisedByEmployeeNo = "REVIEW_WORKSPACE".equalsIgnoreCase(scene) ? currentUser.employeeNo() : null;
+        String statusName = status == null ? null : status.name();
+        long total = opinionMapper.countPage(taskId, severity, statusName, sourceType, normalizedSourceTypes, raisedByEmployeeNo);
+        long offset = (long) (normalizedPageNo - 1) * normalizedPageSize;
+        List<ReviewOpinionRecord> records = total == 0 ? List.of()
+                : opinionMapper.findPage(taskId, severity, statusName, sourceType, normalizedSourceTypes,
+                raisedByEmployeeNo, offset, normalizedPageSize);
+        Map<String, UserCenterUserProfileClient.UserProfile> profiles = userProfileClient.getByEmployeeNos(
+                records.stream().map(ReviewOpinionRecord::getRaisedByEmployeeNo).toList());
+        List<OpinionView> items = records.stream()
+                .map(record -> toView(record, profileName(record.getRaisedByEmployeeNo(), profiles)))
+                .toList();
+        return new OpinionPage(total, normalizedPageNo, normalizedPageSize, items);
     }
 
     public List<OpinionView> list(long taskId, CurrentUser currentUser) { return list(taskId, null, null, null, "DESIGNER_REPLY", currentUser); }

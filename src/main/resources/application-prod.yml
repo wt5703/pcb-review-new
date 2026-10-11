@@ -7,6 +7,7 @@ resource-service:
   dir-path: ${RESOURCE_SERVICE_DIR_PATH:/user/bms_platform/pcb_review/pro}
   mock-enabled: ${RESOURCE_SERVICE_MOCK_ENABLED:false}
 user-center:
-  # 生产环境可通过环境变量覆盖，路径模板中的 {employeeNo} 由客户端安全替换。
+  # 当前用户地址不带员工工号，用户中心通过转发的 Authorization 登录态识别当前人员。
+  current-user-url: ${USER_CENTER_CURRENT_USER_URL:http://10.195.135.149:30167/leapenergy/portal}
+  # 白名单等指定人员查询才使用员工工号路径模板。
   user-profile-url-template: ${USER_CENTER_USER_PROFILE_URL_TEMPLATE:http://10.195.135.149:30167/leapenergy/portal/user/{employeeNo}}
-  current-user-profile-url-template: ${USER_CENTER_CURRENT_USER_PROFILE_URL_TEMPLATE:http://10.195.135.149:30167/leapenergy/portal/{employeeNo}}

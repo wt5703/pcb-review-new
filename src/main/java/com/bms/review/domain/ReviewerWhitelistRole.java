@@ -5,7 +5,7 @@ import java.util.Arrays;
 /**
  * @author 王涛
  * @date 2026-09-29
- * @description 白名单可配置的人员类别。业务评审角色与互检单人员共用白名单，但两者不应混入 {@link ReviewRole}。
+ * @description 白名单可配置的人员类别
  */
 public enum ReviewerWhitelistRole {
     HARDWARE_EXPERT("硬件评审", ReviewRole.HARDWARE_EXPERT),

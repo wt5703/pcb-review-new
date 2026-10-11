@@ -136,15 +136,12 @@ public class ReviewerWhitelistApplicationService {
         String keyword = validQuery.keyword() == null ? "" : validQuery.keyword().trim();
         int pageNo = normalizePageNo(validQuery.pageNo());
         int pageSize = normalizePageSize(validQuery.pageSize());
-        List<ReviewerWhitelistRecord> records = whitelistMapper.findAll();
-        List<ReviewerWhitelistView> matched = records.stream()
+        long total = whitelistMapper.countByKeyword(keyword);
+        long offset = (long) (pageNo - 1) * pageSize;
+        List<ReviewerWhitelistView> items = total == 0 ? List.of()
+                : whitelistMapper.findPageByKeyword(keyword, offset, pageSize).stream()
                 .map(this::toView)
-                .filter(view -> matchesKeyword(view, keyword))
                 .toList();
-        long total = matched.size();
-        int fromIndex = (int) Math.min((long) (pageNo - 1) * pageSize, matched.size());
-        int toIndex = Math.min(fromIndex + pageSize, matched.size());
-        List<ReviewerWhitelistView> items = matched.subList(fromIndex, toIndex);
         return new ReviewerWhitelistPage(total, pageNo, pageSize, items);
     }
 
@@ -169,6 +166,21 @@ public class ReviewerWhitelistApplicationService {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "未找到白名单人员工号：" + employeeNo);
         }
         return WhitelistPersonView.from(record);
+    }
+
+    /**
+     * 任务展示只读取本地白名单中已固化的人员资料，不访问用户中心。
+     * 设计者等非白名单人员没有本地资料时保留任务中已有姓名，最终才回退显示员工工号。
+     */
+    public String findDisplayNameOrDefault(String employeeNo, String defaultName) {
+        if (employeeNo == null || employeeNo.isBlank()) {
+            return defaultName;
+        }
+        ReviewerWhitelistRecord record = whitelistMapper.findActiveByEmployeeNo(employeeNo);
+        if (record != null && record.getDisplayName() != null && !record.getDisplayName().isBlank()) {
+            return record.getDisplayName();
+        }
+        return defaultName == null || defaultName.isBlank() ? employeeNo : defaultName;
     }
 
     public List<WhitelistPersonView> findByEmployeeNos(List<String> employeeNos) {
@@ -217,11 +229,6 @@ public class ReviewerWhitelistApplicationService {
     private ReviewerWhitelistView toView(ReviewerWhitelistRecord record) {
         return new ReviewerWhitelistView(record.getId(), ReviewerWhitelistRole.valueOf(record.getReviewRole()), record.getEmployeeNo(),
                 record.getDisplayName(), record.getEmail(), record.getMobile(), record.getDepartmentName(), record.getCreatedAt());
-    }
-
-    private boolean matchesKeyword(ReviewerWhitelistView view, String keyword) {
-        return keyword.isBlank() || view.employeeNo().contains(keyword)
-                || (view.displayName() != null && view.displayName().contains(keyword));
     }
 
     private void requireManagePermission(CurrentUser currentUser) {

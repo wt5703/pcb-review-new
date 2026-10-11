@@ -56,22 +56,22 @@ public class TaskController {
 
     @PostMapping("/save")
     @Operation(summary = "保存评审任务", description = "新建草稿不传 taskId，编辑已有草稿时通过 taskId 查询参数传入")
-    ApiResponse<TaskApplicationService.TaskView> save(@RequestParam(required = false) @Parameter(description = "编辑已有草稿时传任务 ID；新建草稿不传") Long taskId,
-                                                       @Valid @RequestBody CreateTaskRequest request,
-                                                       HttpServletRequest servletRequest) {
-        return ApiResponse.ok(saveOrSubmit(taskId, request, false), traceId(servletRequest));
+    ApiResponse<TaskApplicationService.TaskView> saveTaskDraft(@RequestParam(required = false) @Parameter(description = "编辑已有草稿时传任务 ID；新建草稿不传") Long taskId,
+                                                                @Valid @RequestBody CreateTaskRequest request,
+                                                                HttpServletRequest servletRequest) {
+        return ApiResponse.ok(saveTaskForm(taskId, request, false), getTraceId(servletRequest));
     }
 
     @PostMapping("/submit")
     @Operation(summary = "提交评审任务", description = "提交任务，任务会进入流程的下一个节点")
-    ApiResponse<TaskApplicationService.TaskView> submit(@RequestParam(required = false) @Parameter(description = "提交已有草稿时传任务 ID；直接新建提交不传") Long taskId,
-                                                         @Valid @RequestBody CreateTaskRequest request,
-                                                         HttpServletRequest servletRequest) {
-        return ApiResponse.ok(saveOrSubmit(taskId, request, true), traceId(servletRequest));
+    ApiResponse<TaskApplicationService.TaskView> submitTask(@RequestParam(required = false) @Parameter(description = "提交已有草稿时传任务 ID；直接新建提交不传") Long taskId,
+                                                             @Valid @RequestBody CreateTaskRequest request,
+                                                             HttpServletRequest servletRequest) {
+        return ApiResponse.ok(saveTaskForm(taskId, request, true), getTraceId(servletRequest));
     }
 
     @GetMapping
-    @Operation(summary = "分页查询评审任务", description = "使用 URL 查询参数筛选当前用户有权限查看的任务。keyword 同时匹配项目名称、任务名称和设计者名称；任务状态可多选。每个列表项均返回 reviewerAssignments（评审角色及实际分配的人员工号），与任务详情字段保持一致。")
+    @Operation(summary = "分页查询评审任务", description = "使用 URL 查询参数筛选当前用户有权限查看的任务。keyword 同时匹配项目名称、任务名称和设计者名称；任务状态可多选")
     ApiResponse<TaskApplicationService.TaskPage> list(
             @RequestParam(required = false) @Parameter(description = "关键字，同时模糊匹配项目名称、任务名称和设计者名称") String keyword,
             @RequestParam(required = false) @Parameter(description = "评审类型：PCB 或 SCHEMATIC") ReviewType reviewType,
@@ -79,37 +79,47 @@ public class TaskController {
             @RequestParam(defaultValue = "1") @Parameter(description = "页码，从 1 开始") Integer pageNo,
             @RequestParam(defaultValue = "20") @Parameter(description = "每页条数，最大 100") Integer pageSize,
             HttpServletRequest servletRequest) {
-        return ApiResponse.ok(taskService.list(new TaskApplicationService.TaskQuery(keyword, reviewType, statuses, pageNo, pageSize, null),
-                CurrentUserHolder.require()), traceId(servletRequest));
+        return ApiResponse.ok(taskService.listTasks(new TaskApplicationService.TaskQuery(keyword, reviewType, statuses, pageNo, pageSize, null),
+                CurrentUserHolder.require()), getTraceId(servletRequest));
     }
 
     @GetMapping("/{taskId}")
     @Operation(summary = "查询评审任务详情", description = "按任务 ID 返回当前用户有权查看的一条任务基础信息和流程流转记录；用于任务详情页加载")
     ApiResponse<TaskApplicationService.TaskView> detail(@PathVariable long taskId, HttpServletRequest servletRequest) {
-        return ApiResponse.ok(taskService.get(taskId, CurrentUserHolder.require()), traceId(servletRequest));
+        return ApiResponse.ok(taskService.getTaskDetail(taskId, CurrentUserHolder.require()), getTraceId(servletRequest));
     }
 
     @GetMapping("/my")
     @Operation(summary = "查询我的待办任务", description = "返回当前流程节点需要当前用户评审、答复、确认、分配或结束的任务")
     ApiResponse<List<MyTaskApplicationService.MyTaskView>> myTasks(HttpServletRequest servletRequest) {
-        return ApiResponse.ok(myTaskApplicationService.list(CurrentUserHolder.require()), traceId(servletRequest));
+        return ApiResponse.ok(myTaskApplicationService.list(CurrentUserHolder.require()), getTraceId(servletRequest));
     }
 
-    private String traceId(HttpServletRequest request) { return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString(); }
-    private TaskApplicationService.TaskView saveOrSubmit(Long taskId, CreateTaskRequest request, boolean submit) {
-        List<String> files = taskFileIds(request.files());
-        CurrentUser currentUser = CurrentUserHolder.require();
-        TaskApplicationService.CreateTaskCommand command = toCreateCommand(request, currentUser);
-        if (taskId == null) {
-            return taskService.createWithInitialFiles(command, files, submit, currentUser);
-        }
-        return taskService.updateDraftWithInitialFiles(taskId, command, files, submit, currentUser);
+    private String getTraceId(HttpServletRequest request) {
+        return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString();
     }
-    private List<String> taskFileIds(List<String> files) {
-        if (files == null) { return List.of(); }
+
+    /**
+     * 将页面表单转换为任务命令，并根据入口决定“只保存草稿”还是“保存后立即提交”。
+     */
+    private TaskApplicationService.TaskView saveTaskForm(Long taskId, CreateTaskRequest request, boolean submitAfterSave) {
+        List<String> pendingFileIds = extractPendingFileIds(request.files());
+        CurrentUser currentUser = CurrentUserHolder.require();
+        TaskApplicationService.CreateTaskCommand command = toTaskCommand(request, currentUser);
+        if (taskId == null) {
+            return taskService.saveNewTask(command, pendingFileIds, submitAfterSave, currentUser);
+        }
+        return taskService.saveExistingTask(taskId, command, pendingFileIds, submitAfterSave, currentUser);
+    }
+
+    private List<String> extractPendingFileIds(List<String> files) {
+        if (files == null) {
+            return List.of();
+        }
         return List.copyOf(files);
     }
-    private TaskApplicationService.CreateTaskCommand toCreateCommand(CreateTaskRequest request, CurrentUser currentUser) {
+
+    private TaskApplicationService.CreateTaskCommand toTaskCommand(CreateTaskRequest request, CurrentUser currentUser) {
         if (request.reviewType() == ReviewType.SCHEMATIC
                 && (request.expertLeaderEmployeeNo() == null || request.expertLeaderEmployeeNo().isBlank())) {
             throw new IllegalArgumentException("原理图评审必须选择组长并传入组长工号");

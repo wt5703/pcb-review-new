@@ -598,7 +598,7 @@ async function uploadAndStartOptionalReview(): Promise<void> {
   }
   pcbStageStartMessage.value = '正在上传文件并开启对应评审…'
   try {
-    await reviewApi.transitionWithFiles(taskId.value, {
+    await reviewApi.transition(taskId.value, {
       actions,
       comment: actions.length === 2 ? '上传工艺图、结构图并同时开启评审' : '上传阶段文件并开启对应评审'
     }, files)
