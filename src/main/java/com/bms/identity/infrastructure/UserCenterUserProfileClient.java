@@ -23,7 +23,7 @@ public class UserCenterUserProfileClient {
     private final String profileUrlTemplate;
 
     public UserCenterUserProfileClient(
-            @Value("${user-center.user-profile-url-template:}") String profileUrlTemplate) {
+            @Value("${user-center.user-profile-url-template}") String profileUrlTemplate) {
         this.restClient = RestClient.create();
         this.profileUrlTemplate = profileUrlTemplate;
     }

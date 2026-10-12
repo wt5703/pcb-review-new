@@ -25,17 +25,21 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class ResourceServiceClient {
     private final RestClient restClient = RestClient.create();
-    @Value("${resource-service.api-prefix:http://10.195.135.149:30860/leapmotor/pm/resource}")
+    @Value("${resource-service.api-prefix}")
     private String apiPrefix;
-    @Value("${resource-service.dir-path:/user/bms_platform/pcb_review/test1}")
+    @Value("${resource-service.upload-path}")
+    private String uploadPath;
+    @Value("${resource-service.download-path}")
+    private String downloadPath;
+    @Value("${resource-service.dir-path}")
     private String dirPath;
-    @Value("${resource-service.mock-enabled:false}")
+    @Value("${resource-service.mock-enabled}")
     private boolean mockEnabled;
     private final Map<String, byte[]> mockResources = new ConcurrentHashMap<>();
 
     /** 使用 PCB 生成的 UUID 作为资源目录与文件唯一标识。 */
     public StoredResource upload(MultipartFile file, String fileId) {
-        String root = dirPath == null || dirPath.isBlank() ? "/user/bms_platform/pcb_review/test1" : dirPath.replaceAll("/+$", "");
+        String root = requiredConfig(dirPath, "资源服务目录").replaceAll("/+$", "");
         String targetDirPath = root + "/" + fileId;
         try {
             if (mockEnabled) {
@@ -45,7 +49,7 @@ public class ResourceServiceClient {
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             body.add("file", new NamedByteArrayResource(file.getBytes(), file.getOriginalFilename()));
             ResponseEntity<Map> response = restClient.post()
-                    .uri(resourceServiceBaseUrl() + "/upload?dirPath={dirPath}", targetDirPath)
+                    .uri(resourceServiceUrl(uploadPath, "上传") + "?dirPath={dirPath}", targetDirPath)
                     .contentType(MediaType.MULTIPART_FORM_DATA)
                     .body(body)
                     .retrieve()
@@ -72,7 +76,7 @@ public class ResourceServiceClient {
                     ("Mock 文件内容：" + fileName).getBytes(StandardCharsets.UTF_8));
         }
         try {
-            byte[] content = restClient.post().uri(resourceServiceBaseUrl() + "/download?fileName={fileName}&filePath={filePath}",
+            byte[] content = restClient.post().uri(resourceServiceUrl(downloadPath, "下载") + "?fileName={fileName}&filePath={filePath}",
                     fileName, filePath).retrieve().body(byte[].class);
             if (content == null) {
                 throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_UNAVAILABLE, "资源服务下载成功但未返回文件内容");
@@ -83,11 +87,17 @@ public class ResourceServiceClient {
         }
     }
 
-    private String resourceServiceBaseUrl() {
-        if (apiPrefix == null || apiPrefix.isBlank()) {
-            throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_UNAVAILABLE, "未配置公司资源服务地址");
+    private String resourceServiceUrl(String operationPath, String operationName) {
+        String baseUrl = requiredConfig(apiPrefix, "公司资源服务地址").replaceAll("/+$", "");
+        String path = requiredConfig(operationPath, "资源服务" + operationName + "接口路径").trim();
+        return baseUrl + (path.startsWith("/") ? path : "/" + path);
+    }
+
+    private String requiredConfig(String value, String configName) {
+        if (value == null || value.isBlank()) {
+            throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_UNAVAILABLE, "未配置" + configName);
         }
-        return apiPrefix.replaceAll("/+$", "");
+        return value;
     }
 
     public record StoredResource(String resourceId, String resourcePath) { }

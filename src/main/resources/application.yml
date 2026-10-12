@@ -2,10 +2,11 @@ spring:
   application:
     name: pcb-review
   datasource:
-    url: jdbc:h2:mem:pcb_review;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
-    username: sa
-    password:
-    driver-class-name: org.h2.Driver
+    # 默认沿用原 application-mysql.yml 的 MySQL 配置；部署环境可用环境变量覆盖。
+    url: ${SPRING_DATASOURCE_URL:${PCB_REVIEW_DB_URL:jdbc:mysql://localhost:3306/pcb_review?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}}
+    username: ${SPRING_DATASOURCE_USERNAME:${PCB_REVIEW_DB_USERNAME:root}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${PCB_REVIEW_DB_PASSWORD:Wt260831}}
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:${PCB_REVIEW_DB_DRIVER_CLASS_NAME:com.mysql.cj.jdbc.Driver}}
   flyway:
     enabled: true
   jackson:
@@ -27,10 +28,14 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 resource-service:
+  # 公司资源服务基础地址及上传、下载路径均由环境变量覆盖，业务代码不固化公司接口地址。
   api-prefix: ${RESOURCE_SERVICE_API_PREFIX:http://10.195.135.149:30860/leapmotor/pm/resource}
+  upload-path: ${RESOURCE_SERVICE_UPLOAD_PATH:/upload}
+  download-path: ${RESOURCE_SERVICE_DOWNLOAD_PATH:/download}
   dir-path: ${RESOURCE_SERVICE_DIR_PATH:/user/bms_platform/pcb_review/test1}
   mock-enabled: ${RESOURCE_SERVICE_MOCK_ENABLED:true}
 user-center:
+  # 两个用户中心接口均使用完整 URL 配置，生产环境由部署平台注入。
   # 当前用户接口不带员工工号，由用户中心根据 Authorization 登录态识别人员；开发环境留空时使用王鹏飞全权限 Mock 用户。
   current-user-url: ${USER_CENTER_CURRENT_USER_URL:}
   # 白名单展示资料以员工工号从公司用户中心获取；开发环境默认不访问内网并展示员工工号。

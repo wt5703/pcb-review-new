@@ -29,7 +29,7 @@ public class UserCenterCurrentUserClient {
     private final RestClient restClient;
     private final String currentUserUrl;
 
-    public UserCenterCurrentUserClient(@Value("${user-center.current-user-url:}") String currentUserUrl) {
+    public UserCenterCurrentUserClient(@Value("${user-center.current-user-url}") String currentUserUrl) {
         this.restClient = RestClient.create();
         this.currentUserUrl = currentUserUrl;
     }

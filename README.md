@@ -1,19 +1,23 @@
 # PCB 评审平台
 
-PCB 评审平台包含 Spring Boot 后端与 Vue 3 前端。当前可用本地 H2 Mock 环境完整运行；生产数据库预留 MySQL 8 配置。
+PCB 评审平台包含 Spring Boot 后端与 Vue 3 前端，默认使用 MySQL 8；部署时可通过环境变量覆盖数据源连接信息。
 
 ## 运行要求
 
 - JDK 17
 - Apache Maven 3.9+
-- MySQL 8（仅启用 MySQL Profile 时需要）
+- MySQL 8
 - Node.js 20+ 与 pnpm（运行前端时需要）
 
 ## 本地启动
 
-默认使用内存 H2（MySQL 兼容模式），不需要安装数据库：
+默认使用 `application.yml` 中的 MySQL 配置。若本机连接信息不同，请在启动前通过 `SPRING_DATASOURCE_*` 覆盖：
 
 ```powershell
+$env:SPRING_DATASOURCE_URL = 'jdbc:mysql://localhost:3306/pcb_review?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai'
+$env:SPRING_DATASOURCE_USERNAME = 'root'
+$env:SPRING_DATASOURCE_PASSWORD = '请替换为本机密码'
+$env:SPRING_DATASOURCE_DRIVER_CLASS_NAME = 'com.mysql.cj.jdbc.Driver'
 mvn test
 mvn spring-boot:run
 ```
@@ -52,14 +56,13 @@ pnpm build
 mvn -Dmaven.test.skip=true package
 docker build -f docker/Dockerfile -t pcb-review:1.0-SNAPSHOT .
 docker run --rm -p 8080:8080 `
-  -e SPRING_PROFILES_ACTIVE=prod `
   -e SPRING_DATASOURCE_URL='jdbc:mysql://mysql-host:3306/pcb_review?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai' `
   -e SPRING_DATASOURCE_USERNAME='pcb_review' `
   -e SPRING_DATASOURCE_PASSWORD='请通过部署平台安全注入' `
   pcb-review:1.0-SNAPSHOT
 ```
 
-镜像不固化数据库、资源服务、用户中心、邮件等环境配置。部署平台应通过 `SPRING_DATASOURCE_*`、`RESOURCE_SERVICE_*`、`USER_CENTER_*`、`MAIL_*` 和可选的 `JAVA_OPTS` 环境变量注入对应环境配置；服务默认暴露 `8080` 端口和 `/leapmotor/pcb_review` 上下文路径。
+镜像不固化数据库、资源服务、用户中心、邮件等环境配置。部署平台应通过 `SPRING_DATASOURCE_*`、`RESOURCE_SERVICE_API_PREFIX`、`RESOURCE_SERVICE_UPLOAD_PATH`、`RESOURCE_SERVICE_DOWNLOAD_PATH`、`RESOURCE_SERVICE_DIR_PATH`、`RESOURCE_SERVICE_MOCK_ENABLED`、`USER_CENTER_*`、`MAIL_*` 和可选的 `JAVA_OPTS` 环境变量注入对应环境配置；服务默认暴露 `8080` 端口和 `/leapmotor/pcb_review` 上下文路径。
 
 开发环境未配置 `USER_CENTER_CURRENT_USER_URL` 时，后端使用王鹏飞全权限 Mock 身份，方便本地联调；不再接受前端通过请求头、工号或用户 ID 伪造当前用户。生产环境必须配置当前用户接口地址。该接口不带员工工号，后端仅转发浏览器/网关注入的 `Authorization` 登录态，由用户中心识别当前登录人员。
 
@@ -74,13 +77,14 @@ CREATE DATABASE pcb_review DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai
 在 PowerShell 设置连接信息并启动：
 
 ```powershell
-$env:PCB_REVIEW_DB_URL = 'jdbc:mysql://localhost:3306/pcb_review?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai'
-$env:PCB_REVIEW_DB_USERNAME = 'root'
-$env:PCB_REVIEW_DB_PASSWORD = '请替换为本机密码'
-mvn spring-boot:run "-Dspring-boot.run.profiles=mysql"
+$env:SPRING_DATASOURCE_URL = 'jdbc:mysql://localhost:3306/pcb_review?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai'
+$env:SPRING_DATASOURCE_USERNAME = 'root'
+$env:SPRING_DATASOURCE_PASSWORD = '请替换为本机密码'
+$env:SPRING_DATASOURCE_DRIVER_CLASS_NAME = 'com.mysql.cj.jdbc.Driver'
+mvn spring-boot:run
 ```
 
-Flyway 会自动执行 `src/main/resources/db/migration` 下的版本化建表脚本。切换到真实 MySQL 前应先执行 `mvn test`；本地 H2 数据不会迁移到 MySQL。
+Flyway 会自动执行 `src/main/resources/db/migration` 下的版本化建表脚本。变更 MySQL 连接信息后应先执行 `mvn test`。
 
 MySQL 安装并配置完成后，可显式执行真实数据库迁移冒烟测试：
 
