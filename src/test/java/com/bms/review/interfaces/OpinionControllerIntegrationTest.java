@@ -71,7 +71,9 @@ class OpinionControllerIntegrationTest {
                         .header("X-Mock-Roles", "DESIGNER"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
-                .andExpect(jsonPath("$.data.pageNo").value(1))
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.msg").value("成功"))
+                .andExpect(jsonPath("$.data.pageNum").value(1))
                 .andExpect(jsonPath("$.data.items[0].id").value(opinionId));
 
         mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)
@@ -146,7 +148,7 @@ class OpinionControllerIntegrationTest {
         task.setReviewType(ReviewType.PCB.name());
         task.setTaskName("意见闭环接口测试");
         task.setProjectName("BMS");
-        task.setDesignerId(10L);
+        task.setDesignerEmployeeNo("BMS010");
         task.setDesignName("BMS-P1");
         task.setPcbType("BMU");
         task.setStatus(TaskStatus.MUTUAL_CHECK_REVIEWING.name());

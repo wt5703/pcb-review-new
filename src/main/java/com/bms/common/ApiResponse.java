@@ -7,8 +7,8 @@ package com.bms.common;
  */
 
 
-public record ApiResponse<T>(T data, String traceId) {
+public record ApiResponse<T>(int code, String msg, T data, String traceId) {
     public static <T> ApiResponse<T> ok(T data, String traceId) {
-        return new ApiResponse<>(data, traceId);
+        return new ApiResponse<>(0, "成功", data, traceId);
     }
 }

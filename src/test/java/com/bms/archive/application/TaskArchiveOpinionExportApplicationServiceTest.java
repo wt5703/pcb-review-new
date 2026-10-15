@@ -4,6 +4,9 @@ import com.bms.review.infrastructure.OpinionConfirmationRecord;
 import com.bms.review.infrastructure.OpinionReplyRecord;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.infrastructure.ReviewOpinionRecord;
+import com.bms.identity.infrastructure.UserCenterUserProfileClient;
+import com.bms.review.domain.OpinionSeverity;
+import com.bms.review.domain.OpinionSourceType;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -24,15 +27,16 @@ import static org.mockito.Mockito.when;
 class TaskArchiveOpinionExportApplicationServiceTest {
     private final ReviewTaskMapper taskMapper = mock(ReviewTaskMapper.class);
     private final ReviewOpinionMapper opinionMapper = mock(ReviewOpinionMapper.class);
-    private final TaskArchiveOpinionExportApplicationService service = new TaskArchiveOpinionExportApplicationService(taskMapper, opinionMapper);
+    private final UserCenterUserProfileClient userProfileClient = mock(UserCenterUserProfileClient.class);
+    private final TaskArchiveOpinionExportApplicationService service = new TaskArchiveOpinionExportApplicationService(taskMapper, opinionMapper, userProfileClient);
 
     @Test
     void shouldExportOneSheetPerRoleAndOneRowPerReply() throws Exception {
         ReviewTaskRecord task = new ReviewTaskRecord();
         task.setId(101L); task.setProjectName("BMS"); task.setDesignName("控制板"); task.setStatus("FINISHED");
         task.setReviewerAssignments("EMC_EXPERT:BMS010;STRUCTURE_EXPERT:BMS011");
-        ReviewOpinionRecord emcOpinion = opinion(1L, "PCB_REVIEW", "BMS010", "王工", "SERIOUS", "<p>CANH<br/>CANL</p><img src='data:image/png;base64,a' />", "CAN 总线问题");
-        ReviewOpinionRecord structureOpinion = opinion(2L, "PCB_STRUCTURE_REVIEW", "BMS011", "张工", "GENERAL", "结构位置", "结构问题");
+        ReviewOpinionRecord emcOpinion = opinion(1L, OpinionSourceType.PCB_REVIEW, "BMS010", "王工", OpinionSeverity.SERIOUS, "<p>CANH<br/>CANL</p><img src='data:image/png;base64,a' />", "CAN 总线问题");
+        ReviewOpinionRecord structureOpinion = opinion(2L, OpinionSourceType.PCB_STRUCTURE_REVIEW, "BMS011", "张工", OpinionSeverity.GENERAL, "结构位置", "结构问题");
         OpinionReplyRecord firstReply = reply(21L, "ACCEPT", "已调整"); OpinionReplyRecord secondReply = reply(22L, "REJECT", "保留原设计");
         OpinionConfirmationRecord confirmation = new OpinionConfirmationRecord(); confirmation.setId(31L); confirmation.setReplyId(21L); confirmation.setPassed(true); confirmation.setComment("确认通过");
         when(taskMapper.findById(101L)).thenReturn(task);
@@ -60,7 +64,8 @@ class TaskArchiveOpinionExportApplicationServiceTest {
         }
     }
 
-    private ReviewOpinionRecord opinion(long id, String sourceType, String raisedByEmployeeNo, String raisedByName, String severity, String richText, String comment) {
+    private ReviewOpinionRecord opinion(long id, OpinionSourceType sourceType, String raisedByEmployeeNo, String raisedByName,
+                                        OpinionSeverity severity, String richText, String comment) {
         ReviewOpinionRecord record = new ReviewOpinionRecord();
         record.setId(id); record.setSourceType(sourceType); record.setRaisedByEmployeeNo(raisedByEmployeeNo); record.setRaisedByName(raisedByName); record.setSeverity(severity); record.setRichText(richText); record.setComment(comment);
         return record;

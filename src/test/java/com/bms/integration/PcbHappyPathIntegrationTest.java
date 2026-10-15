@@ -60,7 +60,7 @@ class PcbHappyPathIntegrationTest {
         ReviewFileRecord pending = new ReviewFileRecord();
         pending.setId(reviewFileMapper.nextId()); pending.setFileId(fileId); pending.setTaskId(null); pending.setFileCategory("PCB_REVIEW");
         pending.setFileName("BMS-P1.pcb"); pending.setFileFormat("pcb"); pending.setLatest(true);
-        pending.setFileSize(8L); pending.setMd5("happy-path-md5"); pending.setResourcePath("company-pcb-p1"); pending.setUploadedBy(10L);
+        pending.setFileSize(8L); pending.setMd5("happy-path-md5"); pending.setResourcePath("company-pcb-p1"); pending.setUploadedByEmployeeNo("BMS010");
         reviewFileMapper.insert(pending);
         String taskRequest = """
                 {"reviewType":"PCB","taskName":"PCB 全链路验收","projectName":"BMS","designerId":10,"designName":"BMS-P1","pcbType":"BMU","files":["c778c14e-6f1a-4f4f-9f11-100000000004"]}
@@ -103,7 +103,7 @@ class PcbHappyPathIntegrationTest {
         file.setId(reviewFileMapper.nextId()); file.setTaskId(taskId); file.setFileCategory(fileCategory);
         file.setFileName(fileName); file.setFileFormat(fileName.substring(fileName.lastIndexOf('.') + 1));
         file.setFileSize(12L); file.setMd5("latest-pcb-md5"); file.setFileId(fileId); file.setResourcePath("company-" + fileId);
-        file.setLatest(true); file.setUploadedBy(10L); file.setUploadedStage("PCB_EXPERT_REVIEWING");
+        file.setLatest(true); file.setUploadedByEmployeeNo("BMS010"); file.setUploadedStage("PCB_EXPERT_REVIEWING");
         reviewFileMapper.insert(file);
     }
 }

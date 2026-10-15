@@ -36,7 +36,7 @@ class FileApplicationServiceTest {
     private final ResourceServiceClient resourceServiceClient = mock(ResourceServiceClient.class);
     private final FileApplicationService service = new FileApplicationService(fileMapper, taskMapper, accessMapper,
             resourceServiceClient);
-    private final CurrentUser designer = new CurrentUser(10L, Set.of(Role.DESIGNER));
+    private final CurrentUser designer = new CurrentUser("10", Set.of(Role.DESIGNER));
 
     @Test
     void shouldRegisterEachUploadedFileIndependently() {
@@ -64,10 +64,10 @@ class FileApplicationServiceTest {
         when(resourceServiceClient.download("BMS.pcb", "mock-file-1")).thenReturn(new byte[] { 1 });
 
         FileApplicationService.DownloadContent download = service.downloadFile(101L,
-                new CurrentUser(20L, Set.of(Role.EMC_EXPERT)));
+                new CurrentUser("20", Set.of(Role.EMC_EXPERT)));
 
         assertThat(download.fileName()).isEqualTo("BMS.pcb");
-        assertThatThrownBy(() -> service.downloadFile(101L, new CurrentUser(21L, Set.of(Role.HARDWARE_EXPERT))))
+        assertThatThrownBy(() -> service.downloadFile(101L, new CurrentUser("21", Set.of(Role.HARDWARE_EXPERT))))
                 .isInstanceOf(com.bms.common.BusinessException.class)
                 .hasMessage("无对应文件操作权限");
     }
@@ -88,7 +88,7 @@ class FileApplicationServiceTest {
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
 
         assertThatThrownBy(() -> service.upload(1L, FileCategory.PCB_REVIEW,
-                multipart("BMS.pcb", "content"), new CurrentUser(11L, Set.of(Role.DESIGNER))))
+                multipart("BMS.pcb", "content"), new CurrentUser("11", Set.of(Role.DESIGNER))))
                 .isInstanceOf(com.bms.common.BusinessException.class)
                 .hasMessage("仅任务设计者可以上传该任务的 PCB 或原理图文件");
     }
@@ -98,7 +98,7 @@ class FileApplicationServiceTest {
         String fileId = "b4466fe0-2c68-44b5-92d2-100000000001";
         ReviewFileRecord pending = new ReviewFileRecord();
         pending.setFileId(fileId); pending.setFileCategory(FileCategory.PCB_REVIEW.name()); pending.setFileName("BMS.pcb");
-        pending.setFileSize(100L); pending.setMd5("md5-a"); pending.setResourcePath("/company/BMS.pcb"); pending.setUploadedBy(10L);
+        pending.setFileSize(100L); pending.setMd5("md5-a"); pending.setResourcePath("/company/BMS.pcb"); pending.setUploadedByEmployeeNo("10");
         pending.setTaskId(1L);
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
         when(fileMapper.findByFileId(fileId)).thenReturn(pending);
@@ -119,7 +119,7 @@ class FileApplicationServiceTest {
         record.setFileId("mock-file-1");
         record.setResourcePath("mock-file-1");
         record.setLatest(true);
-        record.setUploadedBy(10L);
+        record.setUploadedByEmployeeNo("10");
         return record;
     }
 
@@ -127,7 +127,7 @@ class FileApplicationServiceTest {
         ReviewTaskRecord record = new ReviewTaskRecord();
         record.setId(1L);
         record.setReviewType("PCB");
-        record.setDesignerId(10L);
+        record.setDesignerEmployeeNo("10");
         return record;
     }
 

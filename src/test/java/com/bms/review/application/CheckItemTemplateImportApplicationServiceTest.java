@@ -38,7 +38,7 @@ class CheckItemTemplateImportApplicationServiceTest {
                                 + "3）边缘定位柱（金属化孔、金属定位柱）与PAD边缘<1.5mm，需增加阻焊丝印；\n"
                                 + "4）从板螺丝孔螺母柱(螺母柱直径10mm）以螺丝孔中心画圆禁布区直径12.5mm以上、到器件禁布区直径15mm以上。\n"
                                 + "5\\)板子中间的螺丝附件器件与板子垂直放置"),
-                ReviewType.SCHEMATIC, new CurrentUser(1L, Set.of(Role.PCB_LEADER)));
+                ReviewType.SCHEMATIC, new CurrentUser("BMS001", Set.of(Role.PCB_LEADER)));
 
         ArgumentCaptor<CheckItemTemplateRecord> records = ArgumentCaptor.forClass(CheckItemTemplateRecord.class);
         verify(templateMapper, atLeastOnce()).insert(records.capture());
@@ -66,7 +66,7 @@ class CheckItemTemplateImportApplicationServiceTest {
         when(templateMapper.findAll(ReviewType.PCB.name())).thenReturn(List.of(existing));
 
         assertThatThrownBy(() -> service.importWorkbook(workbookBytes("已有类别", "已有检查项"), ReviewType.PCB,
-                new CurrentUser(1L, Set.of(Role.PCB_LEADER))))
+                new CurrentUser("BMS001", Set.of(Role.PCB_LEADER))))
                 .isInstanceOf(BusinessException.class)
                 .satisfies(exception -> assertThat(((BusinessException) exception).errorCode()).isEqualTo(ErrorCode.DUPLICATE_REQUEST))
                 .hasMessage("PCB互检单模板已存在，请确认后重新导入");
@@ -82,7 +82,7 @@ class CheckItemTemplateImportApplicationServiceTest {
 
         CheckItemTemplateApplicationService.ImportResult result = service.importWorkbook(
                 workbookBytes("新类别", "新检查项"), ReviewType.PCB, true,
-                new CurrentUser(1L, Set.of(Role.PCB_LEADER)));
+                new CurrentUser("BMS001", Set.of(Role.PCB_LEADER)));
 
         assertThat(result.createdCount()).isEqualTo(2);
         assertThat(result.replacedCount()).isEqualTo(1);

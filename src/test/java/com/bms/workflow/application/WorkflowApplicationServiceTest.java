@@ -13,6 +13,7 @@ import com.bms.notification.application.ReviewMailNotificationApplicationService
 import com.bms.review.application.TaskCheckItemApplicationService;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.ReviewRole;
+import com.bms.review.domain.OpinionSourceType;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.infrastructure.ReviewOpinionRecord;
 import com.bms.task.domain.ReviewType;
@@ -65,7 +66,7 @@ class WorkflowApplicationServiceTest {
     void shouldStartPcbProcessReviewForAuthorizedDesignerAfterExpertOpinionsPassed() {
         when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PCB_EXPERT_REVIEWING));
         ReviewOpinionRecord submitted = new ReviewOpinionRecord();
-        submitted.setSourceType("PCB_REVIEW"); submitted.setRaisedByEmployeeNo("BMS010"); submitted.setStatus("CONFIRMED_PASS");
+        submitted.setSourceType(OpinionSourceType.PCB_REVIEW); submitted.setRaisedByEmployeeNo("BMS010"); submitted.setStatus("CONFIRMED_PASS");
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(submitted));
         when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_PROCESS_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
         when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_STRUCTURE_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
@@ -87,7 +88,7 @@ class WorkflowApplicationServiceTest {
     void shouldStartPcbStructureReviewIndependently() {
         when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PCB_EXPERT_REVIEWING));
         ReviewOpinionRecord submitted = new ReviewOpinionRecord();
-        submitted.setSourceType("PCB_REVIEW"); submitted.setRaisedByEmployeeNo("BMS010"); submitted.setStatus("CONFIRMED_PASS");
+        submitted.setSourceType(OpinionSourceType.PCB_REVIEW); submitted.setRaisedByEmployeeNo("BMS010"); submitted.setStatus("CONFIRMED_PASS");
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(submitted));
         when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_STRUCTURE_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
         when(taskMapper.update(any())).thenReturn(1);
@@ -157,7 +158,7 @@ class WorkflowApplicationServiceTest {
     void shouldRejectPcbMutualAssignmentWhenAProcessOpinionIsNotConfirmed() {
         when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING));
         ReviewOpinionRecord opinion = new ReviewOpinionRecord();
-        opinion.setSourceType("PCB_PROCESS_REVIEW");
+        opinion.setSourceType(OpinionSourceType.PCB_PROCESS_REVIEW);
         opinion.setStatus("PENDING_CONFIRMATION");
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(opinion));
 

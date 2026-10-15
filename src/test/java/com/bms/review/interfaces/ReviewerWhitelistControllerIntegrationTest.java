@@ -29,7 +29,9 @@ class ReviewerWhitelistControllerIntegrationTest {
                         .content("{\"keyword\":\"BMS009\",\"pageNo\":1,\"pageSize\":1}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
-                .andExpect(jsonPath("$.data.pageNo").value(1))
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.msg").value("成功"))
+                .andExpect(jsonPath("$.data.pageNum").value(1))
                 .andExpect(jsonPath("$.data.items[0].employeeNo").value("BMS009"));
 
         mockMvc.perform(post("/reviewer-whitelists/query")

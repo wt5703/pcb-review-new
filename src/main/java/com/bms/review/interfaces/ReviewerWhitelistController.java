@@ -38,7 +38,7 @@ public class ReviewerWhitelistController {
     }
 
     @PostMapping("/query")
-    @Operation(summary = "分页查询评审人员白名单", description = "请求体中的 keyword 是唯一查询条件，可按员工工号或姓名模糊匹配")
+    @Operation(summary = "分页查询评审人员白名单", description = "请求体中的 keyword 是唯一查询条件，可按员工工号或姓名模糊匹配。请求页码参数为 pageNo，响应分页字段为 pageNum、pageSize、total。")
     ApiResponse<ReviewerWhitelistApplicationService.ReviewerWhitelistPage> list(
             @RequestBody(required = false) ReviewerWhitelistQueryRequest request,
             HttpServletRequest servletRequest) {

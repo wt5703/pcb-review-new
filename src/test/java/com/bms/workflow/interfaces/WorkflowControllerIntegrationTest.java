@@ -21,7 +21,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * @author 王涛
  * @date 2026-09-18
- * @description 通过真实 REST、Mock 身份、Flyway 数据库和流程服务验证任务结束、归档读取及结束后再次流转被拒绝的全链路行为。
+ * @description 通过真实 REST、Mock 身份、测试数据库和流程服务验证任务结束、归档读取及结束后再次流转被拒绝的全链路行为。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -89,7 +89,7 @@ class WorkflowControllerIntegrationTest {
         task.setReviewType(ReviewType.PCB.name());
         task.setTaskName("流程集成测试任务");
         task.setProjectName("BMS");
-        task.setDesignerId(10L);
+        task.setDesignerEmployeeNo("BMS010");
         task.setDesignName("BMS-P1");
         task.setPcbType("BMU");
         task.setStatus(TaskStatus.MUTUAL_CHECK_REVIEWING.name());
@@ -113,7 +113,7 @@ class WorkflowControllerIntegrationTest {
         file.setFileId("mock-file-8302");
         file.setResourcePath("mock-8302");
         file.setLatest(true);
-        file.setUploadedBy(10L);
+        file.setUploadedByEmployeeNo("BMS010");
         return file;
     }
 }

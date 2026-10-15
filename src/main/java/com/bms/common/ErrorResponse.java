@@ -7,5 +7,5 @@ package com.bms.common;
  */
 
 
-public record ErrorResponse(String code, String message, String traceId) {
+public record ErrorResponse(String code, String msg, String traceId) {
 }

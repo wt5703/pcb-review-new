@@ -1,13 +1,23 @@
-#!/usr/bin/env sh
-set -eu
+#!/usr/bin/env bash
+set -e
 
-# 运行参数由部署平台通过 JAVA_OPTS、SPRING_DATASOURCE_* 等环境变量注入。
-# 不在镜像内固化数据库、邮件、用户中心或文件服务地址，避免不同环境相互污染。
-case "${1:-start}" in
-  start)
-    exec java ${JAVA_OPTS:--XX:MaxRAMPercentage=75.0} -jar /opt/bms/pcb-review.jar
-    ;;
-  *)
-    exec "$@"
-    ;;
-esac
+APPLICATION_NAME="pcb-review"
+APP_HOME="/opt/bms"
+JAR_NAME="pcb-review-1.0-SNAPSHOT.jar"
+
+cd "${APP_HOME}"
+
+echo "========== PCB Review Startup =========="
+echo "Application: ${APPLICATION_NAME}"
+echo "JAR: ${JAR_NAME}"
+
+if [ ! -f "${JAR_NAME}" ]; then
+    echo "ERROR: JAR file not found: ${APP_HOME}/${JAR_NAME}"
+    ls -lah "${APP_HOME}"
+    exit 1
+fi
+
+echo "Starting PCB Review..."
+
+exec java -jar "${APP_HOME}/${JAR_NAME}" \
+    --spring.config.additional-location=file:/opt/bms/application.yml

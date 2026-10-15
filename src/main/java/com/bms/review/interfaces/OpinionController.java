@@ -79,7 +79,7 @@ public class OpinionController {
     }
 
     @GetMapping("/tasks/{taskId}/opinions")
-    @Operation(summary = "分页查询任务意见列表", description = "每条记录在同一个扁平模型中返回专家意见、冗余的提出人姓名 raisedByName、全部设计者答复及各答复的确认结果，默认按意见提出时间倒序。severity 可按 SERIOUS、GENERAL、MINOR 筛选；无意见确认审计记录不在问题列表中展示。sourceType 可筛选单一来源，sourceTypes 可传多个逗号分隔的来源（如 PCB_PROCESS_REVIEW,PCB_STRUCTURE_REVIEW 或 MUTUAL_CHECK_ITEM,MUTUAL_EXTRA）；scene=REVIEW_WORKSPACE 仅返回当前登录专家提出的意见，scene=DESIGNER_REPLY 返回当前筛选范围内的任务意见。pageNo 从 1 开始，pageSize 最大为 100。")
+    @Operation(summary = "分页查询任务意见列表", description = "每条记录在同一个扁平模型中返回专家意见、冗余的提出人姓名 raisedByName、全部设计者答复及各答复的确认结果，默认按意见提出时间倒序。severity 可按 SERIOUS、GENERAL、MINOR 筛选；无意见确认审计记录不在问题列表中展示。sourceType 可筛选单一来源，sourceTypes 可传多个逗号分隔的来源（如 PCB_PROCESS_REVIEW,PCB_STRUCTURE_REVIEW 或 MUTUAL_CHECK_ITEM,MUTUAL_EXTRA）；scene=REVIEW_WORKSPACE 仅返回当前登录专家提出的意见，scene=DESIGNER_REPLY 返回当前筛选范围内的任务意见。请求 pageNo 从 1 开始，pageSize 最大为 100；响应分页字段为 pageNum、pageSize、total。")
     ApiResponse<OpinionApplicationService.OpinionPage> list(@PathVariable long taskId,
             @RequestParam(required = false) @Parameter(description = "问题等级：SERIOUS 严重、GENERAL 一般、MINOR 轻微") OpinionSeverity severity,
             @RequestParam(required = false) @Parameter(description = "意见状态：PENDING_REPLY  待答复、PENDING_CONFIRMATION 待确认、CONFIRMED_PASS 确认通过、CONFIRMED_REJECTED 确认不通过、WITHDRAWN 撤回") OpinionStatus status,

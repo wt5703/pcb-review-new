@@ -2,6 +2,7 @@ package com.bms.review.application;
 
 import com.bms.identity.application.CurrentUser;
 import com.bms.identity.domain.Role;
+import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.review.infrastructure.ReviewerWhitelistMapper;
 import org.junit.jupiter.api.Test;
@@ -23,7 +24,8 @@ import static org.mockito.Mockito.when;
  */
 class ReviewerWhitelistApplicationServiceTest {
     private final ReviewerWhitelistMapper whitelistMapper = mock(ReviewerWhitelistMapper.class);
-    private final ReviewerWhitelistApplicationService service = new ReviewerWhitelistApplicationService(whitelistMapper);
+    private final UserCenterUserProfileClient userProfileClient = mock(UserCenterUserProfileClient.class);
+    private final ReviewerWhitelistApplicationService service = new ReviewerWhitelistApplicationService(whitelistMapper, userProfileClient);
 
     @Test
     void shouldAddEmployeeNumbersForSupportedReviewRoles() {
@@ -34,7 +36,7 @@ class ReviewerWhitelistApplicationServiceTest {
                         new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewerWhitelistRole.STRUCTURE_EXPERT, List.of("STR-1001")),
                         new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewerWhitelistRole.PROCESS_EXPERT, List.of("PRO-1001")),
                         new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewerWhitelistRole.PCB_EXPERT, List.of("PCB-1001"))),
-                new CurrentUser(1L, Set.of(Role.HARDWARE_DEPARTMENT_MANAGER)));
+                new CurrentUser("BMS001", Set.of(Role.HARDWARE_DEPARTMENT_MANAGER)));
 
         assertThat(result.createdCount()).isEqualTo(6);
         verify(whitelistMapper, times(6)).insert(any());
@@ -42,12 +44,12 @@ class ReviewerWhitelistApplicationServiceTest {
 
     @Test
     void shouldLogicallyDeleteEveryActiveRoleMappingForEmployeeNumber() {
-        when(whitelistMapper.logicDeleteByEmployeeNo("PCB-1001", 1L)).thenReturn(2);
+        when(whitelistMapper.logicDeleteByEmployeeNo("PCB-1001", "BMS001")).thenReturn(2);
 
         ReviewerWhitelistApplicationService.DeleteResult result = service.remove(null, "PCB-1001",
-                new CurrentUser(1L, Set.of(Role.HARDWARE_DEPARTMENT_MANAGER)));
+                new CurrentUser("BMS001", Set.of(Role.HARDWARE_DEPARTMENT_MANAGER)));
 
         assertThat(result.deletedCount()).isEqualTo(2);
-        verify(whitelistMapper).logicDeleteByEmployeeNo("PCB-1001", 1L);
+        verify(whitelistMapper).logicDeleteByEmployeeNo("PCB-1001", "BMS001");
     }
 }

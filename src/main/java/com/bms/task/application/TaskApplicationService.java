@@ -362,7 +362,8 @@ public class TaskApplicationService {
     public record TaskFlowRecordView(Long id, String action, String actionName, String operatorEmployeeNo, String operatorName,
                                      String comment, java.time.LocalDateTime operatedAt) { }
 
-    public record TaskPage(long total, int pageNo, int pageSize, List<TaskView> items) {
+    /** 分页响应字段与前端约定为 pageNum、pageSize、total；内部查询参数仍使用 pageNo。 */
+    public record TaskPage(long total, int pageNum, int pageSize, List<TaskView> items) {
         public TaskPage {
             items = List.copyOf(items);
         }

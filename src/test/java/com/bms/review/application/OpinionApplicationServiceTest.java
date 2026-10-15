@@ -1,6 +1,7 @@
 package com.bms.review.application;
 
 import com.bms.identity.application.CurrentUser;
+import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import com.bms.task.application.TaskProcessorAuthorizationService;
 import com.bms.identity.domain.Role;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
@@ -42,21 +43,22 @@ class OpinionApplicationServiceTest {
     private final TaskAssignmentAccessMapper assignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
     private final TaskProcessorAuthorizationService taskProcessorAuthorizationService = mock(TaskProcessorAuthorizationService.class);
     private final TaskFlowMapper flowMapper = mock(TaskFlowMapper.class);
+    private final UserCenterUserProfileClient userProfileClient = mock(UserCenterUserProfileClient.class);
     private final OpinionApplicationService service = new OpinionApplicationService(opinionMapper, taskMapper, taskCheckItemMapper,
-            assignmentAccessMapper, taskProcessorAuthorizationService, flowMapper);
+            assignmentAccessMapper, taskProcessorAuthorizationService, flowMapper, userProfileClient);
 
     @Test
     void shouldRaiseMutualExtraOpinion() {
-        when(taskMapper.findById(1001L)).thenReturn(task(9L));
+        when(taskMapper.findById(1001L)).thenReturn(task("BMS009"));
         when(opinionMapper.nextOpinionId()).thenReturn(31L);
-        CurrentUser mutualReviewer = new CurrentUser(20L, Set.of(Role.PCB_LEADER));
+        CurrentUser mutualReviewer = new CurrentUser("BMS020", Set.of(Role.PCB_LEADER));
 
         OpinionApplicationService.OpinionView view = service.raise(new OpinionApplicationService.RaiseOpinionCommand(1001L,
                 OpinionSourceType.MUTUAL_EXTRA, null, "补充检查发现的问题", "<p>补充检查发现的问题</p>", OpinionSeverity.GENERAL), mutualReviewer);
 
         assertThat(view.id()).isEqualTo(31L);
         assertThat(view.status()).isEqualTo(OpinionStatus.PENDING_REPLY);
-        assertThat(view.raisedByName()).isEqualTo("用户#20");
+        assertThat(view.raisedByName()).isEqualTo("BMS020");
         ArgumentCaptor<ReviewOpinionRecord> recordCaptor = ArgumentCaptor.forClass(ReviewOpinionRecord.class);
         verify(opinionMapper).insert(recordCaptor.capture());
         assertThat(recordCaptor.getValue().getComment()).isEqualTo("补充检查发现的问题");
@@ -65,16 +67,16 @@ class OpinionApplicationServiceTest {
 
     @Test
     void shouldReplyAndConfirmWithoutRestartingReview() {
-        ReviewOpinionRecord opinion = opinion(31L, 1001L, 20L, OpinionStatus.PENDING_REPLY);
+        ReviewOpinionRecord opinion = opinion(31L, 1001L, "BMS020", OpinionStatus.PENDING_REPLY);
         when(opinionMapper.findById(31L)).thenReturn(opinion);
-        when(taskMapper.findById(1001L)).thenReturn(task(9L));
+        when(taskMapper.findById(1001L)).thenReturn(task("BMS009"));
         when(opinionMapper.nextReplyId()).thenReturn(41L);
         when(opinionMapper.findLatestReply(31L)).thenReturn(null);
         when(opinionMapper.updateStatus(any(ReviewOpinionRecord.class))).thenReturn(1, 1);
 
         OpinionApplicationService.OpinionView replied = service.reply(31L,
                 new OpinionApplicationService.ReplyOpinionCommand(ReplyType.ACCEPT, "已上传新设计文件"),
-                new CurrentUser(9L, Set.of(Role.DESIGNER)));
+                new CurrentUser("BMS009", Set.of(Role.DESIGNER)));
 
         OpinionReplyRecord persistedReply = new OpinionReplyRecord();
         persistedReply.setId(41L);
@@ -83,7 +85,7 @@ class OpinionApplicationServiceTest {
         when(opinionMapper.nextConfirmationId()).thenReturn(51L);
         OpinionApplicationService.OpinionView confirmed = service.confirm(31L,
                 new OpinionApplicationService.ConfirmOpinionCommand(true, "确认通过"),
-                new CurrentUser(20L, Set.of(Role.HARDWARE_EXPERT)));
+                new CurrentUser("BMS020", Set.of(Role.HARDWARE_EXPERT)));
 
         assertThat(replied.status()).isEqualTo(OpinionStatus.PENDING_CONFIRMATION);
         assertThat(confirmed.status()).isEqualTo(OpinionStatus.CONFIRMED_PASS);
@@ -93,12 +95,12 @@ class OpinionApplicationServiceTest {
 
     @Test
     void shouldRemoveReviewerFromActiveAssignmentsAfterAllPcbOpinionsPass() {
-        ReviewTaskRecord activeTask = task(9L);
+        ReviewTaskRecord activeTask = task("BMS009");
         activeTask.setStatus(TaskStatus.PCB_EXPERT_REVIEWING.name());
-        activeTask.setReviewerAssignments("PCB_EXPERT:20");
-        activeTask.setAssignedReviewerIds("20");
-        ReviewOpinionRecord opinion = opinion(31L, 1001L, 20L, OpinionStatus.PENDING_CONFIRMATION);
-        opinion.setSourceType(OpinionSourceType.PCB_REVIEW.name());
+        activeTask.setReviewerAssignments("PCB_EXPERT:BMS020");
+        activeTask.setAssignedReviewerEmployeeNos("BMS020");
+        ReviewOpinionRecord opinion = opinion(31L, 1001L, "BMS020", OpinionStatus.PENDING_CONFIRMATION);
+        opinion.setSourceType(OpinionSourceType.PCB_REVIEW);
         OpinionReplyRecord reply = new OpinionReplyRecord();
         reply.setId(41L);
         when(taskMapper.findById(1001L)).thenReturn(activeTask);
@@ -107,23 +109,23 @@ class OpinionApplicationServiceTest {
         when(opinionMapper.nextConfirmationId()).thenReturn(51L);
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(opinion));
         when(opinionMapper.updateStatus(any())).thenReturn(1);
-        when(taskMapper.updateAssignedReviewerIds(any())).thenReturn(1);
+        when(taskMapper.updateAssignedReviewerEmployeeNos(any())).thenReturn(1);
 
         service.confirm(31L, new OpinionApplicationService.ConfirmOpinionCommand(true, "确认通过"),
-                new CurrentUser(20L, Set.of(Role.HARDWARE_EXPERT)));
+                new CurrentUser("BMS020", Set.of(Role.HARDWARE_EXPERT)));
 
-        assertThat(activeTask.getAssignedReviewerIds()).isEmpty();
-        verify(taskMapper).updateAssignedReviewerIds(activeTask);
+        assertThat(activeTask.getAssignedReviewerEmployeeNos()).isEmpty();
+        verify(taskMapper).updateAssignedReviewerEmployeeNos(activeTask);
     }
 
     @Test
     void shouldSummarizeOpinionsByLifecycleStatus() {
-        when(taskMapper.findById(1001L)).thenReturn(task(9L));
+        when(taskMapper.findById(1001L)).thenReturn(task("BMS009"));
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(
-                opinion(31L, 1001L, 20L, OpinionStatus.PENDING_REPLY),
-                opinion(32L, 1001L, 20L, OpinionStatus.CONFIRMED_PASS)));
+                opinion(31L, 1001L, "BMS020", OpinionStatus.PENDING_REPLY),
+                opinion(32L, 1001L, "BMS020", OpinionStatus.CONFIRMED_PASS)));
 
-        OpinionApplicationService.OpinionSummary summary = service.summary(1001L, new CurrentUser(20L, Set.of(Role.HARDWARE_EXPERT)));
+        OpinionApplicationService.OpinionSummary summary = service.summary(1001L, new CurrentUser("BMS020", Set.of(Role.HARDWARE_EXPERT)));
 
         assertThat(summary.total()).isEqualTo(2);
         assertThat(summary.pendingReply()).isEqualTo(1);
@@ -132,41 +134,41 @@ class OpinionApplicationServiceTest {
 
     @Test
     void shouldExposeEveryDesignerReplyWithItsPairedConfirmationWhenListingOpinions() {
-        ReviewOpinionRecord opinion = opinion(31L, 1001L, 20L, OpinionStatus.PENDING_CONFIRMATION);
+        ReviewOpinionRecord opinion = opinion(31L, 1001L, "BMS020", OpinionStatus.PENDING_CONFIRMATION);
         OpinionReplyRecord reply = new OpinionReplyRecord();
         reply.setId(41L);
         reply.setOpinionId(31L);
         reply.setReplyNo(1);
         reply.setReplyType(ReplyType.ACCEPT.name());
         reply.setReason("已优化布局并更新文件");
-        reply.setRepliedBy(9L);
+        reply.setRepliedByEmployeeNo("BMS009");
         OpinionConfirmationRecord confirmation = new OpinionConfirmationRecord();
         confirmation.setId(51L);
         confirmation.setOpinionId(31L);
         confirmation.setReplyId(41L);
         confirmation.setPassed(true);
-        confirmation.setConfirmedBy(20L);
+        confirmation.setConfirmedByEmployeeNo("BMS020");
         OpinionReplyRecord secondReply = new OpinionReplyRecord();
         secondReply.setId(42L);
         secondReply.setOpinionId(31L);
         secondReply.setReplyNo(2);
         secondReply.setReplyType(ReplyType.ACCEPT.name());
         secondReply.setReason("根据退回意见再次调整");
-        secondReply.setRepliedBy(9L);
+        secondReply.setRepliedByEmployeeNo("BMS009");
         OpinionConfirmationRecord secondConfirmation = new OpinionConfirmationRecord();
         secondConfirmation.setId(52L);
         secondConfirmation.setOpinionId(31L);
         secondConfirmation.setReplyId(42L);
         secondConfirmation.setPassed(false);
         secondConfirmation.setComment("仍需补充说明");
-        secondConfirmation.setConfirmedBy(20L);
-        when(taskMapper.findById(1001L)).thenReturn(task(9L));
+        secondConfirmation.setConfirmedByEmployeeNo("BMS020");
+        when(taskMapper.findById(1001L)).thenReturn(task("BMS009"));
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(opinion));
         when(opinionMapper.findRepliesByOpinionId(31L)).thenReturn(List.of(reply, secondReply));
         when(opinionMapper.findConfirmationsByOpinionId(31L)).thenReturn(List.of(confirmation, secondConfirmation));
 
         OpinionApplicationService.OpinionView view = service.list(1001L,
-                new CurrentUser(20L, Set.of(Role.HARDWARE_EXPERT))).get(0);
+                new CurrentUser("BMS020", Set.of(Role.HARDWARE_EXPERT))).get(0);
 
         assertThat(view.replies()).hasSize(2);
         assertThat(view.replies().get(0).reason()).isEqualTo("已优化布局并更新文件");
@@ -175,22 +177,22 @@ class OpinionApplicationServiceTest {
         assertThat(view.replies().get(1).confirmation().comment()).isEqualTo("仍需补充说明");
     }
 
-    private ReviewTaskRecord task(long designerId) {
+    private ReviewTaskRecord task(String designerEmployeeNo) {
         ReviewTaskRecord task = new ReviewTaskRecord();
         task.setId(1001L);
         task.setReviewType(ReviewType.PCB.name());
-        task.setDesignerId(designerId);
+        task.setDesignerEmployeeNo(designerEmployeeNo);
         task.setStatus(TaskStatus.MUTUAL_CHECK_REVIEWING.name());
         return task;
     }
 
-    private ReviewOpinionRecord opinion(long id, long taskId, long raisedBy, OpinionStatus status) {
+    private ReviewOpinionRecord opinion(long id, long taskId, String raisedByEmployeeNo, OpinionStatus status) {
         ReviewOpinionRecord opinion = new ReviewOpinionRecord();
         opinion.setId(id);
         opinion.setTaskId(taskId);
-        opinion.setSourceType(OpinionSourceType.MUTUAL_EXTRA.name());
+        opinion.setSourceType(OpinionSourceType.MUTUAL_EXTRA);
         opinion.setComment("问题");
-        opinion.setRaisedBy(raisedBy);
+        opinion.setRaisedByEmployeeNo(raisedByEmployeeNo);
         opinion.setStatus(status.name());
         return opinion;
     }

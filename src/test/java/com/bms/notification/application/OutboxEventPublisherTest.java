@@ -20,7 +20,7 @@ class OutboxEventPublisherTest {
 
     @Test
     void shouldPersistPendingTaskEventWithTraceablePayload() {
-        publisher.publishTaskEvent("OPINION_REPLIED", 1001L, 10L);
+        publisher.publishTaskEvent("OPINION_REPLIED", 1001L, "BMS010");
 
         var captor = forClass(OutboxEventRecord.class);
         verify(outboxEventMapper).insert(captor.capture());
@@ -29,6 +29,6 @@ class OutboxEventPublisherTest {
         assertThat(event.aggregateType()).isEqualTo("REVIEW_TASK");
         assertThat(event.aggregateId()).isEqualTo(1001L);
         assertThat(event.status()).isEqualTo("PENDING");
-        assertThat(event.payload()).contains("\"operatorId\":10");
+        assertThat(event.payload()).contains("\"operatorEmployeeNo\":\"BMS010\"");
     }
 }

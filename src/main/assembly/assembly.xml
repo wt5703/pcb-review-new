@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.2.0">
+    <id>release</id>
+    <formats>
+        <format>tar.gz</format>
+    </formats>
+
+    <includeBaseDirectory>true</includeBaseDirectory>
+    <baseDirectory>${project.artifactId}-${project.version}</baseDirectory>
+
+    <files>
+        <!-- Spring Boot JAR -->
+        <file>
+            <source>${project.build.directory}/${project.build.finalName}.jar</source>
+            <outputDirectory>/</outputDirectory>
+            <destName>${project.build.finalName}.jar</destName>
+        </file>
+
+        <!-- 外部 application.yml -->
+        <file>
+            <source>src/main/resources/application.yml</source>
+            <outputDirectory>/</outputDirectory>
+            <destName>application.yml</destName>
+        </file>
+
+        <!-- 启动脚本 -->
+        <file>
+            <source>docker/startup.sh</source>
+            <outputDirectory>/</outputDirectory>
+            <destName>startup.sh</destName>
+            <fileMode>0755</fileMode>
+        </file>
+    </files>
+</assembly>

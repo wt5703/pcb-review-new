@@ -2,6 +2,8 @@ package com.bms.review.application;
 
 import com.bms.common.BusinessException;
 import com.bms.identity.application.CurrentUser;
+import com.bms.identity.infrastructure.UserCenterUserProfileClient;
+import com.bms.review.domain.OpinionSourceType;
 import com.bms.task.application.TaskProcessorAuthorizationService;
 import com.bms.identity.domain.Role;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
@@ -42,9 +44,10 @@ class TaskCheckItemApplicationServiceTest {
     private final TaskAssignmentAccessMapper assignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
     private final TaskProcessorAuthorizationService taskProcessorAuthorizationService = mock(TaskProcessorAuthorizationService.class);
     private final ReviewOpinionMapper opinionMapper = mock(ReviewOpinionMapper.class);
+    private final UserCenterUserProfileClient userProfileClient = mock(UserCenterUserProfileClient.class);
     private final TaskCheckItemApplicationService service = new TaskCheckItemApplicationService(taskMapper, templateMapper,
-            taskCheckItemMapper, assignmentAccessMapper, taskProcessorAuthorizationService, opinionMapper);
-    private final CurrentUser pcbLeader = new CurrentUser(1L, Set.of(Role.PCB_LEADER));
+            taskCheckItemMapper, assignmentAccessMapper, taskProcessorAuthorizationService, opinionMapper, userProfileClient);
+    private final CurrentUser pcbLeader = new CurrentUser("BMS001", Set.of(Role.PCB_LEADER));
 
     @Test
     void shouldMaterializeCurrentTemplateForActiveTask() {
@@ -87,7 +90,7 @@ class TaskCheckItemApplicationServiceTest {
         when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(checkItem);
         when(templateMapper.findById(31L)).thenReturn(template(31L, "线距检查"));
         when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
-        when(opinionMapper.findActiveMutualCheckItemOpinion(1001L, 51L)).thenReturn(opinion);
+        when(opinionMapper.findActiveMutualCheckItemOpinion(1001L, 51L, OpinionSourceType.MUTUAL_CHECK_ITEM)).thenReturn(opinion);
         when(opinionMapper.updateStatus(any(ReviewOpinionRecord.class))).thenReturn(1);
 
         service.submit(1001L, 51L,

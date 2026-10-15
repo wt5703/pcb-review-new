@@ -158,7 +158,7 @@ class CheckItemOpinionIntegrationTest {
         task.setReviewType(ReviewType.PCB.name());
         task.setTaskName("检查项意见联动测试");
         task.setProjectName("BMS");
-        task.setDesignerId(10L);
+        task.setDesignerEmployeeNo("BMS010");
         task.setDesignName("BMS-P1");
         task.setPcbType("BMU");
         task.setStatus(TaskStatus.MUTUAL_CHECK_REVIEWING.name());

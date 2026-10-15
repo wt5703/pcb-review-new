@@ -25,7 +25,7 @@ class ReviewTaskMapperIntegrationTest {
         task.setReviewType(ReviewType.PCB.name());
         task.setTaskName("BMS PCB评审");
         task.setProjectName("BMS");
-        task.setDesignerId(10L);
+        task.setDesignerEmployeeNo("BMS010");
         task.setDesignName("BMS-P1");
         task.setPcbType("BMU");
         task.setStatus(TaskStatus.DRAFT.name());

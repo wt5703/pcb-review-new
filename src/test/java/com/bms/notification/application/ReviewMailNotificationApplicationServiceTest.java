@@ -39,15 +39,15 @@ class ReviewMailNotificationApplicationServiceTest {
 
     @Test
     void shouldNotifyOnlyInitialPcbExpertsWhenTaskSubmitted() throws Exception {
-        when(whitelistMapper.findById(1L)).thenReturn(user(1L, "王鹏飞", "wang@bms.example.com"));
-        when(whitelistMapper.findById(2L)).thenReturn(user(2L, "刘满红", "liu@bms.example.com"));
-        when(whitelistMapper.findById(3L)).thenReturn(user(3L, "章俊", "zhang@bms.example.com"));
+        when(whitelistMapper.findActiveByEmployeeNo("BMS001")).thenReturn(user(1L, "BMS001", "王鹏飞", "wang@bms.example.com"));
+        when(whitelistMapper.findActiveByEmployeeNo("BMS002")).thenReturn(user(2L, "BMS002", "刘满红", "liu@bms.example.com"));
+        when(whitelistMapper.findActiveByEmployeeNo("BMS003")).thenReturn(user(3L, "BMS003", "章俊", "zhang@bms.example.com"));
         when(fileMapper.findById(101L)).thenReturn(file(101L, "初版PCB.zip", "PCB_REVIEW"));
-        ReviewTask task = ReviewTask.draft(10L, ReviewType.PCB, "任务", "BMS", 9L, "设计者", "P1", "BMU", LocalDate.now(),
-                9L, "组长", List.of(ReviewRole.HARDWARE_EXPERT, ReviewRole.PCB_EXPERT, ReviewRole.PROCESS_EXPERT),
-                List.of(new TaskReviewerAssignment(ReviewRole.HARDWARE_EXPERT, List.of(1L)),
-                        new TaskReviewerAssignment(ReviewRole.PCB_EXPERT, List.of(2L)),
-                        new TaskReviewerAssignment(ReviewRole.PROCESS_EXPERT, List.of(3L))), null);
+        ReviewTask task = ReviewTask.draft(10L, ReviewType.PCB, "任务", "BMS", "BMS009", "设计者", "P1", "BMU", LocalDate.now(),
+                "BMS009", "组长", List.of(ReviewRole.HARDWARE_EXPERT, ReviewRole.PCB_EXPERT, ReviewRole.PROCESS_EXPERT),
+                List.of(new TaskReviewerAssignment(ReviewRole.HARDWARE_EXPERT, List.of("BMS001")),
+                        new TaskReviewerAssignment(ReviewRole.PCB_EXPERT, List.of("BMS002")),
+                        new TaskReviewerAssignment(ReviewRole.PROCESS_EXPERT, List.of("BMS003"))), null);
         task.addInitialFile(101L);
 
         service.enqueueTaskCreated(task);
@@ -64,27 +64,27 @@ class ReviewMailNotificationApplicationServiceTest {
 
     @Test
     void shouldAttachOnlyProcessAndStructureFilesWhenOpeningTheirReviews() throws Exception {
-        when(whitelistMapper.findById(3L)).thenReturn(user(3L, "章俊", "zhang@bms.example.com"));
-        when(whitelistMapper.findById(4L)).thenReturn(user(4L, "陈远杰", "chen@bms.example.com"));
+        when(whitelistMapper.findActiveByEmployeeNo("BMS003")).thenReturn(user(3L, "BMS003", "章俊", "zhang@bms.example.com"));
+        when(whitelistMapper.findActiveByEmployeeNo("BMS004")).thenReturn(user(4L, "BMS004", "陈远杰", "chen@bms.example.com"));
         when(fileMapper.findLatestByTaskIdAndCategory(20L, "PCB_PROCESS_REVIEW")).thenReturn(List.of(file(201L, "工艺.zip", "PCB_PROCESS_REVIEW")));
         when(fileMapper.findLatestByTaskIdAndCategory(20L, "PCB_STRUCTURE_REVIEW")).thenReturn(List.of(file(202L, "结构.zip", "PCB_STRUCTURE_REVIEW")));
-        ReviewTaskRecord task = task(20L, "PCB", "BMS", "PROCESS_EXPERT:3;STRUCTURE_EXPERT:4");
+        ReviewTaskRecord task = task(20L, "PCB", "BMS", "PROCESS_EXPERT:BMS003;STRUCTURE_EXPERT:BMS004");
 
         service.enqueuePcbStageReview(task, List.of(com.bms.file.domain.FileCategory.PCB_PROCESS_REVIEW,
                 com.bms.file.domain.FileCategory.PCB_STRUCTURE_REVIEW));
 
         MailMessage message = payload();
-        assertThat(message.subject()).isEqualTo("BMS工艺与结构评审");
+        assertThat(message.subject()).isEqualTo("BMS工艺评审与结构评审");
         assertThat(message.content()).contains("附件为BMS工艺与结构评审文件，请进行工艺与结构评审");
         assertThat(message.attachments()).extracting(MailMessage.MailAttachment::fileName).containsExactly("工艺.zip", "结构.zip");
     }
 
     @Test
     void shouldNotifyOnlyStructureExpertsWhenOnlyStructureReviewIsOpened() throws Exception {
-        when(whitelistMapper.findById(4L)).thenReturn(user(4L, "陈远杰", "chen@bms.example.com"));
+        when(whitelistMapper.findActiveByEmployeeNo("BMS004")).thenReturn(user(4L, "BMS004", "陈远杰", "chen@bms.example.com"));
         when(fileMapper.findLatestByTaskIdAndCategory(20L, "PCB_STRUCTURE_REVIEW"))
                 .thenReturn(List.of(file(202L, "结构.zip", "PCB_STRUCTURE_REVIEW")));
-        ReviewTaskRecord task = task(20L, "PCB", "BMS", "PROCESS_EXPERT:3;STRUCTURE_EXPERT:4");
+        ReviewTaskRecord task = task(20L, "PCB", "BMS", "PROCESS_EXPERT:BMS003;STRUCTURE_EXPERT:BMS004");
 
         service.enqueuePcbStageReview(task, List.of(com.bms.file.domain.FileCategory.PCB_STRUCTURE_REVIEW));
 
@@ -96,12 +96,12 @@ class ReviewMailNotificationApplicationServiceTest {
 
     @Test
     void shouldNotifyAllSchematicExpertsWithAllLatestFilesWhenFinished() throws Exception {
-        when(whitelistMapper.findById(1L)).thenReturn(user(1L, "王鹏飞", "wang@bms.example.com"));
-        when(whitelistMapper.findById(2L)).thenReturn(user(2L, "刘满红", "liu@bms.example.com"));
+        when(whitelistMapper.findActiveByEmployeeNo("BMS001")).thenReturn(user(1L, "BMS001", "王鹏飞", "wang@bms.example.com"));
+        when(whitelistMapper.findActiveByEmployeeNo("BMS002")).thenReturn(user(2L, "BMS002", "刘满红", "liu@bms.example.com"));
         for (com.bms.file.domain.FileCategory category : com.bms.file.domain.FileCategory.values()) {
             when(fileMapper.findLatestByTaskIdAndCategory(30L, category.name())).thenReturn(List.of(file(300L + category.ordinal(), category.name() + ".zip", category.name())));
         }
-        service.enqueueTaskFinished(task(30L, "SCHEMATIC", "VCU", "HARDWARE_EXPERT:1;EMC_EXPERT:2"));
+        service.enqueueTaskFinished(task(30L, "SCHEMATIC", "VCU", "HARDWARE_EXPERT:BMS001;EMC_EXPERT:BMS002"));
 
         MailMessage message = payload();
         assertThat(message.notificationType()).isEqualTo("SCHEMATIC_TASK_FINISHED");
@@ -118,9 +118,9 @@ class ReviewMailNotificationApplicationServiceTest {
         return objectMapper.readValue(captor.getValue().payload(), MailMessage.class);
     }
 
-    private ReviewerWhitelistRecord user(long id, String name, String email) {
+    private ReviewerWhitelistRecord user(long id, String employeeNo, String name, String email) {
         ReviewerWhitelistRecord record = new ReviewerWhitelistRecord();
-        record.setId(id); record.setDisplayName(name); record.setEmail(email);
+        record.setId(id); record.setEmployeeNo(employeeNo); record.setDisplayName(name); record.setEmail(email);
         return record;
     }
 
@@ -133,7 +133,7 @@ class ReviewMailNotificationApplicationServiceTest {
     private ReviewTaskRecord task(long id, String reviewType, String projectName, String reviewerAssignments) {
         ReviewTaskRecord task = new ReviewTaskRecord();
         task.setId(id); task.setReviewType(reviewType); task.setProjectName(projectName); task.setReviewerAssignments(reviewerAssignments);
-        task.setReviewRoles(reviewerAssignments.substring(0, reviewerAssignments.indexOf(':'))); task.setExpertLeaderId(9L);
+        task.setReviewRoles(reviewerAssignments.substring(0, reviewerAssignments.indexOf(':'))); task.setExpertLeaderEmployeeNo("BMS009");
         return task;
     }
 }

@@ -137,7 +137,7 @@ class TaskControllerIntegrationTest {
     }
 
     @Test
-    void shouldUseDefaultUserCenterMockInsteadOfFrontendRoleHeader() throws Exception {
+    void shouldUseDefaultUserCenterMockInsteadOfClientRoleHeader() throws Exception {
         String taskRequest = """
                 {"reviewType":"PCB","taskName":"无权任务","projectName":"BMS","designName":"BMS-P1","pcbType":"BMU"}
                 """;
@@ -152,7 +152,7 @@ class TaskControllerIntegrationTest {
         ReviewFileRecord record = new ReviewFileRecord();
         record.setId(reviewFileMapper.nextId()); record.setFileId(fileId); record.setTaskId(null); record.setFileCategory("PCB_REVIEW");
         record.setFileName(fileName); record.setFileFormat("pcb"); record.setLatest(true);
-        record.setFileSize(fileSize); record.setMd5("test-md5-" + fileId); record.setResourcePath(resourcePath); record.setUploadedBy(10L);
+        record.setFileSize(fileSize); record.setMd5("test-md5-" + fileId); record.setResourcePath(resourcePath); record.setUploadedByEmployeeNo("BMS010");
         return record;
     }
 }

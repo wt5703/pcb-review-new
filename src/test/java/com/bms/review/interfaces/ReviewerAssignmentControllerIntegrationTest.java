@@ -77,7 +77,7 @@ class ReviewerAssignmentControllerIntegrationTest {
         task.setReviewType(ReviewType.PCB.name());
         task.setTaskName("人员分配接口测试");
         task.setProjectName("BMS");
-        task.setDesignerId(10L);
+        task.setDesignerEmployeeNo("BMS010");
         task.setDesignName("BMS-P1");
         task.setPcbType("BMU");
         task.setStatus(status.name());

@@ -30,7 +30,7 @@ class OpenApiIntegrationTest {
     }
 
     @Test
-    void shouldExposeTaskCreationDictionaryForFrontend() throws Exception {
+    void shouldExposeTaskCreationDictionaryForClient() throws Exception {
         mockMvc.perform(get("/dictionaries/task-options"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.pcbTypes[0]").value("BMU板"))

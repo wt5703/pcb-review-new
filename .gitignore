@@ -38,10 +38,6 @@ build/
 ### Mac OS ###
 .DS_Store
 
-# Vue / Vite dependencies and generated assets
-frontend/node_modules/
-frontend/dist/
-
 # Local environment files
 .env
 .env.*

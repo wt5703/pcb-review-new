@@ -4,6 +4,7 @@ import com.bms.archive.infrastructure.TaskArchiveSnapshotMapper;
 import com.bms.archive.infrastructure.TaskArchiveSnapshotRecord;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
+import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import com.bms.notification.infrastructure.NotificationSendRecord;
 import com.bms.notification.infrastructure.NotificationSendRecordMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
@@ -31,8 +32,9 @@ class TaskArchiveApplicationServiceTest {
     private final ReviewFileMapper fileMapper = mock(ReviewFileMapper.class);
     private final TaskFlowMapper flowMapper = mock(TaskFlowMapper.class);
     private final NotificationSendRecordMapper notificationSendRecordMapper = mock(NotificationSendRecordMapper.class);
+    private final UserCenterUserProfileClient userProfileClient = mock(UserCenterUserProfileClient.class);
     private final TaskArchiveApplicationService service = new TaskArchiveApplicationService(snapshotMapper, fileMapper,
-            flowMapper, notificationSendRecordMapper, new ObjectMapper().findAndRegisterModules());
+            flowMapper, notificationSendRecordMapper, userProfileClient, new ObjectMapper().findAndRegisterModules());
 
     @Test
     void shouldFreezeStructuredArchiveFieldsForDisplay() {
@@ -56,6 +58,8 @@ class TaskArchiveApplicationServiceTest {
         task.setId(1001L);
         task.setTaskName("BMU 控制板评审");
         task.setStatus("FINISHED");
+        when(userProfileClient.getByEmployeeNo("BMS009")).thenReturn(profile("BMS009", "设计者"));
+        when(userProfileClient.getByEmployeeNo("BMS002")).thenReturn(profile("BMS002", "BMS002"));
         when(fileMapper.findLatestByTaskId(1001L)).thenReturn(List.of(file));
         when(flowMapper.findByTaskId(1001L)).thenReturn(List.of(flow));
         when(notificationSendRecordMapper.findByTaskId(1001L)).thenReturn(List.of(new NotificationSendRecord(501L, 1001L,
@@ -82,5 +86,9 @@ class TaskArchiveApplicationServiceTest {
             assertThat(value.deliveryStatus()).isEqualTo("SENT");
         });
         verify(flowMapper).findByTaskId(1001L);
+    }
+
+    private UserCenterUserProfileClient.UserProfile profile(String employeeNo, String displayName) {
+        return new UserCenterUserProfileClient.UserProfile(employeeNo, displayName, null, null, null);
     }
 }

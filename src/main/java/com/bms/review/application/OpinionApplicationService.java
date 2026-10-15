@@ -605,7 +605,8 @@ public class OpinionApplicationService {
     }
 
     /** 意见列表分页结果，items 中每项均包含全部答复及其对应确认记录。 */
-    public record OpinionPage(long total, int pageNo, int pageSize, List<OpinionView> items) {
+    /** 分页响应字段与前端约定为 pageNum、pageSize、total；内部查询参数仍使用 pageNo。 */
+    public record OpinionPage(long total, int pageNum, int pageSize, List<OpinionView> items) {
         public OpinionPage {
             items = List.copyOf(items);
         }

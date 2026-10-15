@@ -256,7 +256,8 @@ public class ReviewerWhitelistApplicationService {
     public record ReviewerWhitelistView(Long id, ReviewerWhitelistRole reviewRole, String employeeNo, String displayName,
                                         String email, String mobile, String departmentName, java.time.LocalDateTime createdAt) { }
     public record ReviewerWhitelistQuery(String keyword, Integer pageNo, Integer pageSize) { }
-    public record ReviewerWhitelistPage(long total, int pageNo, int pageSize, List<ReviewerWhitelistView> items) { }
+    /** 分页响应字段与前端约定为 pageNum、pageSize、total；内部查询参数仍使用 pageNo。 */
+    public record ReviewerWhitelistPage(long total, int pageNum, int pageSize, List<ReviewerWhitelistView> items) { }
     public record AssignableReviewerView(String employeeNo, String displayName, String email, String mobile,
                                          String departmentName, ReviewerWhitelistRole whitelistRole,
                                          java.time.LocalDateTime createdAt) {

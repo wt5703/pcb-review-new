@@ -21,7 +21,7 @@ import static org.mockito.Mockito.when;
 class CheckItemTemplateApplicationServiceTest {
     private final CheckItemTemplateMapper templateMapper = mock(CheckItemTemplateMapper.class);
     private final CheckItemTemplateApplicationService service = new CheckItemTemplateApplicationService(templateMapper);
-    private final CurrentUser manager = new CurrentUser(1L, Set.of(Role.PCB_LEADER));
+    private final CurrentUser manager = new CurrentUser("BMS001", Set.of(Role.PCB_LEADER));
 
     @Test
     void shouldDisableCategoryAndShiftFollowingCategorySortNumbers() {
