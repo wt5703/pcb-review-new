@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @description 验证已提交业务 Outbox 事件由通知应用服务内部消费，并落下已发布状态与可追溯发送记录。
  */
 @SpringBootTest
+@com.bms.TestDatabase
 class NotificationDispatchIntegrationTest {
     @Autowired
     private NotificationApplicationService notificationApplicationService;

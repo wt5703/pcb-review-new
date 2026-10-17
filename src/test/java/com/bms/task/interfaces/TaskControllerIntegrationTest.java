@@ -20,6 +20,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * @description 通过 HTTP 请求验证评审任务创建、提交和分页查询接口能够正确贯通 Mock 身份、应用服务、数据库迁移与统一响应结构。
  */
 @SpringBootTest
+@com.bms.TestDatabase
+@org.springframework.boot.test.mock.mockito.MockBean(com.bms.notification.application.ReviewMailNotificationApplicationService.class)
 @AutoConfigureMockMvc
 class TaskControllerIntegrationTest {
     @Autowired
@@ -121,12 +123,20 @@ class TaskControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PCB_EXPERT_REVIEWING"));
 
-        mockMvc.perform(get("/tasks").param("keyword", "REST-BMS").param("pageNo", "1").param("pageSize", "10")
+        mockMvc.perform(get("/tasks").param("keyword", "REST-BMS").param("pageNum", "1").param("pageSize", "10")
                         .header("X-Employee-No", "BMS010")
                         .header("X-Mock-Roles", "DESIGNER"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.items[0].id").value(taskId));
+
+        mockMvc.perform(get("/tasks").param("keyword", "REST-BMS").param("pageNum", "2").param("pageSize", "1")
+                        .header("X-Employee-No", "BMS010")
+                        .header("X-Mock-Roles", "DESIGNER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.pageNum").value(2))
+                .andExpect(jsonPath("$.data.items.length()").value(0));
 
         mockMvc.perform(get("/tasks/{taskId}", taskId)
                         .header("X-Employee-No", "BMS010")

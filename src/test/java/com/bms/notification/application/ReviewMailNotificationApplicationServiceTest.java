@@ -75,7 +75,7 @@ class ReviewMailNotificationApplicationServiceTest {
 
         MailMessage message = payload();
         assertThat(message.subject()).isEqualTo("BMS工艺评审与结构评审");
-        assertThat(message.content()).contains("附件为BMS工艺与结构评审文件，请进行工艺与结构评审");
+        assertThat(message.content()).contains("附件是BMS工艺评审与结构评审文件，请进行工艺评审与结构评审");
         assertThat(message.attachments()).extracting(MailMessage.MailAttachment::fileName).containsExactly("工艺.zip", "结构.zip");
     }
 

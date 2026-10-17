@@ -17,6 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * @description 验证白名单列表按单一关键词匹配工号或姓名，并返回稳定的分页响应。
  */
 @SpringBootTest
+@com.bms.TestDatabase
 @AutoConfigureMockMvc
 class ReviewerWhitelistControllerIntegrationTest {
     @Autowired
@@ -26,7 +27,7 @@ class ReviewerWhitelistControllerIntegrationTest {
     void shouldPageAndSearchReviewerWhitelistByEmployeeNoOrName() throws Exception {
         mockMvc.perform(post("/reviewer-whitelists/query")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"keyword\":\"BMS009\",\"pageNo\":1,\"pageSize\":1}"))
+                        .content("{\"keyword\":\"BMS009\",\"pageNum\":1,\"pageSize\":1}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.code").value(0))
@@ -36,7 +37,16 @@ class ReviewerWhitelistControllerIntegrationTest {
 
         mockMvc.perform(post("/reviewer-whitelists/query")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"keyword\":\"张腾瑜\",\"pageNo\":1,\"pageSize\":20}"))
+                        .content("{\"keyword\":\"BMS009\",\"pageNum\":2,\"pageSize\":1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.pageNum").value(2))
+                .andExpect(jsonPath("$.data.items.length()").value(0));
+
+        mockMvc.perform(post("/reviewer-whitelists/query")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .characterEncoding("UTF-8")
+                        .content("{\"keyword\":\"张腾瑜\",\"pageNum\":1,\"pageSize\":20}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.items[0].displayName").value("张腾瑜"));

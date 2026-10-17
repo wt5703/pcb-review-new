@@ -20,6 +20,7 @@ import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import com.bms.workflow.infrastructure.TaskFlowMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.mockito.ArgumentCaptor;
 
 import java.util.Set;
@@ -46,6 +47,14 @@ class OpinionApplicationServiceTest {
     private final UserCenterUserProfileClient userProfileClient = mock(UserCenterUserProfileClient.class);
     private final OpinionApplicationService service = new OpinionApplicationService(opinionMapper, taskMapper, taskCheckItemMapper,
             assignmentAccessMapper, taskProcessorAuthorizationService, flowMapper, userProfileClient);
+
+    @BeforeEach
+    void mockUserProfiles() {
+        when(userProfileClient.getByEmployeeNo(any())).thenAnswer(invocation -> {
+            String employeeNo = invocation.getArgument(0);
+            return new UserCenterUserProfileClient.UserProfile(employeeNo, employeeNo, null, null, null);
+        });
+    }
 
     @Test
     void shouldRaiseMutualExtraOpinion() {

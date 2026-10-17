@@ -25,6 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * @description 验证互检固定检查项不合格时通过整单提交创建同源意见，防止检查项问题与意见处理脱节。
  */
 @SpringBootTest
+@com.bms.TestDatabase
 @AutoConfigureMockMvc
 class CheckItemOpinionIntegrationTest {
     @Autowired
@@ -49,7 +50,7 @@ class CheckItemOpinionIntegrationTest {
                 .header("X-Mock-Roles", "HARDWARE_EXPERT"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[?(@.category.itemName == '集成测试类别')].items[0].opinion").doesNotExist())
-                .andReturn().getResponse().getContentAsString();
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
         long itemId = ((java.util.List<Number>) JsonPath.read(itemsResponse,
                 "$.data[?(@.category.itemName == '集成测试类别')].items[0].id")).get(0).longValue();
 
@@ -100,7 +101,7 @@ class CheckItemOpinionIntegrationTest {
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"itemId\":" + itemId + ",\"itemName\":\"已修改检查项\"}"))
+                        .content("{\"id\":" + itemId + ",\"itemName\":\"已修改检查项\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.item.id").value(itemId))
                 .andExpect(jsonPath("$.data.item.itemName").value("已修改检查项"));
@@ -162,6 +163,7 @@ class CheckItemOpinionIntegrationTest {
         task.setDesignName("BMS-P1");
         task.setPcbType("BMU");
         task.setStatus(TaskStatus.MUTUAL_CHECK_REVIEWING.name());
+        task.setAssignedReviewerEmployeeNos("BMS020");
         task.setInitialFileIds("8503");
         task.setVersion(0L);
         return task;

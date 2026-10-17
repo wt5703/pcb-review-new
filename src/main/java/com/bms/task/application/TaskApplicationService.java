@@ -123,23 +123,23 @@ public class TaskApplicationService {
 
     /** 根据筛选条件分页返回当前用户可见的任务。 */
     public TaskPage listTasks(TaskQuery query, CurrentUser currentUser) {
-        TaskQuery validQuery = query == null ? TaskQuery.defaultQuery() : query.normalized();
+        TaskQuery validQuery = (query == null ? TaskQuery.defaultQuery() : query).normalized();
         boolean canViewAll = permissionPolicy.canViewAllTasks(currentUser.roles());
         if (!canViewAll && !permissionPolicy.has(currentUser.roles(), Permission.VIEW_CURRENT_TASK)) {
-            return new TaskPage(0, validQuery.pageNo(), validQuery.pageSize(), List.of());
+            return new TaskPage(0, validQuery.pageNum(), validQuery.pageSize(), List.of());
         }
         List<String> statusNames = validQuery.statuses().stream().map(Enum::name).toList();
         String reviewTypeName = validQuery.reviewType() == null ? null : validQuery.reviewType().name();
         long total = taskMapper.countPage(validQuery.normalizedKeyword(), reviewTypeName, statusNames, validQuery.taskId(),
                 currentUser.employeeNo(), canViewAll);
-        long offset = (long) (validQuery.pageNo() - 1) * validQuery.pageSize();
+        long offset = (long) (validQuery.pageNum() - 1) * validQuery.pageSize();
         List<TaskView> items = total == 0 ? List.of()
                 : taskMapper.findPage(validQuery.normalizedKeyword(), reviewTypeName, statusNames, validQuery.taskId(),
                 currentUser.employeeNo(), canViewAll, offset, validQuery.pageSize()).stream()
                 .map(this::restoreTask)
                 .map(this::toTaskListItem)
                 .toList();
-        return new TaskPage(total, validQuery.pageNo(), validQuery.pageSize(), items);
+        return new TaskPage(total, validQuery.pageNum(), validQuery.pageSize(), items);
     }
 
     /** 新建一条尚未派发的任务草稿。 */
@@ -362,29 +362,29 @@ public class TaskApplicationService {
     public record TaskFlowRecordView(Long id, String action, String actionName, String operatorEmployeeNo, String operatorName,
                                      String comment, java.time.LocalDateTime operatedAt) { }
 
-    /** 分页响应字段与前端约定为 pageNum、pageSize、total；内部查询参数仍使用 pageNo。 */
+    /** 分页响应字段与前端约定为 pageNum、pageSize、total。 */
     public record TaskPage(long total, int pageNum, int pageSize, List<TaskView> items) {
         public TaskPage {
             items = List.copyOf(items);
         }
     }
 
-    public record TaskQuery(String keyword, ReviewType reviewType, List<TaskStatus> statuses, Integer pageNo, Integer pageSize, Long taskId) {
+    public record TaskQuery(String keyword, ReviewType reviewType, List<TaskStatus> statuses, Integer pageNum, Integer pageSize, Long taskId) {
         static TaskQuery defaultQuery() {
             return new TaskQuery(null, null, null, 1, 20, null);
         }
 
         TaskQuery normalized() {
-            int normalizedPageNo = pageNo == null ? 1 : pageNo;
+            int normalizedPageNum = pageNum == null ? 1 : pageNum;
             int normalizedPageSize = pageSize == null ? 20 : pageSize;
-            if (normalizedPageNo < 1 || normalizedPageSize < 1 || normalizedPageSize > 100) {
+            if (normalizedPageNum < 1 || normalizedPageSize < 1 || normalizedPageSize > 100) {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "分页参数不合法");
             }
             List<TaskStatus> normalizedStatuses = statuses == null ? List.of() : statuses.stream()
                     .filter(java.util.Objects::nonNull)
                     .distinct()
                     .toList();
-            return new TaskQuery(normalizedKeyword(), reviewType, normalizedStatuses, normalizedPageNo, normalizedPageSize, taskId);
+            return new TaskQuery(normalizedKeyword(), reviewType, normalizedStatuses, normalizedPageNum, normalizedPageSize, taskId);
         }
 
         String normalizedKeyword() {

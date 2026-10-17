@@ -16,6 +16,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * @description 验证运行时可以公开生成 OpenAPI JSON 契约，确保后端接口变更可供联调和后续客户端生成工具使用。
  */
 @SpringBootTest
+@com.bms.TestDatabase
 @AutoConfigureMockMvc
 class OpenApiIntegrationTest {
     @Autowired

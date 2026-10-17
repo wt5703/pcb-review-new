@@ -85,12 +85,12 @@ public class CheckItemTemplateController {
 
 
     @PutMapping
-    @Operation(summary = "修改检查项", description = "itemId 指向大类时可同时传 items 维护其子项；指向小类时仅传 itemId、itemName")
+    @Operation(summary = "修改检查项", description = "id 指向大类时可同时传 items 维护其子项；指向小类时仅传 id、itemName")
     ApiResponse<CheckItemTemplateApplicationService.TemplateUpdateView> update(@Valid @RequestBody UpdateTemplateRequest request,
                                                                                HttpServletRequest servletRequest) {
         return ApiResponse.ok(templateApplicationService.update(new CheckItemTemplateApplicationService.UpdateTemplateCommand(
-                        request.itemId(), request.itemName(), (request.items() == null ? List.<UpdateTemplateItemRequest>of() : request.items()).stream()
-                        .map(item -> new CheckItemTemplateApplicationService.UpdateItemCommand(item.itemId(), item.itemName())).toList()),
+                        request.id(), request.itemName(), (request.items() == null ? List.<UpdateTemplateItemRequest>of() : request.items()).stream()
+                        .map(item -> new CheckItemTemplateApplicationService.UpdateItemCommand(item.id(), item.itemName())).toList()),
                 CurrentUserHolder.require()), traceId(servletRequest));
     }
 
@@ -134,9 +134,9 @@ public class CheckItemTemplateController {
 
     @Schema(description = "统一修改检查项请求")
     record UpdateTemplateRequest(
-            @Schema(description = "待修改的大类或小类 ID", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull Long itemId,
+            @Schema(description = "待修改的大类或小类 ID", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull Long id,
             @Schema(description = "修改后的名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String itemName,
-            @Schema(description = "仅修改大类时可传：完整子项列表；已有子项传 itemId，新增子项不传") List<@Valid UpdateTemplateItemRequest> items) {
+            @Schema(description = "仅修改大类时可传：完整子项列表；已有子项传 id，新增子项不传") List<@Valid UpdateTemplateItemRequest> items) {
     }
 
     @Schema(description = "检查项子类内容")
@@ -145,7 +145,7 @@ public class CheckItemTemplateController {
     }
 
     @Schema(description = "修改检查项子类内容")
-    record UpdateTemplateItemRequest(@Schema(description = "已有子检查项 ID；新增子检查项不传") Long itemId,
+    record UpdateTemplateItemRequest(@Schema(description = "已有子检查项 ID；新增子检查项不传") Long id,
                                      @Schema(description = "检查项名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String itemName) {
     }
 }

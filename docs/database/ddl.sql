@@ -168,7 +168,6 @@ CREATE TABLE task_archive_snapshot (
 
 CREATE TABLE reviewer_whitelist (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    review_role VARCHAR(64) NOT NULL,
     employee_no VARCHAR(64) NOT NULL,
     display_name VARCHAR(100),
     email VARCHAR(200),
@@ -179,8 +178,21 @@ CREATE TABLE reviewer_whitelist (
     deleted BOOLEAN NOT NULL DEFAULT FALSE,
     deleted_by_employee_no VARCHAR(64),
     deleted_at TIMESTAMP,
-    UNIQUE (review_role, employee_no),
-    INDEX idx_reviewer_whitelist_role (review_role, employee_no)
+    UNIQUE KEY uk_reviewer_whitelist_employee (employee_no)
+);
+
+CREATE TABLE reviewer_whitelist_role (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    employee_no VARCHAR(64) NOT NULL,
+    review_role VARCHAR(64) NOT NULL,
+    created_by_employee_no VARCHAR(64) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    deleted_by_employee_no VARCHAR(64),
+    deleted_at TIMESTAMP,
+    UNIQUE KEY uk_whitelist_role_employee (employee_no, review_role),
+    INDEX idx_whitelist_role_role_employee (review_role, employee_no),
+    CONSTRAINT fk_whitelist_role_employee FOREIGN KEY (employee_no) REFERENCES reviewer_whitelist(employee_no)
 );
 -- 请勿在此文件维护结构副本，避免历史人员字段和实际部署结构不一致。
 -- 初始化数据库时先执行 V1__ddl.sql，再执行 V2__init.sql。

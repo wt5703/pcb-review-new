@@ -18,6 +18,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 
 /**
  * @author 王涛
@@ -32,6 +33,10 @@ class TaskArchiveOpinionExportApplicationServiceTest {
 
     @Test
     void shouldExportOneSheetPerRoleAndOneRowPerReply() throws Exception {
+        when(userProfileClient.getByEmployeeNo(any())).thenAnswer(invocation -> {
+            String employeeNo = invocation.getArgument(0);
+            return new UserCenterUserProfileClient.UserProfile(employeeNo, employeeNo, null, null, null);
+        });
         ReviewTaskRecord task = new ReviewTaskRecord();
         task.setId(101L); task.setProjectName("BMS"); task.setDesignName("控制板"); task.setStatus("FINISHED");
         task.setReviewerAssignments("EMC_EXPERT:BMS010;STRUCTURE_EXPERT:BMS011");

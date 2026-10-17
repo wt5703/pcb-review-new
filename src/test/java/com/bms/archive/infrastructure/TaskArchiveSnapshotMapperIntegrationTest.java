@@ -12,6 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @description 验证归档快照在本地数据库中可按任务唯一写入并读取，并包含流程记录快照字段。
  */
 @SpringBootTest
+@com.bms.TestDatabase
 class TaskArchiveSnapshotMapperIntegrationTest {
     @Autowired
     private TaskArchiveSnapshotMapper snapshotMapper;

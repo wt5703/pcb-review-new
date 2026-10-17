@@ -6,6 +6,7 @@ import com.bms.identity.application.CurrentUserHolder;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.ReviewerWhitelistRole;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,9 +16,11 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -38,14 +41,23 @@ public class ReviewerWhitelistController {
     }
 
     @PostMapping("/query")
-    @Operation(summary = "分页查询评审人员白名单", description = "请求体中的 keyword 是唯一查询条件，可按员工工号或姓名模糊匹配。请求页码参数为 pageNo，响应分页字段为 pageNum、pageSize、total。")
+    @Operation(summary = "分页查询评审人员白名单", description = "按人员分页，每人返回一条及全部有效角色 reviewRoles；keyword 支持工号或姓名，分页参数为 pageNum、pageSize。")
     ApiResponse<ReviewerWhitelistApplicationService.ReviewerWhitelistPage> list(
             @RequestBody(required = false) ReviewerWhitelistQueryRequest request,
             HttpServletRequest servletRequest) {
         ReviewerWhitelistQueryRequest query = request == null ? new ReviewerWhitelistQueryRequest(null, null, null) : request;
         return ApiResponse.ok(whitelistApplicationService.listPage(
-                new ReviewerWhitelistApplicationService.ReviewerWhitelistQuery(query.keyword(), query.pageNo(), query.pageSize()),
+                new ReviewerWhitelistApplicationService.ReviewerWhitelistQuery(query.keyword(), query.pageNum(), query.pageSize()),
                 CurrentUserHolder.require()), traceId(servletRequest));
+    }
+
+    @GetMapping("/people")
+    @Operation(summary = "查询白名单人员", description = "每人返回一条及全部有效角色；可传多个 roles 筛选匹配任一角色的人员，不传则返回全部白名单人员。")
+    ApiResponse<List<ReviewerWhitelistApplicationService.ReviewerWhitelistView>> people(
+            @RequestParam(required = false) @Parameter(description = "白名单角色，可重复传参或逗号分隔") List<ReviewerWhitelistRole> roles,
+            HttpServletRequest servletRequest) {
+        CurrentUserHolder.require();
+        return ApiResponse.ok(whitelistApplicationService.listPeople(roles), traceId(servletRequest));
     }
 
     @PostMapping
@@ -60,12 +72,19 @@ public class ReviewerWhitelistController {
     }
 
     @DeleteMapping
-    @Operation(summary = "逻辑删除评审人员白名单", description = "必须且只能传 id 或 employeeNo。id 只删除该条角色—工号映射；employeeNo 删除该员工工号全部启用的白名单角色映射。")
+    @Operation(summary = "逻辑删除评审人员白名单", description = "必须且只能传人员 id 或 employeeNo；删除该人员及其全部角色。")
     ApiResponse<ReviewerWhitelistApplicationService.DeleteResult> remove(
             @RequestParam(required = false) @Schema(description = "白名单主键；与 employeeNo 二选一") Long id,
             @RequestParam(required = false) @Schema(description = "员工工号；与 id 二选一，传入后删除该工号下所有白名单角色映射") String employeeNo,
             HttpServletRequest servletRequest) {
         return ApiResponse.ok(whitelistApplicationService.remove(id, employeeNo, CurrentUserHolder.require()), traceId(servletRequest));
+    }
+
+    @DeleteMapping("/{id}/roles/{role}")
+    @Operation(summary = "删除白名单人员的指定角色", description = "仅删除指定角色；若该人员没有其他有效角色，则同时停用人员。")
+    ApiResponse<ReviewerWhitelistApplicationService.DeleteResult> removeRole(@PathVariable long id,
+            @PathVariable ReviewerWhitelistRole role, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(whitelistApplicationService.removeRole(id, role, CurrentUserHolder.require()), traceId(servletRequest));
     }
 
     private String traceId(HttpServletRequest request) {
@@ -80,7 +99,7 @@ public class ReviewerWhitelistController {
     @Schema(description = "白名单分页查询条件；keyword 同时匹配员工工号和姓名")
     record ReviewerWhitelistQueryRequest(
             @Schema(description = "查询关键词，按工号或姓名模糊匹配") String keyword,
-            @Schema(description = "页码，从 1 开始，默认 1") Integer pageNo,
+            @Schema(description = "页码，从 1 开始，默认 1") Integer pageNum,
             @Schema(description = "每页条数，默认 20，最大 1000") Integer pageSize) { }
 
     @Schema(description = "单个评审角色与多个员工工号")

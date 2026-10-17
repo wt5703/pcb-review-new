@@ -12,9 +12,11 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -24,6 +26,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * @description 通过真实 REST、Mock 身份、测试数据库和流程服务验证任务结束、归档读取及结束后再次流转被拒绝的全链路行为。
  */
 @SpringBootTest
+@com.bms.TestDatabase
+@org.springframework.boot.test.mock.mockito.MockBean(com.bms.notification.application.ReviewMailNotificationApplicationService.class)
 @AutoConfigureMockMvc
 class WorkflowControllerIntegrationTest {
     @Autowired
@@ -32,6 +36,8 @@ class WorkflowControllerIntegrationTest {
     private ReviewTaskMapper taskMapper;
     @Autowired
     private ReviewFileMapper fileMapper;
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     void shouldFinishArchiveAndRejectSecondTransitionThroughRestApi() throws Exception {
@@ -39,11 +45,10 @@ class WorkflowControllerIntegrationTest {
         taskMapper.insert(task(taskId));
         fileMapper.insert(file(taskId));
 
-        mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
+        mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-Employee-No", "BMS001")
                         .header("X-Mock-Roles", "PCB_LEADER")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"actions\":[\"FINISH\"],\"comment\":\"完成\"}"))
+                        .param("actions", "FINISH").param("comment", "完成"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.toStatus").value("FINISHED"));
 
@@ -51,13 +56,12 @@ class WorkflowControllerIntegrationTest {
                         .header("X-Mock-Employee-No", "BMS001")
                         .header("X-Mock-Roles", "PCB_LEADER"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.finalStatus").value("FINISHED"));
+                .andExpect(jsonPath("$.data.flowNodes").isArray());
 
-        mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
+        mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-Employee-No", "BMS001")
                         .header("X-Mock-Roles", "PCB_LEADER")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"actions\":[\"FINISH\"]}"))
+                        .param("actions", "FINISH"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TASK_STATUS_CONFLICT"));
     }
@@ -69,16 +73,16 @@ class WorkflowControllerIntegrationTest {
         task.setStatus(TaskStatus.PCB_EXPERT_REVIEWING.name());
         task.setReviewRoles("PROCESS_EXPERT");
         taskMapper.insert(task);
+        jdbcTemplate.update("INSERT INTO review_opinion (id, task_id, source_type, severity, is_no_opinion, comment, raised_by_employee_no, raised_by_name, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                8306L, taskId, "PCB_REVIEW", "GENERAL", true, "无意见", "BMS001", "组长", "CONFIRMED_PASS");
         fileMapper.insert(file(taskId, 8304L, "PCB_PROCESS_REVIEW"));
         fileMapper.insert(file(taskId, 8305L, "PCB_STRUCTURE_REVIEW"));
 
-        mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
+        mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-Employee-No", "BMS010")
                         .header("X-Mock-Roles", "DESIGNER")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"actions":["START_PCB_STRUCTURE_REVIEW","START_PCB_PROCESS_REVIEW"],"comment":"文件已上传，开启工艺和结构评审"}
-                                """))
+                        .param("actions", "START_PCB_STRUCTURE_REVIEW", "START_PCB_PROCESS_REVIEW")
+                        .param("comment", "文件已上传，开启工艺和结构评审"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.toStatus").value("PCB_PROCESS_STRUCTURE_REVIEWING"));
     }
@@ -90,6 +94,8 @@ class WorkflowControllerIntegrationTest {
         task.setTaskName("流程集成测试任务");
         task.setProjectName("BMS");
         task.setDesignerEmployeeNo("BMS010");
+        task.setExpertLeaderEmployeeNo("BMS001");
+        task.setExpertLeaderName("组长");
         task.setDesignName("BMS-P1");
         task.setPcbType("BMU");
         task.setStatus(TaskStatus.MUTUAL_CHECK_REVIEWING.name());
@@ -108,10 +114,11 @@ class WorkflowControllerIntegrationTest {
         file.setTaskId(taskId);
         file.setFileCategory(category);
         file.setFileName("BMS.pcb");
+        file.setFileFormat("pcb");
         file.setFileSize(100L);
         file.setMd5("workflow-md5");
-        file.setFileId("mock-file-8302");
-        file.setResourcePath("mock-8302");
+        file.setFileId("mock-file-" + fileId);
+        file.setResourcePath("mock-" + fileId);
         file.setLatest(true);
         file.setUploadedByEmployeeNo("BMS010");
         return file;

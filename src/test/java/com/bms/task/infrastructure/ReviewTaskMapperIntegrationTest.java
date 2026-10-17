@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * @description 评审任务数据访问层集成测试类。
  */
 @SpringBootTest
+@com.bms.TestDatabase
 class ReviewTaskMapperIntegrationTest {
     @Autowired
     private ReviewTaskMapper mapper;

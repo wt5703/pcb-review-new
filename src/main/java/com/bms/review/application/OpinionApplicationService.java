@@ -264,16 +264,16 @@ public class OpinionApplicationService {
      * @description 在既有筛选、场景权限和倒序规则之上分页返回意见，避免详情页一次加载全部意见及其答复历史。
      */
     public OpinionPage listPage(long taskId, OpinionSeverity severity, OpinionStatus status, OpinionSourceType sourceType, String scene,
-                                Integer pageNo, Integer pageSize, CurrentUser currentUser) {
-        return listPage(taskId, severity, status, sourceType, List.of(), scene, pageNo, pageSize, currentUser);
+                                Integer pageNum, Integer pageSize, CurrentUser currentUser) {
+        return listPage(taskId, severity, status, sourceType, List.of(), scene, pageNum, pageSize, currentUser);
     }
 
     public OpinionPage listPage(long taskId, OpinionSeverity severity, OpinionStatus status, OpinionSourceType sourceType,
-                                List<OpinionSourceType> sourceTypes, String scene, Integer pageNo, Integer pageSize,
+                                List<OpinionSourceType> sourceTypes, String scene, Integer pageNum, Integer pageSize,
                                 CurrentUser currentUser) {
-        int normalizedPageNo = pageNo == null ? 1 : pageNo;
+        int normalizedPageNum = pageNum == null ? 1 : pageNum;
         int normalizedPageSize = pageSize == null ? 20 : pageSize;
-        if (normalizedPageNo < 1 || normalizedPageSize < 1 || normalizedPageSize > 100) {
+        if (normalizedPageNum < 1 || normalizedPageSize < 1 || normalizedPageSize > 100) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "意见分页参数不合法");
         }
         requireOpenOrFinishedTaskVisible(taskId, currentUser);
@@ -281,7 +281,7 @@ public class OpinionApplicationService {
         String raisedByEmployeeNo = "REVIEW_WORKSPACE".equalsIgnoreCase(scene) ? currentUser.employeeNo() : null;
         String statusName = status == null ? null : status.name();
         long total = opinionMapper.countPage(taskId, severity, statusName, sourceType, normalizedSourceTypes, raisedByEmployeeNo);
-        long offset = (long) (normalizedPageNo - 1) * normalizedPageSize;
+        long offset = (long) (normalizedPageNum - 1) * normalizedPageSize;
         List<ReviewOpinionRecord> records = total == 0 ? List.of()
                 : opinionMapper.findPage(taskId, severity, statusName, sourceType, normalizedSourceTypes,
                 raisedByEmployeeNo, offset, normalizedPageSize);
@@ -290,7 +290,7 @@ public class OpinionApplicationService {
         List<OpinionView> items = records.stream()
                 .map(record -> toView(record, profileName(record.getRaisedByEmployeeNo(), profiles)))
                 .toList();
-        return new OpinionPage(total, normalizedPageNo, normalizedPageSize, items);
+        return new OpinionPage(total, normalizedPageNum, normalizedPageSize, items);
     }
 
     public List<OpinionView> list(long taskId, CurrentUser currentUser) { return list(taskId, null, null, null, "DESIGNER_REPLY", currentUser); }
@@ -605,7 +605,7 @@ public class OpinionApplicationService {
     }
 
     /** 意见列表分页结果，items 中每项均包含全部答复及其对应确认记录。 */
-    /** 分页响应字段与前端约定为 pageNum、pageSize、total；内部查询参数仍使用 pageNo。 */
+    /** 分页响应字段与前端约定为 pageNum、pageSize、total。 */
     public record OpinionPage(long total, int pageNum, int pageSize, List<OpinionView> items) {
         public OpinionPage {
             items = List.copyOf(items);

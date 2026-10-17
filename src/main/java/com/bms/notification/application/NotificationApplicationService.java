@@ -75,7 +75,8 @@ public class NotificationApplicationService {
     }
 
     /** 本地环境每五秒消费一次已提交的邮件 Outbox；生产可通过配置调整频率或替换为消息队列消费者。 */
-    @Scheduled(fixedDelayString = "${notification.dispatch.fixed-delay-ms:5000}")
+    @Scheduled(fixedDelayString = "${notification.dispatch.fixed-delay-ms:5000}",
+            initialDelayString = "${notification.dispatch.initial-delay-ms:0}")
     @Transactional
     public void dispatchPending() {
         dispatch(20, 3);

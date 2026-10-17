@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 /**
  * @author 王涛
  * @date 2026-09-22
- * @description 对应评审人员白名单的一条角色—员工工号映射；同一评审角色可关联多个员工工号。
+ * @description 白名单人员资料；reviewRole 用于关联查询时承载单个角色，不属于人员主表字段。
  */
 public class ReviewerWhitelistRecord {
     private Long id;

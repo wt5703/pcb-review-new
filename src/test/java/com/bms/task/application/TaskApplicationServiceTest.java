@@ -130,9 +130,7 @@ class TaskApplicationServiceTest {
 
     @Test
     void shouldFilterAndPageVisibleTasks() {
-        mockTaskPage(2, List.of(
-                record(1L, "BMS PCB评审", TaskStatus.DRAFT, 0L),
-                record(3L, "BMS第二轮评审", TaskStatus.PCB_EXPERT_REVIEWING, 0L)));
+        mockTaskPage(2, List.of(record(1L, "BMS PCB评审", TaskStatus.DRAFT, 0L)));
 
         TaskApplicationService.TaskPage page = service.listTasks(new TaskApplicationService.TaskQuery(
                 "BMS", null, null, 1, 1, null), administrator());
@@ -232,7 +230,7 @@ class TaskApplicationServiceTest {
     private ReviewerWhitelistApplicationService.AssignableReviewerView assignableReviewer(
             String employeeNo, String displayName, ReviewerWhitelistRole role) {
         return new ReviewerWhitelistApplicationService.AssignableReviewerView(
-                employeeNo, displayName, null, null, "研发", role, null);
+                employeeNo, displayName, null, null, "研发", List.of(role), null);
     }
 
     private ReviewTaskRecord record(long id, String name, TaskStatus status, long version) {

@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -22,6 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * @description 通过统一流程 REST 验证 PCB 互检多人分配和当前节点可分配人员查询授权。
  */
 @SpringBootTest
+@com.bms.TestDatabase
 @AutoConfigureMockMvc
 class ReviewerAssignmentControllerIntegrationTest {
     @Autowired
@@ -34,19 +36,19 @@ class ReviewerAssignmentControllerIntegrationTest {
         long taskId = 8401L;
         taskMapper.insert(task(taskId));
 
-        mockMvc.perform(get("/workflow/assignable-reviewers")
+        mockMvc.perform(get("/workflow/mutual-check-reviewers")
                         .param("reviewType", "PCB")
                         .param("taskStatus", "MUTUAL_CHECK_PENDING_ASSIGNMENT")
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].whitelistRole").value("PCB_MUTUAL_CHECK"));
+                .andExpect(jsonPath("$.data[0].whitelistRoles[0]").value("PCB_MUTUAL_CHECK"));
 
-        mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
+        mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-User-Id", "1")
                         .header("X-Mock-Roles", "PCB_LEADER")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"actions\":[\"START_PCB_MATUAL_REVIEW\"],\"reviewerEmployeeNos\":[\"BMS006\"]}"))
+                        .param("actions", "START_PCB_MATUAL_REVIEW")
+                        .param("reviewerEmployeeNos", "BMS006"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.toStatus").value("MUTUAL_CHECK_REVIEWING"))
                 .andExpect(jsonPath("$.data.assignedReviewerEmployeeNos.length()").value(1));
@@ -58,13 +60,13 @@ class ReviewerAssignmentControllerIntegrationTest {
         long taskId = 8402L;
         taskMapper.insert(task(taskId));
 
-        mockMvc.perform(get("/workflow/assignable-reviewers")
+        mockMvc.perform(get("/workflow/mutual-check-reviewers")
                         .param("reviewType", "PCB")
                         .param("taskStatus", "MUTUAL_CHECK_PENDING_ASSIGNMENT")
-                        .header("X-Mock-User-Id", "88")
-                        .header("X-Mock-Roles", "PROCESS_EXPERT"))
+                        .header("X-Mock-User-Id", "1")
+                        .header("X-Mock-Roles", "PCB_LEADER"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].whitelistRole").value("PCB_MUTUAL_CHECK"));
+                .andExpect(jsonPath("$.data[0].whitelistRoles[0]").value("PCB_MUTUAL_CHECK"));
     }
 
     private ReviewTaskRecord task(long taskId) {

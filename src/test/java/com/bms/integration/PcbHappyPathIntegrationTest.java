@@ -12,6 +12,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -21,6 +22,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * @description 以真实 REST 接口验证 PCB 任务从创建、设计文件登记、专家与互检多人处理，到申请结束、归档和不可重新打开的核心成功路径。
  */
 @SpringBootTest
+@com.bms.TestDatabase
+@org.springframework.boot.test.mock.mockito.MockBean(com.bms.notification.application.ReviewMailNotificationApplicationService.class)
 @AutoConfigureMockMvc
 class PcbHappyPathIntegrationTest {
     @Autowired
@@ -46,11 +49,10 @@ class PcbHappyPathIntegrationTest {
                 .andExpect(jsonPath("$.data.flowNodes").isArray())
                 .andExpect(jsonPath("$.data.flowNodes.length()").value(5));
 
-        mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
+        mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-Employee-No", "BMS001")
                         .header("X-Mock-Roles", "PCB_LEADER")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"actions\":[\"FINISH\"]}"))
+                        .param("actions", "FINISH"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TASK_STATUS_CONFLICT"));
     }
@@ -75,20 +77,18 @@ class PcbHappyPathIntegrationTest {
     }
 
     private void assignAndTransition(long taskId, String action, String reviewerEmployeeNo, String operatorEmployeeNo, String operatorRole) throws Exception {
-        mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
+        mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-Employee-No", operatorEmployeeNo)
                         .header("X-Mock-Roles", operatorRole)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"actions\":[\"" + action + "\"],\"reviewerEmployeeNos\":[\"" + reviewerEmployeeNo + "\"]}"))
+                        .param("actions", action).param("reviewerEmployeeNos", reviewerEmployeeNo))
                 .andExpect(status().isOk());
     }
 
     private void transition(long taskId, String action, String employeeNo, String role) throws Exception {
-        mockMvc.perform(post("/tasks/{taskId}/workflow/transitions", taskId)
+        mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("X-Mock-Employee-No", employeeNo)
                         .header("X-Mock-Roles", role)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"actions\":[\"" + action + "\"]}"))
+                        .param("actions", action))
                 .andExpect(status().isOk());
     }
 

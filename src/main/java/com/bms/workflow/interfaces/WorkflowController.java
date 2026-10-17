@@ -73,7 +73,7 @@ public class WorkflowController {
     }
 
     @GetMapping("/workflow/assignable-reviewers")
-    @Operation(summary = "按评审类型查询可选专家", description = "PCB任务返回 EMC、PCB 评审白名单；原理图任务返回硬件评审白名单")
+    @Operation(summary = "按评审类型查询可选专家", description = "PCB任务返回 EMC、PCB 评审白名单；原理图任务返回硬件评审白名单。每人一条，whitelistRoles 为该人员全部有效白名单角色。")
     ApiResponse<List<ReviewerWhitelistApplicationService.AssignableReviewerView>> listAssignableReviewers(
             @RequestParam @Schema(description = "PCB 或 SCHEMATIC", requiredMode = Schema.RequiredMode.REQUIRED) ReviewType reviewType,
             HttpServletRequest servletRequest) {

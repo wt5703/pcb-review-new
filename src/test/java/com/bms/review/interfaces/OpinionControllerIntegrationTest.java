@@ -25,6 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * @description 通过 REST 验证专家提出意见、设计者答复、原提出人确认通过及统计看板更新的完整意见闭环。
  */
 @SpringBootTest
+@com.bms.TestDatabase
 @AutoConfigureMockMvc
 class OpinionControllerIntegrationTest {
     @Autowired
@@ -65,7 +66,7 @@ class OpinionControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("CONFIRMED_PASS"));
 
         mockMvc.perform(get("/tasks/{taskId}/opinions", taskId)
-                        .param("pageNo", "1")
+                        .param("pageNum", "1")
                         .param("pageSize", "10")
                         .header("X-Mock-User-Id", "10")
                         .header("X-Mock-Roles", "DESIGNER"))
@@ -75,6 +76,16 @@ class OpinionControllerIntegrationTest {
                 .andExpect(jsonPath("$.msg").value("成功"))
                 .andExpect(jsonPath("$.data.pageNum").value(1))
                 .andExpect(jsonPath("$.data.items[0].id").value(opinionId));
+
+        mockMvc.perform(get("/tasks/{taskId}/opinions", taskId)
+                        .param("pageNum", "2")
+                        .param("pageSize", "1")
+                        .header("X-Mock-User-Id", "10")
+                        .header("X-Mock-Roles", "DESIGNER"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.pageNum").value(2))
+                .andExpect(jsonPath("$.data.items.length()").value(0));
 
         mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)
                         .header("X-Mock-User-Id", "20")
@@ -97,7 +108,7 @@ class OpinionControllerIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sourceType\":\"PCB_REVIEW\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.severity").value("PASS"))
+                .andExpect(jsonPath("$.data.severity").value("GENERAL"))
                 .andExpect(jsonPath("$.data.status").value("CONFIRMED_PASS"));
 
         mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)
@@ -151,7 +162,10 @@ class OpinionControllerIntegrationTest {
         task.setDesignerEmployeeNo("BMS010");
         task.setDesignName("BMS-P1");
         task.setPcbType("BMU");
-        task.setStatus(TaskStatus.MUTUAL_CHECK_REVIEWING.name());
+        task.setStatus(TaskStatus.PCB_EXPERT_REVIEWING.name());
+        task.setReviewRoles("PCB_EXPERT");
+        task.setReviewerAssignments("PCB_EXPERT:BMS020");
+        task.setAssignedReviewerEmployeeNos("BMS020");
         task.setInitialFileIds("8602");
         task.setVersion(0L);
         return task;
