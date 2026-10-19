@@ -1,8 +1,5 @@
 package com.bms.task.application;
 
-import com.bms.identity.application.CurrentUser;
-import com.bms.identity.domain.Permission;
-import com.bms.identity.domain.PermissionPolicy;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
@@ -32,7 +29,6 @@ public class MyTaskApplicationService {
     private final TaskAssignmentAccessMapper assignmentAccessMapper;
     private final ReviewOpinionMapper opinionMapper;
     private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService;
-    private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public MyTaskApplicationService(ReviewTaskMapper taskMapper, TaskAssignmentAccessMapper assignmentAccessMapper,
                                     ReviewOpinionMapper opinionMapper,
@@ -43,14 +39,14 @@ public class MyTaskApplicationService {
         this.reviewerWhitelistApplicationService = reviewerWhitelistApplicationService;
     }
 
-    public List<MyTaskView> list(CurrentUser currentUser) {
-        Set<Long> pendingReplyTaskIds = Set.copyOf(opinionMapper.findPendingReplyTaskIdsForDesignerEmployeeNo(currentUser.employeeNo()));
-        Set<Long> pendingConfirmationTaskIds = Set.copyOf(opinionMapper.findPendingConfirmationTaskIdsForRaiserEmployeeNo(currentUser.employeeNo()));
+    public List<MyTaskView> list(String operatorEmployeeNo, String operatorName) {
+        Set<Long> pendingReplyTaskIds = Set.copyOf(opinionMapper.findPendingReplyTaskIdsForDesignerEmployeeNo(operatorEmployeeNo));
+        Set<Long> pendingConfirmationTaskIds = Set.copyOf(opinionMapper.findPendingConfirmationTaskIdsForRaiserEmployeeNo(operatorEmployeeNo));
         Map<Long, EnumSet<MyTaskAction>> actions = new HashMap<>();
         List<ReviewTaskRecord> unfinishedTasks = taskMapper.findAllUnfinished();
         for (ReviewTaskRecord task : unfinishedTasks) {
             EnumSet<MyTaskAction> taskActions = EnumSet.noneOf(MyTaskAction.class);
-            if (assignmentAccessMapper.isCurrentTaskProcessor(task.getId(), currentUser.employeeNo())) {
+            if (assignmentAccessMapper.isCurrentTaskProcessor(task.getId(), operatorEmployeeNo)) {
                 taskActions.add(MyTaskAction.REVIEW);
             }
             if (pendingReplyTaskIds.contains(task.getId())) {
@@ -59,7 +55,7 @@ public class MyTaskApplicationService {
             if (pendingConfirmationTaskIds.contains(task.getId())) {
                 taskActions.add(MyTaskAction.CONFIRM_OPINION);
             }
-            addManagementAction(task, currentUser, taskActions);
+            addManagementAction(task, operatorEmployeeNo, operatorName, taskActions);
             if (!taskActions.isEmpty()) {
                 actions.put(task.getId(), taskActions);
             }
@@ -74,20 +70,16 @@ public class MyTaskApplicationService {
                 reviewerWhitelistApplicationService.findDisplayNameOrDefault(task.getExpertLeaderEmployeeNo(), task.getExpertLeaderName()), actions);
     }
 
-    private void addManagementAction(ReviewTaskRecord task, CurrentUser currentUser, EnumSet<MyTaskAction> actions) {
+    private void addManagementAction(ReviewTaskRecord task, String operatorEmployeeNo, String operatorName, EnumSet<MyTaskAction> actions) {
         TaskStatus status = TaskStatus.valueOf(task.getStatus());
-        ReviewType type = ReviewType.valueOf(task.getReviewType());
-        if (type == ReviewType.PCB && status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT
-                && permissionPolicy.has(currentUser.roles(), Permission.ASSIGN_PCB_MUTUAL_CHECK)) {
+        // 不再按角色识别管理待办；只向任务记录中指定的组长展示。
+        if (!operatorEmployeeNo.equals(task.getExpertLeaderEmployeeNo())) {
+            return;
+        }
+        if (status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT) {
             actions.add(MyTaskAction.ASSIGN_REVIEWERS);
         }
-        if (type == ReviewType.SCHEMATIC && status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT
-                && permissionPolicy.has(currentUser.roles(), Permission.ASSIGN_SCHEMATIC_MUTUAL_CHECK)) {
-            actions.add(MyTaskAction.ASSIGN_REVIEWERS);
-        }
-        if (((type == ReviewType.PCB && status == TaskStatus.MUTUAL_CHECK_REVIEWING)
-                || (type == ReviewType.SCHEMATIC && status == TaskStatus.SCHEMATIC_REVIEWING))
-                && permissionPolicy.has(currentUser.roles(), type == ReviewType.PCB ? Permission.FINISH_PCB_TASK : Permission.FINISH_SCHEMATIC_TASK)) {
+        if (status == TaskStatus.PENDING_FINISH) {
             actions.add(MyTaskAction.FINISH_TASK);
         }
     }

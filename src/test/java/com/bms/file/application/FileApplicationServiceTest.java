@@ -4,8 +4,6 @@ import com.bms.file.domain.FileCategory;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
 import com.bms.file.infrastructure.ResourceServiceClient;
-import com.bms.identity.application.CurrentUser;
-import com.bms.identity.domain.Role;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
@@ -36,7 +34,6 @@ class FileApplicationServiceTest {
     private final ResourceServiceClient resourceServiceClient = mock(ResourceServiceClient.class);
     private final FileApplicationService service = new FileApplicationService(fileMapper, taskMapper, accessMapper,
             resourceServiceClient);
-    private final CurrentUser designer = new CurrentUser("10", Set.of(Role.DESIGNER));
 
     @Test
     void shouldRegisterEachUploadedFileIndependently() {
@@ -45,10 +42,10 @@ class FileApplicationServiceTest {
         when(resourceServiceClient.upload(any(MultipartFile.class), anyString()))
                 .thenReturn(new ResourceServiceClient.StoredResource("/company/BMS.pcb", "/company/BMS.pcb"));
         FileApplicationService.FileView first = service.upload(1L, FileCategory.PCB_REVIEW,
-                multipart("BMS.pcb", "first"), designer);
+                multipart("BMS.pcb", "first"), "10", "10");
 
         FileApplicationService.FileView second = service.upload(1L, FileCategory.PCB_REVIEW,
-                multipart("BMS-v2.pcb", "second"), designer);
+                multipart("BMS-v2.pcb", "second"), "10", "10");
 
         assertThat(first.id()).isEqualTo(101L);
         assertThat(second.id()).isEqualTo(102L);
@@ -57,19 +54,20 @@ class FileApplicationServiceTest {
     }
 
     @Test
-    void shouldAllowEmcExpertAndRejectHardwareExpertWhenDownloadingPcbFile() {
+    void shouldAllowAssignedReviewerAndRejectUnassignedReviewerWhenDownloadingPcbFile() {
         ReviewFileRecord file = record(101L, "md5-a");
         when(fileMapper.findById(101L)).thenReturn(file);
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
+        when(accessMapper.isAssignedToTask(1L, "20")).thenReturn(true);
         when(resourceServiceClient.download("BMS.pcb", "mock-file-1")).thenReturn(new byte[] { 1 });
 
         FileApplicationService.DownloadContent download = service.downloadFile(101L,
-                new CurrentUser("20", Set.of(Role.EMC_EXPERT)));
+                "20", "20");
 
         assertThat(download.fileName()).isEqualTo("BMS.pcb");
-        assertThatThrownBy(() -> service.downloadFile(101L, new CurrentUser("21", Set.of(Role.HARDWARE_EXPERT))))
+        assertThatThrownBy(() -> service.downloadFile(101L, "21", "21"))
                 .isInstanceOf(com.bms.common.BusinessException.class)
-                .hasMessage("无对应文件操作权限");
+                .hasMessage("无权访问该任务的文件");
     }
 
     @Test
@@ -78,7 +76,7 @@ class FileApplicationServiceTest {
         finished.setStatus(TaskStatus.FINISHED.name());
         when(taskMapper.findById(1L)).thenReturn(finished);
 
-        assertThatThrownBy(() -> service.upload(1L, FileCategory.PCB_REVIEW, multipart("BMS.pcb", "content"), designer))
+        assertThatThrownBy(() -> service.upload(1L, FileCategory.PCB_REVIEW, multipart("BMS.pcb", "content"), "10", "10"))
                 .isInstanceOf(com.bms.common.BusinessException.class)
                 .hasMessage("已结束任务不允许上传新文件");
     }
@@ -88,7 +86,7 @@ class FileApplicationServiceTest {
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
 
         assertThatThrownBy(() -> service.upload(1L, FileCategory.PCB_REVIEW,
-                multipart("BMS.pcb", "content"), new CurrentUser("11", Set.of(Role.DESIGNER))))
+                multipart("BMS.pcb", "content"), "11", "11"))
                 .isInstanceOf(com.bms.common.BusinessException.class)
                 .hasMessage("仅任务设计者可以上传该任务的 PCB 或原理图文件");
     }
@@ -103,7 +101,7 @@ class FileApplicationServiceTest {
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
         when(fileMapper.findByFileId(fileId)).thenReturn(pending);
 
-        assertThat(service.bindPendingInitialFiles(1L, java.util.List.of(fileId), designer))
+        assertThat(service.bindPendingInitialFiles(1L, java.util.List.of(fileId), "10", "10"))
                 .singleElement()
                 .satisfies(file -> assertThat(file.fileId()).isEqualTo(fileId));
     }

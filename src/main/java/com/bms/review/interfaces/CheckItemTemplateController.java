@@ -2,7 +2,6 @@ package com.bms.review.interfaces;
 
 import com.bms.common.ApiResponse;
 import com.bms.common.TraceIdFilter;
-import com.bms.identity.application.CurrentUserHolder;
 import com.bms.review.application.CheckItemTemplateApplicationService;
 import com.bms.task.domain.ReviewType;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -34,6 +34,7 @@ import java.util.List;
  * @description 互检单模板管理，会同步更新到任务的互检单
  */
 @RestController
+@Validated
 @RequestMapping("/check-item-templates")
 @Tag(name = "互检检查项模板", description = "按“检查项大类—检查项子类”一对多结构维护互检模板，并支持 Excel 批量导入。")
 public class CheckItemTemplateController {
@@ -48,7 +49,7 @@ public class CheckItemTemplateController {
     ApiResponse<CheckItemTemplateApplicationService.TemplateExistenceView> checkExistence(
             @Parameter(description = "模板所属评审类型：PCB 或 SCHEMATIC", required = true) @RequestParam @NotNull ReviewType reviewType,
             HttpServletRequest servletRequest) {
-        return ApiResponse.ok(templateApplicationService.checkExistence(reviewType, CurrentUserHolder.require()), traceId(servletRequest));
+        return ApiResponse.ok(templateApplicationService.checkExistence(reviewType, null, null), traceId(servletRequest));
     }
 
     @PostMapping(value = "/import", consumes = "multipart/form-data")
@@ -58,7 +59,7 @@ public class CheckItemTemplateController {
                                                                                  @RequestParam(value = "confirmed", defaultValue = "false") boolean confirmed,
                                                                                  HttpServletRequest servletRequest) throws IOException {
         return ApiResponse.ok(templateApplicationService.importWorkbook(file.getBytes(), reviewType, confirmed,
-                CurrentUserHolder.require()), traceId(servletRequest));
+                null, null), traceId(servletRequest));
     }
 
     @GetMapping
@@ -66,7 +67,7 @@ public class CheckItemTemplateController {
     ApiResponse<CheckItemTemplateApplicationService.TemplateListView> get(
             @Parameter(description = "模板所属评审类型：PCB 或 SCHEMATIC", required = true) @RequestParam @NotNull ReviewType reviewType,
             HttpServletRequest servletRequest) {
-        return ApiResponse.ok(templateApplicationService.get(reviewType, CurrentUserHolder.require()), traceId(servletRequest));
+        return ApiResponse.ok(templateApplicationService.get(reviewType, null, null), traceId(servletRequest));
     }
 
 
@@ -78,20 +79,20 @@ public class CheckItemTemplateController {
         CheckItemTemplateApplicationService.CreateCategoryCommand command = toCreateCategoryCommand(request);
 
         CheckItemTemplateApplicationService.TemplateCategoryView created = templateApplicationService.create(
-                command, CurrentUserHolder.require());
+                command, null, null);
 
         return ApiResponse.ok(created, traceId(servletRequest));
     }
 
 
     @PutMapping
-    @Operation(summary = "修改检查项", description = "id 指向大类时可同时传 items 维护其子项；指向小类时仅传 id、itemName")
+    @Operation(summary = "修改检查项", description = "itemId 指向大类时可同时传 items 维护其子项；指向小类时仅传 itemId、itemName")
     ApiResponse<CheckItemTemplateApplicationService.TemplateUpdateView> update(@Valid @RequestBody UpdateTemplateRequest request,
                                                                                HttpServletRequest servletRequest) {
         return ApiResponse.ok(templateApplicationService.update(new CheckItemTemplateApplicationService.UpdateTemplateCommand(
-                        request.id(), request.itemName(), (request.items() == null ? List.<UpdateTemplateItemRequest>of() : request.items()).stream()
-                        .map(item -> new CheckItemTemplateApplicationService.UpdateItemCommand(item.id(), item.itemName())).toList()),
-                CurrentUserHolder.require()), traceId(servletRequest));
+                        request.itemId(), request.itemName(), (request.items() == null ? List.<UpdateTemplateItemRequest>of() : request.items()).stream()
+                        .map(item -> new CheckItemTemplateApplicationService.UpdateItemCommand(item.itemId(), item.itemName())).toList()),
+                null, null), traceId(servletRequest));
     }
 
     @DeleteMapping("/{checkItemId}")
@@ -101,7 +102,7 @@ public class CheckItemTemplateController {
             @Parameter(description = "删除目标类别：CATEGORY=大类，ITEM=小类", required = true)
             @RequestParam("category") CheckItemTemplateApplicationService.DeleteTargetCategory category,
             HttpServletRequest servletRequest) {
-        templateApplicationService.disable(checkItemId, category, CurrentUserHolder.require());
+        templateApplicationService.disable(checkItemId, category, null, null);
         return ApiResponse.ok(null, traceId(servletRequest));
     }
 
@@ -134,9 +135,9 @@ public class CheckItemTemplateController {
 
     @Schema(description = "统一修改检查项请求")
     record UpdateTemplateRequest(
-            @Schema(description = "待修改的大类或小类 ID", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull Long id,
+            @Schema(description = "待修改的大类或小类 itemId", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull Long itemId,
             @Schema(description = "修改后的名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String itemName,
-            @Schema(description = "仅修改大类时可传：完整子项列表；已有子项传 id，新增子项不传") List<@Valid UpdateTemplateItemRequest> items) {
+            @Schema(description = "仅修改大类时可传：完整子项列表；已有子项传 itemId，新增子项不传") List<@Valid UpdateTemplateItemRequest> items) {
     }
 
     @Schema(description = "检查项子类内容")
@@ -145,7 +146,7 @@ public class CheckItemTemplateController {
     }
 
     @Schema(description = "修改检查项子类内容")
-    record UpdateTemplateItemRequest(@Schema(description = "已有子检查项 ID；新增子检查项不传") Long id,
+    record UpdateTemplateItemRequest(@Schema(description = "已有子检查项 itemId；新增子检查项不传") Long itemId,
                                      @Schema(description = "检查项名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String itemName) {
     }
 }

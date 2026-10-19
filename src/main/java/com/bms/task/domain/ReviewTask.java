@@ -45,7 +45,7 @@ public final class ReviewTask {
         this.pcbType = pcbType;
         this.expectedCompletedDate = Objects.requireNonNull(expectedCompletedDate, "期望完成日期不能为空");
         this.expertLeaderEmployeeNo = requireText(expertLeaderEmployeeNo, "组长工号不能为空");
-        this.expertLeaderName = requireText(expertLeaderName, "专家/组长姓名不能为空");
+        this.expertLeaderName = expertLeaderName;
         this.reviewRoles = List.copyOf(Objects.requireNonNull(reviewRoles));
         if (this.reviewRoles.isEmpty()) { throw new IllegalArgumentException("评审角色不能为空"); }
         this.reviewerAssignments = List.copyOf(reviewerAssignments == null ? List.of() : reviewerAssignments);

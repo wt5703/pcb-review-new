@@ -2,9 +2,6 @@ package com.bms.review.application;
 
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
-import com.bms.identity.application.CurrentUser;
-import com.bms.identity.domain.Permission;
-import com.bms.identity.domain.PermissionPolicy;
 import com.bms.review.infrastructure.CheckItemTemplateMapper;
 import com.bms.review.infrastructure.CheckItemTemplateRecord;
 import com.bms.task.domain.ReviewType;
@@ -39,15 +36,13 @@ import java.util.Set;
 @Service
 public class CheckItemTemplateApplicationService {
     private final CheckItemTemplateMapper templateMapper;
-    private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public CheckItemTemplateApplicationService(CheckItemTemplateMapper templateMapper) {
         this.templateMapper = templateMapper;
     }
 
     /** 导入前供页面判断是否需要提示用户确认替换当前模板。 */
-    public TemplateExistenceView checkExistence(ReviewType reviewType, CurrentUser currentUser) {
-        requireManagePermission(currentUser);
+    public TemplateExistenceView checkExistence(ReviewType reviewType, String operatorEmployeeNo, String operatorName) {
         if (reviewType == null) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "查询互检单模板时必须选择任务类型");
         }
@@ -58,8 +53,8 @@ public class CheckItemTemplateApplicationService {
     }
 
     /** 兼容应用层已有调用：未显式确认时绝不替换已有模板。 */
-    public ImportResult importWorkbook(byte[] workbookBytes, ReviewType reviewType, CurrentUser currentUser) {
-        return importWorkbook(workbookBytes, reviewType, false, currentUser);
+    public ImportResult importWorkbook(byte[] workbookBytes, ReviewType reviewType, String operatorEmployeeNo, String operatorName) {
+        return importWorkbook(workbookBytes, reviewType, false, operatorEmployeeNo, operatorName);
     }
 
     /**
@@ -67,8 +62,7 @@ public class CheckItemTemplateApplicationService {
      * PCB 的检查项可按换行编号拆分，且会保留 .xlsx 检查项单元格内嵌的示例图片。
      */
     @Transactional
-    public ImportResult importWorkbook(byte[] workbookBytes, ReviewType reviewType, boolean confirmed, CurrentUser currentUser) {
-        requireManagePermission(currentUser);
+    public ImportResult importWorkbook(byte[] workbookBytes, ReviewType reviewType, boolean confirmed, String operatorEmployeeNo, String operatorName) {
         if (reviewType == null) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "导入互检单模板时必须选择任务类型");
         }
@@ -101,8 +95,7 @@ public class CheckItemTemplateApplicationService {
     /**
      * 每种评审类型仅维护一套互检单模板；层级关系只由 parentId 表达。
      */
-    public TemplateListView get(ReviewType reviewType, CurrentUser currentUser) {
-        requireManagePermission(currentUser);
+    public TemplateListView get(ReviewType reviewType, String operatorEmployeeNo, String operatorName) {
         if (reviewType == null) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "查询互检单模板时必须选择任务类型");
         }
@@ -120,8 +113,7 @@ public class CheckItemTemplateApplicationService {
     }
 
     @Transactional
-    public TemplateCategoryView create(CreateCategoryCommand command, CurrentUser currentUser) {
-        requireManagePermission(currentUser);
+    public TemplateCategoryView create(CreateCategoryCommand command, String operatorEmployeeNo, String operatorName) {
         requireName(command.categoryName(), "检查项大类名称");
         CheckItemTemplateRecord category = newTemplate(command.reviewType(), null, command.categoryName(), nextCategorySort(command.reviewType()), true);
         templateMapper.insert(category);
@@ -138,8 +130,7 @@ public class CheckItemTemplateApplicationService {
     }
 
     @Transactional
-    public TemplateUpdateView update(UpdateTemplateCommand command, CurrentUser currentUser) {
-        requireManagePermission(currentUser);
+    public TemplateUpdateView update(UpdateTemplateCommand command, String operatorEmployeeNo, String operatorName) {
         CheckItemTemplateRecord target = templateMapper.findById(command.itemId());
         if (target == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在");
@@ -182,8 +173,7 @@ public class CheckItemTemplateApplicationService {
 
 
     @Transactional
-    public void disable(long id, DeleteTargetCategory category, CurrentUser currentUser) {
-        requireManagePermission(currentUser);
+    public void disable(long id, DeleteTargetCategory category, String operatorEmployeeNo, String operatorName) {
         CheckItemTemplateRecord template = templateMapper.findById(id);
         if (template == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在");
@@ -356,12 +346,6 @@ public class CheckItemTemplateApplicationService {
         record.setEnabled(enabled);
         record.setVersion(0L);
         return record;
-    }
-
-    private void requireManagePermission(CurrentUser currentUser) {
-        if (!permissionPolicy.has(currentUser.roles(), Permission.MANAGE_MUTUAL_CHECK)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "无检查项模板管理权限");
-        }
     }
 
     private void requireName(String value, String fieldName) {

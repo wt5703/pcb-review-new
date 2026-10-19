@@ -2,7 +2,6 @@ package com.bms.task.application;
 
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
-import com.bms.identity.application.CurrentUser;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import org.springframework.stereotype.Service;
 
@@ -20,8 +19,8 @@ public class TaskProcessorAuthorizationService {
         this.taskAssignmentAccessMapper = taskAssignmentAccessMapper;
     }
 
-    public void requireCurrentTaskProcessor(long taskId, CurrentUser currentUser) {
-        if (!taskAssignmentAccessMapper.isCurrentTaskProcessor(taskId, currentUser.employeeNo())) {
+    public void requireCurrentTaskProcessor(long taskId, String operatorEmployeeNo, String operatorName) {
+        if (!taskAssignmentAccessMapper.isCurrentTaskProcessor(taskId, operatorEmployeeNo)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "当前任务节点不需要该用户处理");
         }
     }

@@ -6,6 +6,9 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
+import com.bms.common.TraceIdFilter;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -21,10 +24,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class ReviewerWhitelistControllerIntegrationTest {
     @Autowired
-    private MockMvc mockMvc;
+    private WebApplicationContext webApplicationContext;
 
     @Test
     void shouldPageAndSearchReviewerWhitelistByEmployeeNoOrName() throws Exception {
+        MockMvc mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).addFilters(new TraceIdFilter()).build();
         mockMvc.perform(post("/reviewer-whitelists/query")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"keyword\":\"BMS009\",\"pageNum\":1,\"pageSize\":1}"))

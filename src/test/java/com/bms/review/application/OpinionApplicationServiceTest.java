@@ -1,9 +1,7 @@
 package com.bms.review.application;
 
-import com.bms.identity.application.CurrentUser;
 import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import com.bms.task.application.TaskProcessorAuthorizationService;
-import com.bms.identity.domain.Role;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.review.domain.OpinionSeverity;
 import com.bms.review.domain.OpinionSourceType;
@@ -60,10 +58,9 @@ class OpinionApplicationServiceTest {
     void shouldRaiseMutualExtraOpinion() {
         when(taskMapper.findById(1001L)).thenReturn(task("BMS009"));
         when(opinionMapper.nextOpinionId()).thenReturn(31L);
-        CurrentUser mutualReviewer = new CurrentUser("BMS020", Set.of(Role.PCB_LEADER));
 
         OpinionApplicationService.OpinionView view = service.raise(new OpinionApplicationService.RaiseOpinionCommand(1001L,
-                OpinionSourceType.MUTUAL_EXTRA, null, "补充检查发现的问题", "<p>补充检查发现的问题</p>", OpinionSeverity.GENERAL), mutualReviewer);
+                OpinionSourceType.MUTUAL_EXTRA, null, "补充检查发现的问题", "<p>补充检查发现的问题</p>", OpinionSeverity.GENERAL), "BMS020", "BMS020");
 
         assertThat(view.id()).isEqualTo(31L);
         assertThat(view.status()).isEqualTo(OpinionStatus.PENDING_REPLY);
@@ -85,7 +82,7 @@ class OpinionApplicationServiceTest {
 
         OpinionApplicationService.OpinionView replied = service.reply(31L,
                 new OpinionApplicationService.ReplyOpinionCommand(ReplyType.ACCEPT, "已上传新设计文件"),
-                new CurrentUser("BMS009", Set.of(Role.DESIGNER)));
+                "BMS009", "BMS009");
 
         OpinionReplyRecord persistedReply = new OpinionReplyRecord();
         persistedReply.setId(41L);
@@ -94,7 +91,7 @@ class OpinionApplicationServiceTest {
         when(opinionMapper.nextConfirmationId()).thenReturn(51L);
         OpinionApplicationService.OpinionView confirmed = service.confirm(31L,
                 new OpinionApplicationService.ConfirmOpinionCommand(true, "确认通过"),
-                new CurrentUser("BMS020", Set.of(Role.HARDWARE_EXPERT)));
+                "BMS020", "BMS020");
 
         assertThat(replied.status()).isEqualTo(OpinionStatus.PENDING_CONFIRMATION);
         assertThat(confirmed.status()).isEqualTo(OpinionStatus.CONFIRMED_PASS);
@@ -121,7 +118,7 @@ class OpinionApplicationServiceTest {
         when(taskMapper.updateAssignedReviewerEmployeeNos(any())).thenReturn(1);
 
         service.confirm(31L, new OpinionApplicationService.ConfirmOpinionCommand(true, "确认通过"),
-                new CurrentUser("BMS020", Set.of(Role.HARDWARE_EXPERT)));
+                "BMS020", "BMS020");
 
         assertThat(activeTask.getAssignedReviewerEmployeeNos()).isEmpty();
         verify(taskMapper).updateAssignedReviewerEmployeeNos(activeTask);
@@ -129,12 +126,13 @@ class OpinionApplicationServiceTest {
 
     @Test
     void shouldSummarizeOpinionsByLifecycleStatus() {
+        when(assignmentAccessMapper.isAssignedToTask(1001L, "BMS020")).thenReturn(true);
         when(taskMapper.findById(1001L)).thenReturn(task("BMS009"));
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(
                 opinion(31L, 1001L, "BMS020", OpinionStatus.PENDING_REPLY),
                 opinion(32L, 1001L, "BMS020", OpinionStatus.CONFIRMED_PASS)));
 
-        OpinionApplicationService.OpinionSummary summary = service.summary(1001L, new CurrentUser("BMS020", Set.of(Role.HARDWARE_EXPERT)));
+        OpinionApplicationService.OpinionSummary summary = service.summary(1001L, "BMS020", "BMS020");
 
         assertThat(summary.total()).isEqualTo(2);
         assertThat(summary.pendingReply()).isEqualTo(1);
@@ -143,6 +141,7 @@ class OpinionApplicationServiceTest {
 
     @Test
     void shouldExposeEveryDesignerReplyWithItsPairedConfirmationWhenListingOpinions() {
+        when(assignmentAccessMapper.isAssignedToTask(1001L, "BMS020")).thenReturn(true);
         ReviewOpinionRecord opinion = opinion(31L, 1001L, "BMS020", OpinionStatus.PENDING_CONFIRMATION);
         OpinionReplyRecord reply = new OpinionReplyRecord();
         reply.setId(41L);
@@ -177,7 +176,7 @@ class OpinionApplicationServiceTest {
         when(opinionMapper.findConfirmationsByOpinionId(31L)).thenReturn(List.of(confirmation, secondConfirmation));
 
         OpinionApplicationService.OpinionView view = service.list(1001L,
-                new CurrentUser("BMS020", Set.of(Role.HARDWARE_EXPERT))).get(0);
+                "BMS020", "BMS020").get(0);
 
         assertThat(view.replies()).hasSize(2);
         assertThat(view.replies().get(0).reason()).isEqualTo("已优化布局并更新文件");

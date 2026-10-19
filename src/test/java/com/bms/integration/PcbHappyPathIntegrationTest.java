@@ -10,6 +10,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.mock.web.MockMultipartFile;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -39,19 +40,26 @@ class PcbHappyPathIntegrationTest {
         transition(taskId, "START_PCB_MATUAL_ASSIGNMENT", "BMS010", "DESIGNER");
         assignAndTransition(taskId, "START_PCB_MATUAL_REVIEW", "BMS006", "BMS001", "PCB_LEADER");
 
-        transition(taskId, "PREPARE_FINISH", "BMS010", "DESIGNER");
+        // 互检结束后由设计者重新上传终版，才能进入待结束。
+        mockMvc.perform(multipart("/files/upload")
+                        .file(new MockMultipartFile("file", "BMS-final.pcb", "application/octet-stream", new byte[]{1, 2, 3}))
+                        .param("taskId", Long.toString(taskId))
+                        .param("fileCategory", "PCB_REVIEW")
+                        .header("userId", "BMS010").header("userName", "测试用户"))
+                .andExpect(status().isOk());
+        transition(taskId, "PENDING_FINISH", "BMS010", "DESIGNER");
         transition(taskId, "FINISH", "BMS001", "PCB_LEADER");
 
         mockMvc.perform(get("/tasks/{taskId}/archive", taskId)
-                        .header("X-Mock-Employee-No", "BMS001")
-                        .header("X-Mock-Roles", "PCB_LEADER"))
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.flowNodes").isArray())
                 .andExpect(jsonPath("$.data.flowNodes.length()").value(5));
 
         mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
-                        .header("X-Mock-Employee-No", "BMS001")
-                        .header("X-Mock-Roles", "PCB_LEADER")
+                        .header("userId", "BMS001")
+                        .header("userName", "测试用户")
                         .param("actions", "FINISH"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TASK_STATUS_CONFLICT"));
@@ -68,8 +76,8 @@ class PcbHappyPathIntegrationTest {
                 {"reviewType":"PCB","taskName":"PCB 全链路验收","projectName":"BMS","designerId":10,"designName":"BMS-P1","pcbType":"BMU","files":["c778c14e-6f1a-4f4f-9f11-100000000004"]}
                 """;
         MvcResult result = mockMvc.perform(post("/tasks/submit").contentType(MediaType.APPLICATION_JSON).content(taskRequest)
-                        .header("X-Mock-Employee-No", "BMS010")
-                        .header("X-Mock-Roles", "DESIGNER"))
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PCB_EXPERT_REVIEWING"))
                 .andReturn();
@@ -78,16 +86,16 @@ class PcbHappyPathIntegrationTest {
 
     private void assignAndTransition(long taskId, String action, String reviewerEmployeeNo, String operatorEmployeeNo, String operatorRole) throws Exception {
         mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
-                        .header("X-Mock-Employee-No", operatorEmployeeNo)
-                        .header("X-Mock-Roles", operatorRole)
+                        .header("userId", operatorEmployeeNo)
+                        .header("userName", "测试用户")
                         .param("actions", action).param("reviewerEmployeeNos", reviewerEmployeeNo))
                 .andExpect(status().isOk());
     }
 
     private void transition(long taskId, String action, String employeeNo, String role) throws Exception {
         mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
-                        .header("X-Mock-Employee-No", employeeNo)
-                        .header("X-Mock-Roles", role)
+                        .header("userId", employeeNo)
+                        .header("userName", "测试用户")
                         .param("actions", action))
                 .andExpect(status().isOk());
     }

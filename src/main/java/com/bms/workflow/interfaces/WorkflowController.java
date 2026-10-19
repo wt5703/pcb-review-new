@@ -4,8 +4,6 @@ import com.bms.common.ApiResponse;
 import com.bms.common.TraceIdFilter;
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
-import com.bms.identity.application.CurrentUser;
-import com.bms.identity.application.CurrentUserHolder;
 import com.bms.file.domain.FileCategory;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.ReviewerWhitelistRole;
@@ -25,6 +23,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.validation.annotation.Validated;
+import jakarta.validation.constraints.NotBlank;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.http.MediaType;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -37,6 +38,7 @@ import java.util.List;
  * @description 任务流程推进
  */
 @RestController
+@Validated
 @RequestMapping
 @Tag(name = "任务流程", description = "推进 PCB 或原理图评审任务的当前流程节点")
 public class WorkflowController {
@@ -60,16 +62,15 @@ public class WorkflowController {
             3. 分配互检人员并开启互检：传 START_PCB_MATUAL_REVIEW + reviewerEmployeeNos。<br/>
             4. 分配互检人员并开启互检：传 START_SCHEMATIC_MATUAL_REVIEW + reviewerEmployeeNos。<br/>
             5. 设计者在互检意见闭环后开启原理图评审：传 START_SCHEMATIC_EXPERT_REVIEW；评审人员取创建任务时的角色分配。<br/>
-            6. 设计者准备结束：传 PREPARE_FINISH；组长结束任务：传 FINISH。
+            6. 相关评审意见闭环后，设计者重新上传终版文件并传 PENDING_FINISH，任务进入待结束；组长传 FINISH 结束任务。<br/>
             
-            关于文件：只有pcb评审开启工艺评审或者结构评审的时候需要上传文件
+            关于文件：开启工艺/结构评审及进入待结束时支持随流程上传；也可先通过文件接口上传终版。
             """)
     ApiResponse<WorkflowApplicationService.WorkflowView> transition(@PathVariable long taskId,
                                                                       @Valid @ModelAttribute TransitionRequest request,
-                                                                      HttpServletRequest servletRequest) {
-        CurrentUser currentUser = CurrentUserHolder.require();
+                                                                      @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         return ApiResponse.ok(workflowApplicationService.transition(taskId,
-                request.command(whitelistApplicationService), request.fileCommands(), currentUser), traceId(servletRequest));
+                request.command(whitelistApplicationService), request.fileCommands(), employeeNo, null), traceId(servletRequest));
     }
 
     @GetMapping("/workflow/assignable-reviewers")
@@ -85,7 +86,7 @@ public class WorkflowController {
     ApiResponse<List<ReviewerWhitelistApplicationService.AssignableReviewerView>> listMutualCheckReviewers(
             @RequestParam @Schema(description = "PCB 或 SCHEMATIC", requiredMode = Schema.RequiredMode.REQUIRED) ReviewType reviewType,
             HttpServletRequest servletRequest) {
-        return ApiResponse.ok(workflowApplicationService.listMutualCheckReviewers(reviewType, CurrentUserHolder.require()),
+        return ApiResponse.ok(workflowApplicationService.listMutualCheckReviewers(reviewType, null, null),
                 traceId(servletRequest));
     }
 
@@ -102,7 +103,7 @@ public class WorkflowController {
         private String comment;
         @Schema(description = "随本次动作分配的评审人员企业工号；使用多个 reviewerEmployeeNos 表单字段传递。需要分配人员的动作至少传一名，支持多人。")
         private List<String> reviewerEmployeeNos = new ArrayList<>();
-        @Schema(description = "本次流程上传文件；每项必须同时传 files[i].fileCategory 和 files[i].file。普通流程不传。")
+        @Schema(description = "本次流程上传文件；每项同时传 files[i].fileCategory 和 files[i].file。进入待结束时可上传 PCB_REVIEW 或 SCHEMATIC_REVIEW 终版。")
         @Valid
         private List<TransitionFileRequest> files = new ArrayList<>();
 
@@ -147,7 +148,7 @@ public class WorkflowController {
 
     @Schema(description = "单个流程文件；文件类型与文件本身必须在同一个 files[i] 对象中传递")
     public static class TransitionFileRequest {
-        @Schema(description = "文件类型。工艺文件传 PCB_PROCESS_REVIEW，结构文件传 PCB_STRUCTURE_REVIEW", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(description = "文件类型：工艺 PCB_PROCESS_REVIEW、结构 PCB_STRUCTURE_REVIEW、PCB终版 PCB_REVIEW、原理图终版 SCHEMATIC_REVIEW", requiredMode = Schema.RequiredMode.REQUIRED)
         @jakarta.validation.constraints.NotNull
         private FileCategory fileCategory;
         @Schema(description = "对应文件", requiredMode = Schema.RequiredMode.REQUIRED)

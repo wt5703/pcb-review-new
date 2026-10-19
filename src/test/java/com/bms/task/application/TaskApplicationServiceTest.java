@@ -1,8 +1,6 @@
 package com.bms.task.application;
 
 import com.bms.file.application.FileApplicationService;
-import com.bms.identity.application.CurrentUser;
-import com.bms.identity.domain.Role;
 import com.bms.notification.application.ReviewMailNotificationApplicationService;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.ReviewRole;
@@ -15,6 +13,8 @@ import com.bms.task.infrastructure.ReviewTaskRecord;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.workflow.infrastructure.TaskFlowMapper;
 import com.bms.workflow.infrastructure.TaskFlowRecord;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -55,7 +55,6 @@ class TaskApplicationServiceTest {
     private final TaskApplicationService service = new TaskApplicationService(taskMapper,
             taskAssignmentAccessMapper, flowMapper, reviewerWhitelistApplicationService,
             reviewMailNotificationApplicationService, fileApplicationService);
-    private final CurrentUser designer = new CurrentUser(DESIGNER_NO, "设计者", Set.of(Role.DESIGNER));
 
     @BeforeEach
     void setUpWhitelistNames() {
@@ -81,7 +80,7 @@ class TaskApplicationServiceTest {
         TaskApplicationService.TaskView result = service.saveNewTask(new TaskApplicationService.CreateTaskCommand(
                 ReviewType.PCB, "BMS PCB评审", "BMS", DESIGNER_NO, "设计者", "BMS-P1", "BMU", LocalDate.now(),
                 LEADER_NO, "组长", List.of(ReviewRole.PCB_EXPERT),
-                List.of(new TaskReviewerAssignment(ReviewRole.PCB_EXPERT, List.of(DESIGNER_NO))), null), List.of(), false, designer);
+                List.of(new TaskReviewerAssignment(ReviewRole.PCB_EXPERT, List.of(DESIGNER_NO))), null), List.of(), false, DESIGNER_NO, "设计者");
 
         assertThat(result.id()).isEqualTo(101L);
         verify(taskMapper).insert(any(ReviewTaskRecord.class));
@@ -94,7 +93,7 @@ class TaskApplicationServiceTest {
         when(taskMapper.updateAssignedReviewerEmployeeNos(any())).thenReturn(1);
         when(flowMapper.nextId()).thenReturn(1L);
 
-        TaskApplicationService.TaskView result = service.submitTask(101L, List.of(3001L), designer);
+        TaskApplicationService.TaskView result = service.submitTask(101L, List.of(3001L), DESIGNER_NO, "设计者");
 
         assertThat(result.status()).isEqualTo(TaskStatus.PCB_EXPERT_REVIEWING.name());
         verify(flowMapper).insert(any(TaskFlowRecord.class));
@@ -111,7 +110,7 @@ class TaskApplicationServiceTest {
         when(taskMapper.updateAssignedReviewerEmployeeNos(any())).thenReturn(1);
         when(flowMapper.nextId()).thenReturn(1L);
 
-        service.submitTask(101L, List.of(3001L), designer);
+        service.submitTask(101L, List.of(3001L), DESIGNER_NO, "设计者");
 
         ArgumentCaptor<ReviewTaskRecord> captor = ArgumentCaptor.forClass(ReviewTaskRecord.class);
         verify(taskMapper).updateAssignedReviewerEmployeeNos(captor.capture());
@@ -123,7 +122,7 @@ class TaskApplicationServiceTest {
         when(taskMapper.findById(101L)).thenReturn(record(101L, "BMS PCB评审", TaskStatus.DRAFT, 0L));
 
         assertThatThrownBy(() -> service.submitTask(101L, List.of(3001L),
-                new CurrentUser("BMS099", "其他设计者", Set.of(Role.DESIGNER))))
+                "BMS099", "其他设计者"))
                 .isInstanceOf(com.bms.common.BusinessException.class)
                 .hasMessage("仅任务设计者可以提交该任务");
     }
@@ -133,7 +132,7 @@ class TaskApplicationServiceTest {
         mockTaskPage(2, List.of(record(1L, "BMS PCB评审", TaskStatus.DRAFT, 0L)));
 
         TaskApplicationService.TaskPage page = service.listTasks(new TaskApplicationService.TaskQuery(
-                "BMS", null, null, 1, 1, null), administrator());
+                "BMS", null, null, 1, 1, null), LEADER_NO, "组长");
 
         assertThat(page.total()).isEqualTo(2);
         assertThat(page.items()).extracting(TaskApplicationService.TaskView::id).containsExactly(1L);
@@ -149,9 +148,9 @@ class TaskApplicationServiceTest {
                         record(2L, "原理图任务", TaskStatus.DRAFT, 0L)));
 
         TaskApplicationService.TaskPage projectPage = service.listTasks(new TaskApplicationService.TaskQuery(
-                "VCU", null, null, 1, 20, null), administrator());
+                "VCU", null, null, 1, 20, null), LEADER_NO, "组长");
         TaskApplicationService.TaskPage designerPage = service.listTasks(new TaskApplicationService.TaskQuery(
-                "设计者", null, null, 1, 20, null), administrator());
+                "设计者", null, null, 1, 20, null), LEADER_NO, "组长");
 
         assertThat(projectPage.items()).extracting(TaskApplicationService.TaskView::id).containsExactly(2L);
         assertThat(designerPage.items()).extracting(TaskApplicationService.TaskView::id).containsExactly(1L, 2L);
@@ -164,7 +163,7 @@ class TaskApplicationServiceTest {
                 record(3L, "BMS第二轮评审", TaskStatus.PCB_EXPERT_REVIEWING, 0L)));
 
         TaskApplicationService.TaskPage page = service.listTasks(new TaskApplicationService.TaskQuery(
-                null, null, List.of(TaskStatus.DRAFT, TaskStatus.PCB_EXPERT_REVIEWING), 1, 20, null), administrator());
+                null, null, List.of(TaskStatus.DRAFT, TaskStatus.PCB_EXPERT_REVIEWING), 1, 20, null), LEADER_NO, "组长");
 
         assertThat(page.total()).isEqualTo(2);
         assertThat(page.items()).extracting(TaskApplicationService.TaskView::id).containsExactly(1L, 3L);
@@ -177,11 +176,42 @@ class TaskApplicationServiceTest {
         task.setReviewerAssignments("HARDWARE_EXPERT:BMS101,BMS102;EMC_EXPERT:BMS103");
         mockTaskPage(1, List.of(task));
 
-        TaskApplicationService.TaskPage page = service.listTasks(null, administrator());
+        TaskApplicationService.TaskPage page = service.listTasks(null, LEADER_NO, "组长");
 
         assertThat(page.items()).singleElement().satisfies(item -> assertThat(item.reviewerAssignments()).containsExactly(
-                new TaskReviewerAssignment(ReviewRole.HARDWARE_EXPERT, List.of("BMS101", "BMS102")),
-                new TaskReviewerAssignment(ReviewRole.EMC_EXPERT, List.of("BMS103"))));
+                new TaskApplicationService.ReviewerAssignmentView(ReviewRole.HARDWARE_EXPERT, "硬件评审", List.of("BMS101", "BMS102")),
+                new TaskApplicationService.ReviewerAssignmentView(ReviewRole.EMC_EXPERT, "EMC评审", List.of("BMS103"))));
+    }
+
+    @Test
+    void shouldIncludeRoleNamesInTaskDetailAssignments() throws Exception {
+        ReviewTaskRecord task = record(101L, "BMS PCB评审", TaskStatus.DRAFT, 0L);
+        task.setReviewRoles("HARDWARE_EXPERT,EMC_EXPERT,PCB_EXPERT,PROCESS_EXPERT,STRUCTURE_EXPERT");
+        task.setReviewerAssignments("HARDWARE_EXPERT:BMS101;EMC_EXPERT:BMS102;PCB_EXPERT:BMS103;PROCESS_EXPERT:BMS104;STRUCTURE_EXPERT:BMS105");
+        when(taskMapper.findById(101L)).thenReturn(task);
+
+        TaskApplicationService.TaskView detail = service.getTaskDetail(101L, LEADER_NO, "组长");
+
+        assertThat(detail.reviewerAssignments()).extracting(TaskApplicationService.ReviewerAssignmentView::reviewRoleName)
+                .containsExactly("硬件评审", "EMC评审", "PCB评审", "工艺评审", "结构评审");
+        var json = new ObjectMapper().registerModule(new JavaTimeModule()).valueToTree(detail);
+        assertThat(json.path("reviewerAssignments").get(0).path("reviewRole").asText()).isEqualTo("HARDWARE_EXPERT");
+        assertThat(json.path("reviewerAssignments").get(0).path("reviewRoleName").asText()).isEqualTo("硬件评审");
+        assertThat(json.path("reviewerAssignments").get(0).path("reviewerEmployeeNos").get(0).asText()).isEqualTo("BMS101");
+    }
+
+    @Test
+    void shouldIncludeCreationDateInTaskListItems() throws Exception {
+        ReviewTaskRecord task = record(1L, "BMS PCB评审", TaskStatus.DRAFT, 0L);
+        task.setCreatedAt(LocalDateTime.of(2026, 10, 19, 15, 30));
+        mockTaskPage(1, List.of(task));
+
+        TaskApplicationService.TaskPage page = service.listTasks(null, LEADER_NO, "组长");
+
+        assertThat(page.items()).singleElement().satisfies(item ->
+                assertThat(item.createdDate()).isEqualTo(LocalDate.of(2026, 10, 19)));
+        String json = new ObjectMapper().registerModule(new JavaTimeModule()).writeValueAsString(page);
+        assertThat(json).contains("\"createdDate\":\"2026-10-19\"");
     }
 
     @Test
@@ -190,7 +220,7 @@ class TaskApplicationServiceTest {
         mockTaskPage(1, List.of(record(2L, "VCU原理图评审", TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT, 0L)));
 
         TaskApplicationService.TaskPage page = service.listTasks(null,
-                new CurrentUser("BMS088", "工艺专家", Set.of(Role.PROCESS_EXPERT)));
+                "BMS088", "工艺专家");
 
         assertThat(page.items()).extracting(TaskApplicationService.TaskView::id).containsExactly(2L);
     }
@@ -207,7 +237,7 @@ class TaskApplicationServiceTest {
         flow.setCreatedAt(LocalDateTime.of(2026, 9, 25, 10, 0));
         when(flowMapper.findByTaskId(101L)).thenReturn(List.of(flow));
 
-        TaskApplicationService.TaskView result = service.getTaskDetail(101L, designer);
+        TaskApplicationService.TaskView result = service.getTaskDetail(101L, DESIGNER_NO, "设计者");
 
         assertThat(result.flowRecords()).singleElement().satisfies(record -> {
             assertThat(record.action()).isEqualTo("CREATE");
@@ -215,10 +245,6 @@ class TaskApplicationServiceTest {
             assertThat(record.operatorEmployeeNo()).isEqualTo(DESIGNER_NO);
             assertThat(record.operatorName()).isEqualTo("设计者");
         });
-    }
-
-    private CurrentUser administrator() {
-        return new CurrentUser(LEADER_NO, "组长", Set.of(Role.HARDWARE_DEPARTMENT_MANAGER));
     }
 
     private void mockTaskPage(long total, List<ReviewTaskRecord> records) {

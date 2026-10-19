@@ -6,9 +6,6 @@ import com.bms.file.domain.FileCategory;
 import com.bms.file.infrastructure.ResourceServiceClient;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
-import com.bms.identity.application.CurrentUser;
-import com.bms.identity.domain.PermissionPolicy;
-import com.bms.identity.domain.Role;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
@@ -36,7 +33,6 @@ public class FileApplicationService {
     private final ReviewTaskMapper taskMapper;
     private final TaskAssignmentAccessMapper taskAssignmentAccessMapper;
     private final ResourceServiceClient resourceServiceClient;
-    private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     @Autowired
     public FileApplicationService(ReviewFileMapper fileMapper, ReviewTaskMapper taskMapper,
@@ -54,13 +50,13 @@ public class FileApplicationService {
      * @description 将创建任务前上传的多个文件 UUID 绑定至任务；未绑定文件同样保存于 review_file，taskId 为空表示尚未关联任务。
      */
     @Transactional
-    public List<FileView> bindPendingInitialFiles(long taskId, List<String> fileIds, CurrentUser currentUser) {
+    public List<FileView> bindPendingInitialFiles(long taskId, List<String> fileIds, String operatorEmployeeNo, String operatorName) {
         if (fileIds == null || fileIds.isEmpty()) {
             return List.of();
         }
         ReviewTaskRecord task = requireTask(taskId);
         FileCategory initialCategory = initialCategory(task);
-        requireTaskAccess(taskId, currentUser, initialCategory, true);
+        requireTaskAccess(taskId, operatorEmployeeNo, operatorName, initialCategory, true);
         java.util.Set<String> requestFileIds = new java.util.LinkedHashSet<>();
         List<FileView> result = new ArrayList<>();
         for (String fileId : fileIds) {
@@ -81,8 +77,7 @@ public class FileApplicationService {
                 }
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "该文件已绑定到其他任务，不能重复关联");
             }
-            if (!currentUser.employeeNo().equals(pending.getUploadedByEmployeeNo())
-                    && !currentUser.roles().contains(Role.HARDWARE_DEPARTMENT_MANAGER)) {
+            if (!operatorEmployeeNo.equals(pending.getUploadedByEmployeeNo())) {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "仅文件上传人可以将该文件关联到任务");
             }
             pending.setTaskId(taskId);
@@ -98,15 +93,12 @@ public class FileApplicationService {
 
     /** 上传尚未创建任务的初始文件，持久化元数据并返回前端后续保存任务唯一需要携带的 UUID。 */
     @Transactional
-    public UploadedFileView uploadPendingInitialFile(MultipartFile file, FileCategory category, CurrentUser currentUser) {
+    public UploadedFileView uploadPendingInitialFile(MultipartFile file, FileCategory category, String operatorEmployeeNo, String operatorName) {
         if (category != FileCategory.PCB_REVIEW && category != FileCategory.SCHEMATIC_REVIEW) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "未关联任务的上传仅允许 PCB_REVIEW 或 SCHEMATIC_REVIEW");
         }
         if (file == null || file.isEmpty() || file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "上传文件不能为空");
-        }
-        if (!permissionPolicy.has(currentUser.roles(), category.uploadPermission())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "无对应文件上传权限");
         }
         String fileId = UUID.randomUUID().toString();
         ResourceServiceClient.StoredResource resource = resourceServiceClient.upload(file, fileId);
@@ -114,17 +106,17 @@ public class FileApplicationService {
         record.setId(nextId()); record.setFileId(resource.resourceId()); record.setTaskId(null); record.setFileCategory(category.name());
         record.setFileName(file.getOriginalFilename());
         record.setFileFormat(fileFormat(file.getOriginalFilename())); record.setFileSize(file.getSize()); record.setMd5(md5(file));
-        record.setResourcePath(resource.resourcePath()); record.setLatest(true); record.setUploadedByEmployeeNo(currentUser.employeeNo()); record.setUploadedStage(null);
+        record.setResourcePath(resource.resourcePath()); record.setLatest(true); record.setUploadedByEmployeeNo(operatorEmployeeNo); record.setUploadedStage(null);
         fileMapper.insert(record);
         return new UploadedFileView(record.getFileId(), record.getId(), record.getFileName(), record.getFileSize(), category);
     }
 
     @Transactional
-    public FileView upload(long taskId, FileCategory category, MultipartFile file, CurrentUser currentUser) {
+    public FileView upload(long taskId, FileCategory category, MultipartFile file, String operatorEmployeeNo, String operatorName) {
         if (file == null || file.isEmpty() || file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "上传文件不能为空");
         }
-        ReviewTaskRecord task = requireTaskAccess(taskId, currentUser, category, true);
+        ReviewTaskRecord task = requireTaskAccess(taskId, operatorEmployeeNo, operatorName, category, true);
         String md5 = md5(file);
         String fileId = UUID.randomUUID().toString();
         ResourceServiceClient.StoredResource resource = resourceServiceClient.upload(file, fileId);
@@ -139,7 +131,7 @@ public class FileApplicationService {
         record.setFileId(resource.resourceId());
         record.setResourcePath(resource.resourcePath());
         record.setLatest(true);
-        record.setUploadedByEmployeeNo(currentUser.employeeNo());
+        record.setUploadedByEmployeeNo(operatorEmployeeNo);
         record.setUploadedStage(task.getStatus());
         // 仅当资源服务上传成功后才淘汰旧版本，保证上传异常时原最新文件仍可继续下载和评审。
         fileMapper.markLatestAsHistorical(taskId, category.name());
@@ -150,25 +142,22 @@ public class FileApplicationService {
     /**
      * 按文件主键下载。任务归属由文件记录决定，调用方不需要、也不能重复传 taskId。
      */
-    public DownloadContent downloadFile(long fileId, CurrentUser currentUser) {
+    public DownloadContent downloadFile(long fileId, String operatorEmployeeNo, String operatorName) {
         ReviewFileRecord file = fileMapper.findById(fileId);
         if (file == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "文件不存在");
         }
-        requireTaskAccess(file.getTaskId(), currentUser, FileCategory.valueOf(file.getFileCategory()), false);
+        requireTaskAccess(file.getTaskId(), operatorEmployeeNo, operatorName, FileCategory.valueOf(file.getFileCategory()), false);
         byte[] content = resourceServiceClient.download(file.getFileName(), file.getResourcePath());
         return new DownloadContent(file.getFileName(), content);
     }
 
-    public List<FileView> listLatestByCategory(long taskId, FileCategory category, CurrentUser currentUser) {
-        requireTaskAccess(taskId, currentUser, category, false);
+    public List<FileView> listLatestByCategory(long taskId, FileCategory category, String operatorEmployeeNo, String operatorName) {
+        requireTaskAccess(taskId, operatorEmployeeNo, operatorName, category, false);
         return fileMapper.findLatestByTaskIdAndCategory(taskId, category.name()).stream().map(FileView::from).toList();
     }
 
-    private ReviewTaskRecord requireTaskAccess(long taskId, CurrentUser currentUser, FileCategory category, boolean upload) {
-        if (!permissionPolicy.has(currentUser.roles(), upload ? category.uploadPermission() : category.downloadPermission())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "无对应文件操作权限");
-        }
+    private ReviewTaskRecord requireTaskAccess(long taskId, String operatorEmployeeNo, String operatorName, FileCategory category, boolean upload) {
         ReviewTaskRecord task = taskMapper.findById(taskId);
         if (task == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
@@ -177,14 +166,13 @@ public class FileApplicationService {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许上传新文件");
         }
         if (upload && (category == FileCategory.PCB_REVIEW || category == FileCategory.SCHEMATIC_REVIEW
-                || category == FileCategory.PCB_PROCESS_REVIEW || category == FileCategory.PCB_STRUCTURE_REVIEW) && currentUser.roles().contains(Role.DESIGNER)
-                && !task.getDesignerEmployeeNo().equals(currentUser.employeeNo())
-                && !currentUser.roles().contains(Role.PCB_LEADER)
-                && !currentUser.roles().contains(Role.HARDWARE_DEPARTMENT_MANAGER)) {
+                || category == FileCategory.PCB_PROCESS_REVIEW || category == FileCategory.PCB_STRUCTURE_REVIEW)
+                && !task.getDesignerEmployeeNo().equals(operatorEmployeeNo)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "仅任务设计者可以上传该任务的 PCB 或原理图文件");
         }
-        if (!permissionPolicy.canViewAllTasks(currentUser.roles())
-                && !taskAssignmentAccessMapper.isAssignedToTask(taskId, currentUser.employeeNo())) {
+        if (!operatorEmployeeNo.equals(task.getDesignerEmployeeNo())
+                && !operatorEmployeeNo.equals(task.getExpertLeaderEmployeeNo())
+                && !taskAssignmentAccessMapper.isAssignedToTask(taskId, operatorEmployeeNo)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该任务的文件");
         }
         return task;

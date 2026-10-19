@@ -2,11 +2,8 @@ package com.bms.review.application;
 
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
-import com.bms.identity.application.CurrentUser;
 import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import com.bms.task.application.TaskProcessorAuthorizationService;
-import com.bms.identity.domain.Permission;
-import com.bms.identity.domain.PermissionPolicy;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.review.domain.CheckItemStatus;
 import com.bms.review.domain.CheckResult;
@@ -45,7 +42,6 @@ public class TaskCheckItemApplicationService {
     private final TaskProcessorAuthorizationService taskProcessorAuthorizationService;
     private final ReviewOpinionMapper opinionMapper;
     private final UserCenterUserProfileClient userProfileClient;
-    private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public TaskCheckItemApplicationService(ReviewTaskMapper taskMapper, CheckItemTemplateMapper templateMapper,
                                            TaskCheckItemMapper taskCheckItemMapper, TaskAssignmentAccessMapper assignmentAccessMapper,
@@ -61,8 +57,8 @@ public class TaskCheckItemApplicationService {
     }
 
     @Transactional
-    public List<CheckItemCategoryView> list(long taskId, CurrentUser currentUser) {
-        ReviewTaskRecord task = requireVisibleTask(taskId, currentUser);
+    public List<CheckItemCategoryView> list(long taskId, String operatorEmployeeNo, String operatorName) {
+        ReviewTaskRecord task = requireVisibleTask(taskId, operatorEmployeeNo, operatorName);
         List<CheckItemTemplateRecord> templates = materializeSingleTemplateIfActive(task);
         List<TaskCheckItemRecord> records = taskCheckItemMapper.findByTaskId(taskId);
         if (!isFinished(task)) {
@@ -86,13 +82,13 @@ public class TaskCheckItemApplicationService {
     }
 
     @Transactional
-    public CheckItemView submit(long taskId, long itemId, SubmitCheckItemCommand command, CurrentUser currentUser) {
+    public CheckItemView submit(long taskId, long itemId, SubmitCheckItemCommand command, String operatorEmployeeNo, String operatorName) {
         // 1. 只校验任务状态与当前节点处理权限；提交时绝不重新同步互检单模板。
         ReviewTaskRecord task = requireTaskExists(taskId);
         if (isFinished(task)) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许修改检查项");
         }
-        taskProcessorAuthorizationService.requireCurrentTaskProcessor(taskId, currentUser);
+        taskProcessorAuthorizationService.requireCurrentTaskProcessor(taskId, operatorEmployeeNo, operatorName);
 
         // 2. 仅定位任务已经生成的检查项快照，防止模板修改影响本次保存。
         TaskCheckItemRecord record = taskCheckItemMapper.findByTaskIdAndId(taskId, itemId);
@@ -104,7 +100,7 @@ public class TaskCheckItemApplicationService {
 
         // 3. 不合格创建/更新同源意见；改为合格则撤回尚未闭环的旧意见。
         ReviewOpinionRecord opinion = command.result() == CheckResult.FAIL
-                ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), currentUser) : null;
+                ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), operatorEmployeeNo, operatorName) : null;
         if (command.result() == CheckResult.PASS) {
             withdrawUnresolvedMutualOpinion(taskId, record);
         }
@@ -126,11 +122,11 @@ public class TaskCheckItemApplicationService {
      * @description 以互检单为原子单位提交多个检查项；不合格项自动建立或更新同源互检意见，图文提取意见以富文本字符串保存。
      */
     @Transactional
-    public List<CheckItemView> submitBatch(long taskId, List<SubmitBatchItemCommand> commands, CurrentUser currentUser) {
+    public List<CheckItemView> submitBatch(long taskId, List<SubmitBatchItemCommand> commands, String operatorEmployeeNo, String operatorName) {
         // 1. 批量提交同样只处理既有任务快照，不在保存过程中读取或同步模板。
         ReviewTaskRecord task = requireTaskExists(taskId);
         if (isFinished(task)) { throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许修改检查项"); }
-        taskProcessorAuthorizationService.requireCurrentTaskProcessor(taskId, currentUser);
+        taskProcessorAuthorizationService.requireCurrentTaskProcessor(taskId, operatorEmployeeNo, operatorName);
         if (commands == null || commands.isEmpty()) { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "互检单至少需要提交一条检查项结果"); }
 
         // 2. 先逐项校验归属和重复提交；任一项失败会由事务整体回滚。
@@ -144,7 +140,7 @@ public class TaskCheckItemApplicationService {
             validateBatchCommand(command);
 
             // 3. 结论与同源意见保持一致：FAIL 创建/更新，PASS 撤回未闭环意见。
-            ReviewOpinionRecord opinion = command.result() == CheckResult.FAIL ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), currentUser) : null;
+            ReviewOpinionRecord opinion = command.result() == CheckResult.FAIL ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), operatorEmployeeNo, operatorName) : null;
             if (command.result() == CheckResult.PASS) {
                 withdrawUnresolvedMutualOpinion(taskId, record);
             }
@@ -216,10 +212,9 @@ public class TaskCheckItemApplicationService {
         return item;
     }
 
-    private ReviewTaskRecord requireVisibleTask(long taskId, CurrentUser currentUser) {
+    private ReviewTaskRecord requireVisibleTask(long taskId, String operatorEmployeeNo, String operatorName) {
         ReviewTaskRecord task = requireTaskExists(taskId);
-        if (permissionPolicy.has(currentUser.roles(), Permission.VIEW_MUTUAL_CHECK_OPINION)
-                || assignmentAccessMapper.isAssignedToTask(taskId, currentUser.employeeNo())) {
+        if (assignmentAccessMapper.isAssignedToTask(taskId, operatorEmployeeNo)) {
             return task;
         }
         throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看该任务的互检检查项");
@@ -264,13 +259,13 @@ public class TaskCheckItemApplicationService {
         }
     }
 
-    private ReviewOpinionRecord createOrUpdateMutualOpinion(long taskId, TaskCheckItemRecord item, String comment, String richText, CurrentUser currentUser) {
+    private ReviewOpinionRecord createOrUpdateMutualOpinion(long taskId, TaskCheckItemRecord item, String comment, String richText, String operatorEmployeeNo, String operatorName) {
         String opinionContent = richText == null || richText.isBlank() ? comment.trim() : richText.trim();
         ReviewOpinionRecord opinion = opinionMapper.findActiveMutualCheckItemOpinion(taskId, item.getId(), OpinionSourceType.MUTUAL_CHECK_ITEM);
         if (opinion == null) {
             opinion = new ReviewOpinionRecord(); opinion.setId(opinionMapper.nextOpinionId()); opinion.setTaskId(taskId);
             opinion.setSourceType(OpinionSourceType.MUTUAL_CHECK_ITEM); opinion.setSourceItemId(item.getId()); opinion.setSeverity(OpinionSeverity.GENERAL);
-            opinion.setComment(opinionContent); opinion.setRichText(opinionContent); opinion.setRaisedByEmployeeNo(currentUser.employeeNo()); opinion.setRaisedByName(currentUser.resolvedDisplayName());
+            opinion.setComment(opinionContent); opinion.setRichText(opinionContent); opinion.setRaisedByEmployeeNo(operatorEmployeeNo); opinion.setRaisedByName(operatorName);
             opinion.setStatus("PENDING_REPLY"); opinionMapper.insert(opinion);
         } else {
             opinion.setComment(opinionContent); opinion.setRichText(opinionContent);

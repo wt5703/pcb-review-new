@@ -42,25 +42,27 @@ class WorkflowControllerIntegrationTest {
     @Test
     void shouldFinishArchiveAndRejectSecondTransitionThroughRestApi() throws Exception {
         long taskId = 8301L;
-        taskMapper.insert(task(taskId));
+        ReviewTaskRecord task = task(taskId);
+        task.setStatus(TaskStatus.PENDING_FINISH.name());
+        taskMapper.insert(task);
         fileMapper.insert(file(taskId));
 
         mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
-                        .header("X-Mock-Employee-No", "BMS001")
-                        .header("X-Mock-Roles", "PCB_LEADER")
+                        .header("userId", "BMS001")
+                        .header("userName", "测试用户")
                         .param("actions", "FINISH").param("comment", "完成"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.toStatus").value("FINISHED"));
 
         mockMvc.perform(get("/tasks/{taskId}/archive", taskId)
-                        .header("X-Mock-Employee-No", "BMS001")
-                        .header("X-Mock-Roles", "PCB_LEADER"))
+                        .header("userId", "BMS001")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.flowNodes").isArray());
 
         mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
-                        .header("X-Mock-Employee-No", "BMS001")
-                        .header("X-Mock-Roles", "PCB_LEADER")
+                        .header("userId", "BMS001")
+                        .header("userName", "测试用户")
                         .param("actions", "FINISH"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("TASK_STATUS_CONFLICT"));
@@ -79,8 +81,8 @@ class WorkflowControllerIntegrationTest {
         fileMapper.insert(file(taskId, 8305L, "PCB_STRUCTURE_REVIEW"));
 
         mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
-                        .header("X-Mock-Employee-No", "BMS010")
-                        .header("X-Mock-Roles", "DESIGNER")
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户")
                         .param("actions", "START_PCB_STRUCTURE_REVIEW", "START_PCB_PROCESS_REVIEW")
                         .param("comment", "文件已上传，开启工艺和结构评审"))
                 .andExpect(status().isOk())

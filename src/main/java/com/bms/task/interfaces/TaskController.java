@@ -2,8 +2,6 @@ package com.bms.task.interfaces;
 
 import com.bms.common.ApiResponse;
 import com.bms.common.TraceIdFilter;
-import com.bms.identity.application.CurrentUserHolder;
-import com.bms.identity.application.CurrentUser;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.task.application.TaskApplicationService;
@@ -28,6 +26,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.RequestHeader;
 
 import java.util.List;
 import java.time.LocalDate;
@@ -40,6 +40,7 @@ import java.time.LocalDate;
 
 
 @RestController
+@Validated
 @RequestMapping("/tasks")
 @Tag(name = "评审任务", description = "分页查询任务、查询当前用户待办、保存草稿和提交任务。")
 public class TaskController {
@@ -58,16 +59,16 @@ public class TaskController {
     @Operation(summary = "保存评审任务", description = "新建草稿不传 taskId，编辑已有草稿时通过 taskId 查询参数传入")
     ApiResponse<TaskApplicationService.TaskView> saveTaskDraft(@RequestParam(required = false) @Parameter(description = "编辑已有草稿时传任务 ID；新建草稿不传") Long taskId,
                                                                 @Valid @RequestBody CreateTaskRequest request,
-                                                                HttpServletRequest servletRequest) {
-        return ApiResponse.ok(saveTaskForm(taskId, request, false), getTraceId(servletRequest));
+                                                                @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(saveTaskForm(taskId, request, false, employeeNo, userName), getTraceId(servletRequest));
     }
 
     @PostMapping("/submit")
     @Operation(summary = "提交评审任务", description = "提交任务，任务会进入流程的下一个节点")
     ApiResponse<TaskApplicationService.TaskView> submitTask(@RequestParam(required = false) @Parameter(description = "提交已有草稿时传任务 ID；直接新建提交不传") Long taskId,
                                                              @Valid @RequestBody CreateTaskRequest request,
-                                                             HttpServletRequest servletRequest) {
-        return ApiResponse.ok(saveTaskForm(taskId, request, true), getTraceId(servletRequest));
+                                                             @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(saveTaskForm(taskId, request, true, employeeNo, userName), getTraceId(servletRequest));
     }
 
     @GetMapping
@@ -75,24 +76,24 @@ public class TaskController {
     ApiResponse<TaskApplicationService.TaskPage> list(
             @RequestParam(required = false) @Parameter(description = "关键字，同时模糊匹配项目名称、任务名称和设计者名称") String keyword,
             @RequestParam(required = false) @Parameter(description = "评审类型：PCB 或 SCHEMATIC") ReviewType reviewType,
-            @RequestParam(required = false) @Parameter(description = "任务状态，可传多个同名参数，互检单列表可传 FINISHED、MUTUAL_CHECK_REVIEWING、SCHEMATIC_REVIEWING") List<TaskStatus> statuses,
+            @RequestParam(required = false) @Parameter(description = "任务状态，可传多个同名参数；PENDING_FINISH 表示待结束，FINISHED 表示已结束") List<TaskStatus> statuses,
             @RequestParam(name = "pageNum", defaultValue = "1") @Parameter(description = "页码，从 1 开始") Integer pageNum,
             @RequestParam(defaultValue = "20") @Parameter(description = "每页条数，最大 100") Integer pageSize,
-            HttpServletRequest servletRequest) {
+            @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         return ApiResponse.ok(taskService.listTasks(new TaskApplicationService.TaskQuery(keyword, reviewType, statuses, pageNum, pageSize, null),
-                CurrentUserHolder.require()), getTraceId(servletRequest));
+                employeeNo, null), getTraceId(servletRequest));
     }
 
     @GetMapping("/{taskId}")
     @Operation(summary = "查询评审任务详情", description = "按任务 ID 返回当前用户有权查看的一条任务基础信息和流程流转记录；用于任务详情页加载")
-    ApiResponse<TaskApplicationService.TaskView> detail(@PathVariable long taskId, HttpServletRequest servletRequest) {
-        return ApiResponse.ok(taskService.getTaskDetail(taskId, CurrentUserHolder.require()), getTraceId(servletRequest));
+    ApiResponse<TaskApplicationService.TaskView> detail(@PathVariable long taskId, @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(taskService.getTaskDetail(taskId, employeeNo, null), getTraceId(servletRequest));
     }
 
     @GetMapping("/my")
     @Operation(summary = "查询我的待办任务", description = "返回当前流程节点需要当前用户评审、答复、确认、分配或结束的任务")
-    ApiResponse<List<MyTaskApplicationService.MyTaskView>> myTasks(HttpServletRequest servletRequest) {
-        return ApiResponse.ok(myTaskApplicationService.list(CurrentUserHolder.require()), getTraceId(servletRequest));
+    ApiResponse<List<MyTaskApplicationService.MyTaskView>> myTasks(@NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(myTaskApplicationService.list(employeeNo, null), getTraceId(servletRequest));
     }
 
     private String getTraceId(HttpServletRequest request) {
@@ -102,14 +103,13 @@ public class TaskController {
     /**
      * 将页面表单转换为任务命令，并根据入口决定“只保存草稿”还是“保存后立即提交”。
      */
-    private TaskApplicationService.TaskView saveTaskForm(Long taskId, CreateTaskRequest request, boolean submitAfterSave) {
+    private TaskApplicationService.TaskView saveTaskForm(Long taskId, CreateTaskRequest request, boolean submitAfterSave, String employeeNo, String userName) {
         List<String> pendingFileIds = extractPendingFileIds(request.files());
-        CurrentUser currentUser = CurrentUserHolder.require();
-        TaskApplicationService.CreateTaskCommand command = toTaskCommand(request, currentUser);
+        TaskApplicationService.CreateTaskCommand command = toTaskCommand(request, employeeNo, userName);
         if (taskId == null) {
-            return taskService.saveNewTask(command, pendingFileIds, submitAfterSave, currentUser);
+            return taskService.saveNewTask(command, pendingFileIds, submitAfterSave, employeeNo, userName);
         }
-        return taskService.saveExistingTask(taskId, command, pendingFileIds, submitAfterSave, currentUser);
+        return taskService.saveExistingTask(taskId, command, pendingFileIds, submitAfterSave, employeeNo, userName);
     }
 
     private List<String> extractPendingFileIds(List<String> files) {
@@ -119,16 +119,16 @@ public class TaskController {
         return List.copyOf(files);
     }
 
-    private TaskApplicationService.CreateTaskCommand toTaskCommand(CreateTaskRequest request, CurrentUser currentUser) {
+    private TaskApplicationService.CreateTaskCommand toTaskCommand(CreateTaskRequest request, String employeeNo, String userName) {
         if (request.reviewType() == ReviewType.SCHEMATIC
                 && (request.expertLeaderEmployeeNo() == null || request.expertLeaderEmployeeNo().isBlank())) {
             throw new IllegalArgumentException("原理图评审必须选择组长并传入组长工号");
         }
         ReviewerWhitelistApplicationService.WhitelistPersonView leader = request.expertLeaderEmployeeNo() == null || request.expertLeaderEmployeeNo().isBlank()
-                ? new ReviewerWhitelistApplicationService.WhitelistPersonView(currentUser.employeeNo(), currentUser.displayName(), null, null, null)
+                ? new ReviewerWhitelistApplicationService.WhitelistPersonView(employeeNo, userName, null, null, null)
                 : whitelistApplicationService.findByEmployeeNo(request.expertLeaderEmployeeNo());
-        return new TaskApplicationService.CreateTaskCommand(request.reviewType(), request.taskName(), request.projectName(), currentUser.employeeNo(),
-                currentUser.displayName(), request.designName(), request.pcbType(), request.expectedCompletedDate() == null ? LocalDate.now() : request.expectedCompletedDate(),
+        return new TaskApplicationService.CreateTaskCommand(request.reviewType(), request.taskName(), request.projectName(), employeeNo,
+                userName, request.designName(), request.pcbType(), request.expectedCompletedDate() == null ? LocalDate.now() : request.expectedCompletedDate(),
                 leader.employeeNo(), leader.displayName(),
                 request.reviewRoles() == null || request.reviewRoles().isEmpty() ? List.of(ReviewRole.PCB_EXPERT) : request.reviewRoles(),
                 (request.reviewerAssignments() == null ? List.<ReviewerAssignmentRequest>of() : request.reviewerAssignments()).stream()

@@ -2,7 +2,6 @@ package com.bms.review.interfaces;
 
 import com.bms.common.ApiResponse;
 import com.bms.common.TraceIdFilter;
-import com.bms.identity.application.CurrentUserHolder;
 import com.bms.review.application.OpinionApplicationService;
 import com.bms.review.domain.OpinionSourceType;
 import com.bms.review.domain.OpinionSeverity;
@@ -27,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.RequestHeader;
 
 import java.util.List;
 
@@ -48,33 +48,33 @@ public class OpinionController {
     @PostMapping("/tasks/{taskId}/opinions")
     @Operation(summary = "提出评审意见", description = "在当前任务节点提交一条具体意见。comment 保存问题描述；richText 富文本信息")
     ApiResponse<OpinionApplicationService.OpinionView> raise(@PathVariable long taskId, @Valid @RequestBody RaiseOpinionRequest request,
-                                                               HttpServletRequest servletRequest) {
+                                                               @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.raise(new OpinionApplicationService.RaiseOpinionCommand(taskId, request.sourceType(),
-                request.sourceItemId(), request.comment(), request.richText(), request.severity()), CurrentUserHolder.require()), traceId(servletRequest));
+                request.sourceItemId(), request.comment(), request.richText(), request.severity()), employeeNo, userName), traceId(servletRequest));
     }
 
     @PostMapping("/tasks/{taskId}/opinions/no-opinion")
     @Operation(summary = "无意见确认提交", description = "专家、工艺或结构评审人在当前评审节点确认无意见。接口不推进流程。")
     ApiResponse<OpinionApplicationService.OpinionView> submitNoOpinion(@PathVariable long taskId,
                                                                          @Valid @RequestBody SubmitNoOpinionRequest request,
-                                                                         HttpServletRequest servletRequest) {
-        return ApiResponse.ok(opinionApplicationService.submitNoOpinion(taskId, request.sourceType(), CurrentUserHolder.require()), traceId(servletRequest));
+                                                                         @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(opinionApplicationService.submitNoOpinion(taskId, request.sourceType(), employeeNo, userName), traceId(servletRequest));
     }
 
     @PutMapping("/opinions/{opinionId}")
     @Operation(summary = "编辑待答复评审意见", description = "仅意见提出人可编辑尚未被设计者答复的 PENDING_REPLY 意见，可调整问题等级及富文本内容；意见一旦被答复即不允许编辑。")
     ApiResponse<OpinionApplicationService.OpinionView> update(@PathVariable long opinionId,
                                                                 @Valid @RequestBody UpdateOpinionRequest request,
-                                                                HttpServletRequest servletRequest) {
+                                                                @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.update(opinionId,
                 new OpinionApplicationService.UpdateOpinionCommand(request.comment(), request.richText(), request.severity()),
-                CurrentUserHolder.require()), traceId(servletRequest));
+                employeeNo, null), traceId(servletRequest));
     }
 
     @DeleteMapping("/opinions/{opinionId}")
     @Operation(summary = "删除待答复评审意见", description = "仅意见提出人可删除尚未被设计者答复的 PENDING_REPLY 意见；已答复、待确认或已确认意见不可删除。")
-    ApiResponse<Void> delete(@PathVariable long opinionId, HttpServletRequest servletRequest) {
-        opinionApplicationService.delete(opinionId, CurrentUserHolder.require());
+    ApiResponse<Void> delete(@PathVariable long opinionId, @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
+        opinionApplicationService.delete(opinionId, employeeNo, null);
         return ApiResponse.ok(null, traceId(servletRequest));
     }
 
@@ -88,43 +88,43 @@ public class OpinionController {
             @RequestParam(required = false, defaultValue = "DESIGNER_REPLY") @Parameter(description = "查询场景：REVIEW_WORKSPACE 仅当前登录专家提出的意见；DESIGNER_REPLY 展示任务全部意见") String scene,
             @RequestParam(name = "pageNum", defaultValue = "1") @Parameter(description = "页码，从 1 开始") @Min(1) int pageNum,
             @RequestParam(defaultValue = "20") @Parameter(description = "每页条数，最大 100") @Min(1) @Max(100) int pageSize,
-            HttpServletRequest servletRequest) {
+            @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.listPage(taskId, severity, status, sourceType, sourceTypes, scene, pageNum, pageSize,
-                CurrentUserHolder.require()), traceId(servletRequest));
+                employeeNo, null), traceId(servletRequest));
     }
 
     @GetMapping("/tasks/{taskId}/opinions/summary")
     @Operation(summary = "查询设计者答复页意见汇总", description = "设计者答复页面的意见汇总；sourceTypes 可使用逗号分隔多个来源，以与意见列表保持相同的阶段范围。")
     ApiResponse<OpinionApplicationService.OpinionSummary> summary(@PathVariable long taskId,
             @RequestParam(required = false) @Parameter(description = "多个意见来源，使用逗号分隔：PCB_PROCESS_REVIEW,PCB_STRUCTURE_REVIEW") List<OpinionSourceType> sourceTypes,
-            HttpServletRequest servletRequest) {
-        return ApiResponse.ok(opinionApplicationService.summary(taskId, sourceTypes, CurrentUserHolder.require()), traceId(servletRequest));
+            @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(opinionApplicationService.summary(taskId, sourceTypes, employeeNo, null), traceId(servletRequest));
     }
 
     @PostMapping("/opinions/{opinionId}/reply")
     @Operation(summary = "设计者答复专家意见", description = "设计者答复专家提出的意见")
     ApiResponse<OpinionApplicationService.OpinionView> reply(@PathVariable long opinionId, @Valid @RequestBody ReplyOpinionRequest request,
-                                                               HttpServletRequest servletRequest) {
+                                                               @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.reply(opinionId, new OpinionApplicationService.ReplyOpinionCommand(
-                request.replyType(), request.reason()), CurrentUserHolder.require()), traceId(servletRequest));
+                request.replyType(), request.reason()), employeeNo, null), traceId(servletRequest));
     }
 
     @PostMapping("/opinions/{opinionId}/confirm")
     @Operation(summary = "专家确认设计者答复", description = "意见提出人确认答复通过或不通过，不通过后设计者可重新答复")
     ApiResponse<OpinionApplicationService.OpinionView> confirm(@PathVariable long opinionId,
                                                                  @Valid @RequestBody ConfirmOpinionRequest request,
-                                                                 HttpServletRequest servletRequest) {
+                                                                 @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.confirm(opinionId, new OpinionApplicationService.ConfirmOpinionCommand(
-                request.passed(), request.comment()), CurrentUserHolder.require()), traceId(servletRequest));
+                request.passed(), request.comment()), employeeNo, null), traceId(servletRequest));
     }
 
     @PostMapping("/opinions/{opinionId}/withdraw")
     @Operation(summary = "撤回评审意见", description = "仅意见提出人可撤回未关闭意见，必须填写撤回原因")
     ApiResponse<OpinionApplicationService.OpinionView> withdraw(@PathVariable long opinionId,
                                                                   @Valid @RequestBody WithdrawOpinionRequest request,
-                                                                  HttpServletRequest servletRequest) {
+                                                                  @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.withdraw(opinionId, new OpinionApplicationService.WithdrawOpinionCommand(request.reason()),
-                CurrentUserHolder.require()), traceId(servletRequest));
+                employeeNo, null), traceId(servletRequest));
     }
 
     private String traceId(HttpServletRequest request) {

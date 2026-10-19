@@ -39,14 +39,14 @@ class ReviewerAssignmentControllerIntegrationTest {
         mockMvc.perform(get("/workflow/mutual-check-reviewers")
                         .param("reviewType", "PCB")
                         .param("taskStatus", "MUTUAL_CHECK_PENDING_ASSIGNMENT")
-                        .header("X-Mock-User-Id", "1")
-                        .header("X-Mock-Roles", "PCB_LEADER"))
+                        .header("userId", "BMS001")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].whitelistRoles[0]").value("PCB_MUTUAL_CHECK"));
 
         mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
-                        .header("X-Mock-User-Id", "1")
-                        .header("X-Mock-Roles", "PCB_LEADER")
+                        .header("userId", "BMS001")
+                        .header("userName", "测试用户")
                         .param("actions", "START_PCB_MATUAL_REVIEW")
                         .param("reviewerEmployeeNos", "BMS006"))
                 .andExpect(status().isOk())
@@ -56,15 +56,15 @@ class ReviewerAssignmentControllerIntegrationTest {
     }
 
     @Test
-    void shouldReturnCandidatesForTheDefaultMockCurrentUser() throws Exception {
+    void shouldReturnCandidatesForRequestHeaderUser() throws Exception {
         long taskId = 8402L;
         taskMapper.insert(task(taskId));
 
         mockMvc.perform(get("/workflow/mutual-check-reviewers")
                         .param("reviewType", "PCB")
                         .param("taskStatus", "MUTUAL_CHECK_PENDING_ASSIGNMENT")
-                        .header("X-Mock-User-Id", "1")
-                        .header("X-Mock-Roles", "PCB_LEADER"))
+                        .header("userId", "BMS001")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].whitelistRoles[0]").value("PCB_MUTUAL_CHECK"));
     }

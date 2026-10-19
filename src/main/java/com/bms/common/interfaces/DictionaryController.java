@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
 
@@ -21,6 +22,7 @@ import java.util.List;
  * @description 向前端统一提供评审任务创建和筛选所需的固定字典值，避免页面硬编码 PCB 类型和评审角色枚举。
  */
 @RestController
+@Validated
 @RequestMapping("/dictionaries")
 @Tag(name = "系统字典", description = "提供前端下拉框和多选框使用的固定业务字典。")
 public class DictionaryController {

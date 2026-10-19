@@ -1,7 +1,5 @@
 package com.bms.task.application;
 
-import com.bms.identity.application.CurrentUser;
-import com.bms.identity.domain.Role;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
@@ -38,7 +36,7 @@ class MyTaskApplicationServiceTest {
         when(assignmentAccessMapper.isCurrentTaskProcessor(1L, "BMS088")).thenReturn(false);
         when(assignmentAccessMapper.isCurrentTaskProcessor(2L, "BMS088")).thenReturn(true);
 
-        List<MyTaskApplicationService.MyTaskView> tasks = service.list(new CurrentUser("BMS088", Set.of(Role.PROCESS_EXPERT)));
+        List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS088", "BMS088");
 
         assertThat(tasks).hasSize(1);
         assertThat(tasks.get(0).id()).isEqualTo(2L);
@@ -49,13 +47,13 @@ class MyTaskApplicationServiceTest {
     void shouldIncludeDesignerReplyAndLeaderFinishActions() {
         when(taskMapper.findAllUnfinished()).thenReturn(
                 List.of(task(1L, "BMS010", TaskStatus.MUTUAL_CHECK_REVIEWING), task(2L, "BMS099", TaskStatus.MUTUAL_CHECK_REVIEWING)),
-                List.of(task(2L, "BMS099", TaskStatus.MUTUAL_CHECK_REVIEWING)));
+                List.of(task(2L, "BMS099", TaskStatus.PENDING_FINISH)));
         when(opinionMapper.findPendingReplyTaskIdsForDesignerEmployeeNo("BMS010")).thenReturn(List.of(1L));
 
-        List<MyTaskApplicationService.MyTaskView> designerTasks = service.list(new CurrentUser("BMS010", Set.of(Role.DESIGNER)));
+        List<MyTaskApplicationService.MyTaskView> designerTasks = service.list("BMS010", "BMS010");
         assertThat(designerTasks.get(0).actions()).contains(MyTaskAction.REPLY_OPINION);
 
-        List<MyTaskApplicationService.MyTaskView> leaderTasks = service.list(new CurrentUser("BMS001", Set.of(Role.PCB_LEADER)));
+        List<MyTaskApplicationService.MyTaskView> leaderTasks = service.list("BMS001", "BMS001");
         assertThat(leaderTasks).extracting(MyTaskApplicationService.MyTaskView::id).containsExactly(2L);
         assertThat(leaderTasks.get(0).actions()).containsExactly(MyTaskAction.FINISH_TASK);
     }

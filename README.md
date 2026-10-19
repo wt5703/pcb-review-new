@@ -26,6 +26,12 @@ mvn spring-boot:run
 - Swagger UI：`http://localhost:8080/leapmotor/pcb_review/swagger-ui.html`
 - OpenAPI JSON：`http://localhost:8080/leapmotor/pcb_review/openapi.json`
 
+## 待结束流程
+
+设计者在对应阶段的意见闭环并重新上传终版后，调用流程推进接口并传入动作 `PENDING_FINISH`，任务状态进入 `PENDING_FINISH`（待结束）；随后使用 `FINISH` 结束任务。流程动作和任务状态同名，但分别代表操作和操作结果。
+
+新请求不再使用 `PREPARE_FINISH`。历史流转记录和已产生的事件保留原始动作值，读取历史数据的客户端或消费者需同时识别旧值。
+
 ## Docker 部署
 
 后端构建会生成可执行 JAR `target/pcb-review-1.0-SNAPSHOT.jar`。Docker 镜像直接使用该 JAR，并通过 `docker/startup.sh` 启动，避免为单模块 Spring Boot 项目额外引入打包插件。
@@ -42,7 +48,7 @@ docker run --rm -p 8080:8080 `
 
 镜像不固化数据库、资源服务、用户中心、邮件等环境配置。部署平台应通过 `SPRING_DATASOURCE_*`、`RESOURCE_SERVICE_API_PREFIX`、`RESOURCE_SERVICE_UPLOAD_PATH`、`RESOURCE_SERVICE_DOWNLOAD_PATH`、`RESOURCE_SERVICE_DIR_PATH`、`RESOURCE_SERVICE_MOCK_ENABLED`、`USER_CENTER_*`、`MAIL_*` 和可选的 `JAVA_OPTS` 环境变量注入对应环境配置；服务默认暴露 `8080` 端口和 `/leapmotor/pcb_review` 上下文路径。
 
-开发环境未配置 `USER_CENTER_CURRENT_USER_URL` 时，后端使用王鹏飞全权限 Mock 身份，方便本地联调；不接受客户端通过请求头、工号或用户 ID 伪造当前用户。生产环境必须配置当前用户接口地址。该接口不带员工工号，后端仅转发网关注入的 `Authorization` 登录态，由用户中心识别当前登录人员。
+业务接口按实际需要在 Controller 中接收请求头 `userId` 和 `userName`，分别作为员工工号和姓名；无需用户信息的接口不要求这两个请求头，仅需工号的接口不要求姓名。不再调用用户中心当前用户接口或使用默认 Mock 用户，原有业务参数名称不变。暂不校验角色权限，仍按工号校验任务归属和操作人归属。部署时应由可信网关完成身份认证并覆盖身份请求头，禁止外部请求直接伪造身份。
 
 ## 启用 MySQL
 

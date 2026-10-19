@@ -20,6 +20,8 @@ public enum TaskStatus {
     MUTUAL_CHECK_REVIEWING("互检单评审"),
     /** 原理图评审：互检意见闭环后，创建任务时已指定的评审专家正在评审原理图。 */
     SCHEMATIC_REVIEWING("原理图评审"),
+    /** 待结束：设计者已提交终版文件，等待组长结束任务。 */
+    PENDING_FINISH("待结束"),
     /** 结束：任务流程已结束并可归档。 */
     FINISHED("结束");
 

@@ -35,7 +35,7 @@ public interface ReviewOpinionMapper {
     ReviewOpinionRecord findById(long id);
 
     @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, is_no_opinion AS noOpinion, comment, rich_text_content AS richText, raised_by_employee_no AS raisedByEmployeeNo, raised_by_name AS raisedByName, "
-            + "status, created_at AS createdAt FROM review_opinion WHERE task_id=#{taskId} ORDER BY id")
+            + "status, created_at AS createdAt, updated_at AS updatedAt FROM review_opinion WHERE task_id=#{taskId} ORDER BY id")
     List<ReviewOpinionRecord> findByTaskId(long taskId);
 
     /**

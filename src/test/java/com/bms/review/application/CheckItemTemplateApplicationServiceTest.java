@@ -1,7 +1,5 @@
 package com.bms.review.application;
 
-import com.bms.identity.application.CurrentUser;
-import com.bms.identity.domain.Role;
 import com.bms.review.infrastructure.CheckItemTemplateMapper;
 import com.bms.review.infrastructure.CheckItemTemplateRecord;
 import org.junit.jupiter.api.Test;
@@ -21,13 +19,12 @@ import static org.mockito.Mockito.when;
 class CheckItemTemplateApplicationServiceTest {
     private final CheckItemTemplateMapper templateMapper = mock(CheckItemTemplateMapper.class);
     private final CheckItemTemplateApplicationService service = new CheckItemTemplateApplicationService(templateMapper);
-    private final CurrentUser manager = new CurrentUser("BMS001", Set.of(Role.PCB_LEADER));
 
     @Test
     void shouldDisableCategoryAndShiftFollowingCategorySortNumbers() {
         when(templateMapper.findById(100L)).thenReturn(template(100L, null, 2));
 
-        service.disable(100L, CheckItemTemplateApplicationService.DeleteTargetCategory.CATEGORY, manager);
+        service.disable(100L, CheckItemTemplateApplicationService.DeleteTargetCategory.CATEGORY, "BMS001", "BMS001");
 
         verify(templateMapper).disableById(100L);
         verify(templateMapper).disableChildrenByParentId(100L);
@@ -39,7 +36,7 @@ class CheckItemTemplateApplicationServiceTest {
     void shouldDisableItemAndShiftFollowingSiblingSortNumbers() {
         when(templateMapper.findById(101L)).thenReturn(template(101L, 100L, 3));
 
-        service.disable(101L, CheckItemTemplateApplicationService.DeleteTargetCategory.ITEM, manager);
+        service.disable(101L, CheckItemTemplateApplicationService.DeleteTargetCategory.ITEM, "BMS001", "BMS001");
 
         verify(templateMapper).disableById(101L);
         verify(templateMapper).decrementSiblingItemSortAfter(100L, 3);

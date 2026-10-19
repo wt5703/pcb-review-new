@@ -1,6 +1,7 @@
 package com.bms.task.infrastructure;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /**
  * @author 王涛
@@ -26,6 +27,7 @@ public class ReviewTaskRecord {
     private String status;
     private String initialFileIds;
     private Long version;
+    private LocalDateTime createdAt;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -63,4 +65,6 @@ public class ReviewTaskRecord {
     public void setInitialFileIds(String initialFileIds) { this.initialFileIds = initialFileIds; }
     public Long getVersion() { return version; }
     public void setVersion(Long version) { this.version = version; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

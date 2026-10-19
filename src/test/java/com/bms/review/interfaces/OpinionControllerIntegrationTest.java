@@ -39,8 +39,8 @@ class OpinionControllerIntegrationTest {
         taskMapper.insert(task(taskId));
 
         String raiseResponse = mockMvc.perform(post("/tasks/{taskId}/opinions", taskId)
-                        .header("X-Mock-User-Id", "20")
-                        .header("X-Mock-Roles", "HARDWARE_EXPERT")
+                        .header("userId", "BMS020")
+                        .header("userName", "测试用户")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sourceType\":\"PCB_REVIEW\",\"comment\":\"<p>请调整走线</p><img src='data:image/png;base64,AA==' alt='问题截图' />\"}"))
                 .andExpect(status().isOk())
@@ -50,16 +50,16 @@ class OpinionControllerIntegrationTest {
         long opinionId = ((Number) JsonPath.read(raiseResponse, "$.data.id")).longValue();
 
         mockMvc.perform(post("/opinions/{opinionId}/reply", opinionId)
-                        .header("X-Mock-User-Id", "10")
-                        .header("X-Mock-Roles", "DESIGNER")
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"replyType\":\"ACCEPT\",\"reason\":\"已修正\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PENDING_CONFIRMATION"));
 
         mockMvc.perform(post("/opinions/{opinionId}/confirm", opinionId)
-                        .header("X-Mock-User-Id", "20")
-                        .header("X-Mock-Roles", "HARDWARE_EXPERT")
+                        .header("userId", "BMS020")
+                        .header("userName", "测试用户")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"passed\":true,\"comment\":\"确认通过\"}"))
                 .andExpect(status().isOk())
@@ -68,8 +68,8 @@ class OpinionControllerIntegrationTest {
         mockMvc.perform(get("/tasks/{taskId}/opinions", taskId)
                         .param("pageNum", "1")
                         .param("pageSize", "10")
-                        .header("X-Mock-User-Id", "10")
-                        .header("X-Mock-Roles", "DESIGNER"))
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.code").value(0))
@@ -80,16 +80,22 @@ class OpinionControllerIntegrationTest {
         mockMvc.perform(get("/tasks/{taskId}/opinions", taskId)
                         .param("pageNum", "2")
                         .param("pageSize", "1")
-                        .header("X-Mock-User-Id", "10")
-                        .header("X-Mock-Roles", "DESIGNER"))
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.pageNum").value(2))
                 .andExpect(jsonPath("$.data.items.length()").value(0));
 
         mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)
-                        .header("X-Mock-User-Id", "20")
-                        .header("X-Mock-Roles", "HARDWARE_EXPERT"))
+                        .header("userId", "BMS020")
+                        .header("userName", "测试用户"))
+                .andExpect(status().isForbidden());
+
+        // 确认通过后评审人的待办已释放，由任务设计者查看汇总。
+        mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.confirmedPass").value(1));
@@ -103,8 +109,8 @@ class OpinionControllerIntegrationTest {
         taskMapper.insert(task);
 
         mockMvc.perform(post("/tasks/{taskId}/opinions/no-opinion", taskId)
-                        .header("X-Mock-User-Id", "20")
-                        .header("X-Mock-Roles", "HARDWARE_EXPERT")
+                        .header("userId", "BMS020")
+                        .header("userName", "测试用户")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sourceType\":\"PCB_REVIEW\"}"))
                 .andExpect(status().isOk())
@@ -112,8 +118,8 @@ class OpinionControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.status").value("CONFIRMED_PASS"));
 
         mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)
-                        .header("X-Mock-User-Id", "10")
-                        .header("X-Mock-Roles", "DESIGNER"))
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(0))
                 .andExpect(jsonPath("$.data.unsubmittedReviewers.length()").value(0));
@@ -124,8 +130,8 @@ class OpinionControllerIntegrationTest {
         long taskId = 8603L;
         taskMapper.insert(task(taskId));
         String response = mockMvc.perform(post("/tasks/{taskId}/opinions", taskId)
-                        .header("X-Mock-User-Id", "20")
-                        .header("X-Mock-Roles", "HARDWARE_EXPERT")
+                        .header("userId", "BMS020")
+                        .header("userName", "测试用户")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sourceType\":\"PCB_REVIEW\",\"severity\":\"GENERAL\",\"comment\":\"原始意见\"}"))
                 .andExpect(status().isOk())
@@ -133,8 +139,8 @@ class OpinionControllerIntegrationTest {
         long opinionId = ((Number) JsonPath.read(response, "$.data.id")).longValue();
 
         mockMvc.perform(put("/opinions/{opinionId}", opinionId)
-                        .header("X-Mock-User-Id", "20")
-                        .header("X-Mock-Roles", "HARDWARE_EXPERT")
+                        .header("userId", "BMS020")
+                        .header("userName", "测试用户")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"severity\":\"SERIOUS\",\"comment\":\"<p>修改后的意见</p>\"}"))
                 .andExpect(status().isOk())
@@ -142,13 +148,13 @@ class OpinionControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.comment").value("<p>修改后的意见</p>"));
 
         mockMvc.perform(delete("/opinions/{opinionId}", opinionId)
-                        .header("X-Mock-User-Id", "20")
-                        .header("X-Mock-Roles", "HARDWARE_EXPERT"))
+                        .header("userId", "BMS020")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/tasks/{taskId}/opinions", taskId)
-                        .header("X-Mock-User-Id", "20")
-                        .header("X-Mock-Roles", "HARDWARE_EXPERT"))
+                        .header("userId", "BMS020")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(0));
     }

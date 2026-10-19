@@ -1,7 +1,6 @@
 package com.bms.notification.interfaces;
 
 import com.bms.notification.application.NotificationApplicationService;
-import com.bms.notification.application.OutboxEventPublisher;
 import com.bms.notification.application.ReviewMailNotificationApplicationService;
 import com.bms.notification.domain.MailMessage;
 import com.bms.notification.infrastructure.NotificationSendRecordMapper;

@@ -40,8 +40,8 @@ class TaskControllerIntegrationTest {
                 """;
 
         String response = mockMvc.perform(post("/tasks/submit").contentType(MediaType.APPLICATION_JSON).content(request)
-                        .header("X-Employee-No", "BMS010")
-                        .header("X-Mock-Roles", "DESIGNER"))
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PCB_EXPERT_REVIEWING"))
                 .andReturn().getResponse().getContentAsString();
@@ -63,8 +63,8 @@ class TaskControllerIntegrationTest {
                 """;
 
         String response = mockMvc.perform(post("/tasks/save").contentType(MediaType.APPLICATION_JSON).content(request)
-                        .header("X-Employee-No", "BMS010")
-                        .header("X-Mock-Roles", "DESIGNER"))
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("DRAFT"))
                 .andReturn().getResponse().getContentAsString();
@@ -77,8 +77,8 @@ class TaskControllerIntegrationTest {
 
         mockMvc.perform(post("/tasks/save").contentType(MediaType.APPLICATION_JSON).content(request)
                         .param("taskId", String.valueOf(taskId))
-                        .header("X-Employee-No", "BMS010")
-                        .header("X-Mock-Roles", "DESIGNER"))
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(taskId));
 
@@ -94,8 +94,8 @@ class TaskControllerIntegrationTest {
                 {"reviewType":"PCB","taskName":"REST-BMS PCB评审","projectName":"BMS","designName":"BMS-P1","pcbType":"BMU"}
                 """;
         String createResponse = mockMvc.perform(post("/tasks/save").contentType(MediaType.APPLICATION_JSON).content(taskRequest)
-                        .header("X-Employee-No", "BMS010")
-                        .header("X-Mock-Roles", "DESIGNER"))
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("DRAFT"))
                 .andReturn().getResponse().getContentAsString();
@@ -106,8 +106,8 @@ class TaskControllerIntegrationTest {
                 """;
         mockMvc.perform(post("/tasks/save").contentType(MediaType.APPLICATION_JSON).content(updateTaskRequest)
                         .param("taskId", String.valueOf(taskId))
-                        .header("X-Employee-No", "BMS010")
-                        .header("X-Mock-Roles", "DESIGNER"))
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(taskId))
                 .andExpect(jsonPath("$.data.taskName").value("REST-BMS PCB评审（已编辑）"));
@@ -118,44 +118,45 @@ class TaskControllerIntegrationTest {
         reviewFileMapper.insert(pending("c778c14e-6f1a-4f4f-9f11-100000000003", "BMS-P1.pcb", 8L, "company-p1"));
         mockMvc.perform(post("/tasks/submit").contentType(MediaType.APPLICATION_JSON).content(submitTaskRequest)
                         .param("taskId", String.valueOf(taskId))
-                        .header("X-Employee-No", "BMS010")
-                        .header("X-Mock-Roles", "DESIGNER"))
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PCB_EXPERT_REVIEWING"));
 
         mockMvc.perform(get("/tasks").param("keyword", "REST-BMS").param("pageNum", "1").param("pageSize", "10")
-                        .header("X-Employee-No", "BMS010")
-                        .header("X-Mock-Roles", "DESIGNER"))
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.items[0].id").value(taskId));
 
         mockMvc.perform(get("/tasks").param("keyword", "REST-BMS").param("pageNum", "2").param("pageSize", "1")
-                        .header("X-Employee-No", "BMS010")
-                        .header("X-Mock-Roles", "DESIGNER"))
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.pageNum").value(2))
                 .andExpect(jsonPath("$.data.items.length()").value(0));
 
         mockMvc.perform(get("/tasks/{taskId}", taskId)
-                        .header("X-Employee-No", "BMS010")
-                        .header("X-Mock-Roles", "DESIGNER"))
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(taskId))
                 .andExpect(jsonPath("$.data.taskName").value("REST-BMS PCB评审（已编辑）"));
     }
 
     @Test
-    void shouldUseDefaultUserCenterMockInsteadOfClientRoleHeader() throws Exception {
+    void shouldUseEmployeeNumberAndNameFromRequestHeaders() throws Exception {
         String taskRequest = """
                 {"reviewType":"PCB","taskName":"无权任务","projectName":"BMS","designName":"BMS-P1","pcbType":"BMU"}
                 """;
         mockMvc.perform(post("/tasks/save").contentType(MediaType.APPLICATION_JSON).content(taskRequest)
-                        .header("X-Employee-No", "BMS010")
-                        .header("X-Mock-Roles", "HARDWARE_EXPERT"))
+                        .header("userId", "BMS010")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.designerName").value("王鹏飞"));
+                .andExpect(jsonPath("$.data.designerEmployeeNo").value("BMS010"))
+                .andExpect(jsonPath("$.data.designerName").value("测试用户"));
     }
 
     private ReviewFileRecord pending(String fileId, String fileName, long fileSize, String resourcePath) {

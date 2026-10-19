@@ -2,9 +2,6 @@ package com.bms.review.application;
 
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
-import com.bms.identity.application.CurrentUser;
-import com.bms.identity.domain.Permission;
-import com.bms.identity.domain.PermissionPolicy;
 import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.review.infrastructure.AssignableReviewerRecord;
@@ -38,7 +35,6 @@ public class ReviewerWhitelistApplicationService {
 
     private final ReviewerWhitelistMapper whitelistMapper;
     private final UserCenterUserProfileClient userProfileClient;
-    private final PermissionPolicy permissionPolicy = new PermissionPolicy();
 
     public ReviewerWhitelistApplicationService(ReviewerWhitelistMapper whitelistMapper,
                                                UserCenterUserProfileClient userProfileClient) {
@@ -52,8 +48,7 @@ public class ReviewerWhitelistApplicationService {
      * @description 批量新增评审白名单映射。相同角色和工号的重复请求幂等忽略，避免产生重复数据。
      */
     @Transactional
-    public SaveResult add(List<RoleEmployeeNos> roleEmployeeNos, CurrentUser currentUser) {
-        requireManagePermission(currentUser);
+    public SaveResult add(List<RoleEmployeeNos> roleEmployeeNos, String operatorEmployeeNo, String operatorName) {
         if (roleEmployeeNos == null || roleEmployeeNos.isEmpty()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "至少需要提供一类评审人员白名单");
         }
@@ -79,7 +74,7 @@ public class ReviewerWhitelistApplicationService {
                 if (person == null) {
                     person = new ReviewerWhitelistRecord();
                     person.setEmployeeNo(employeeNo);
-                    person.setCreatedByEmployeeNo(currentUser.employeeNo());
+                    person.setCreatedByEmployeeNo(operatorEmployeeNo);
                     // 人员资料只保存一份；新增时从用户中心取得，后续查询直接使用本地资料。
                     fillProfile(person);
                     whitelistMapper.insert(person);
@@ -90,7 +85,7 @@ public class ReviewerWhitelistApplicationService {
                     whitelistMapper.updateProfile(person);
                 }
                 if (existingRole == null) {
-                    whitelistMapper.addOrRestoreRole(employeeNo, roleEmployeeNo.reviewRole().name(), currentUser.employeeNo());
+                    whitelistMapper.addOrRestoreRole(employeeNo, roleEmployeeNo.reviewRole().name(), operatorEmployeeNo);
                     createdCount++;
                 }
             }
@@ -99,8 +94,7 @@ public class ReviewerWhitelistApplicationService {
     }
 
     @Transactional
-    public DeleteResult remove(Long id, String employeeNo, CurrentUser currentUser) {
-        requireManagePermission(currentUser);
+    public DeleteResult remove(Long id, String employeeNo, String operatorEmployeeNo, String operatorName) {
         boolean hasId = id != null;
         boolean hasEmployeeNo = employeeNo != null && !employeeNo.isBlank();
         if (hasId == hasEmployeeNo) {
@@ -110,24 +104,23 @@ public class ReviewerWhitelistApplicationService {
         if (person == null || Boolean.TRUE.equals(person.getDeleted())) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "未找到可删除的白名单人员");
         }
-        int deletedCount = whitelistMapper.logicDeleteById(person.getId(), currentUser.employeeNo());
+        int deletedCount = whitelistMapper.logicDeleteById(person.getId(), operatorEmployeeNo);
         if (deletedCount == 0) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "未找到可删除的白名单记录");
         }
-        whitelistMapper.logicDeleteRolesByEmployeeNo(person.getEmployeeNo(), currentUser.employeeNo());
+        whitelistMapper.logicDeleteRolesByEmployeeNo(person.getEmployeeNo(), operatorEmployeeNo);
         return new DeleteResult(deletedCount);
     }
 
     /** 删除一个人的指定角色；最后一个角色删除时同时停用人员记录。 */
     @Transactional
-    public DeleteResult removeRole(long id, ReviewerWhitelistRole role, CurrentUser currentUser) {
-        requireManagePermission(currentUser);
+    public DeleteResult removeRole(long id, ReviewerWhitelistRole role, String operatorEmployeeNo, String operatorName) {
         ReviewerWhitelistRecord person = whitelistMapper.lockActiveById(id);
-        if (person == null || role == null || whitelistMapper.logicDeleteRole(person.getEmployeeNo(), role.name(), currentUser.employeeNo()) == 0) {
+        if (person == null || role == null || whitelistMapper.logicDeleteRole(person.getEmployeeNo(), role.name(), operatorEmployeeNo) == 0) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "未找到可删除的白名单角色");
         }
         if (whitelistMapper.countActiveRoles(person.getEmployeeNo()) == 0) {
-            whitelistMapper.logicDeleteById(id, currentUser.employeeNo());
+            whitelistMapper.logicDeleteById(id, operatorEmployeeNo);
         }
         return new DeleteResult(1);
     }
@@ -146,8 +139,7 @@ public class ReviewerWhitelistApplicationService {
      * 按人员分页，再批量加载该页人员的全部角色，确保分页总数和页大小均按人员计算。
      * 人员资料已在新增白名单时固化，因此筛选、计数和展示不调用用户中心。
      */
-    public ReviewerWhitelistPage listPage(ReviewerWhitelistQuery query, CurrentUser currentUser) {
-        requireManagePermission(currentUser);
+    public ReviewerWhitelistPage listPage(ReviewerWhitelistQuery query, String operatorEmployeeNo, String operatorName) {
         ReviewerWhitelistQuery validQuery = query == null ? new ReviewerWhitelistQuery(null, null, null) : query;
         String keyword = validQuery.keyword() == null ? "" : validQuery.keyword().trim();
         int pageNum = normalizePageNum(validQuery.pageNum());
@@ -175,17 +167,27 @@ public class ReviewerWhitelistApplicationService {
         return people.values().stream().map(record -> AssignableReviewerView.from(record, roles.getOrDefault(record.getEmployeeNo(), List.of()))).toList();
     }
 
-    /** 返回白名单人员，每人一条；传入角色时只筛选匹配人员，仍返回其全部有效角色。 */
-    public List<ReviewerWhitelistView> listPeople(List<ReviewerWhitelistRole> roles) {
+    public Map<ReviewerWhitelistRole, List<ReviewerWhitelistView>> listPeopleGroupedByRole() {
         List<ReviewerWhitelistRecord> records = whitelistMapper.findAll();
-        Set<String> selected = records.stream().filter(record -> roles == null || roles.isEmpty()
-                || roles.contains(ReviewerWhitelistRole.valueOf(record.getReviewRole())))
-                .map(ReviewerWhitelistRecord::getEmployeeNo).collect(Collectors.toSet());
-        Map<String, List<ReviewerWhitelistRole>> allRoles = records.stream().collect(Collectors.groupingBy(
-                ReviewerWhitelistRecord::getEmployeeNo, Collectors.mapping(record -> ReviewerWhitelistRole.valueOf(record.getReviewRole()), Collectors.toList())));
-        Map<String, ReviewerWhitelistRecord> people = records.stream().filter(record -> selected.contains(record.getEmployeeNo()))
-                .collect(Collectors.toMap(ReviewerWhitelistRecord::getEmployeeNo, record -> record, (first, ignored) -> first, LinkedHashMap::new));
-        return people.values().stream().map(person -> toView(person, allRoles.get(person.getEmployeeNo()))).toList();
+        Map<String, List<ReviewerWhitelistRole>> rolesByEmployee = records.stream().collect(Collectors.groupingBy(
+                ReviewerWhitelistRecord::getEmployeeNo,
+                Collectors.mapping(record -> ReviewerWhitelistRole.valueOf(record.getReviewRole()), Collectors.toList())));
+        Map<ReviewerWhitelistRole, Map<String, ReviewerWhitelistRecord>> grouped = new LinkedHashMap<>();
+        for (ReviewerWhitelistRecord record : records) {
+            grouped.computeIfAbsent(ReviewerWhitelistRole.valueOf(record.getReviewRole()), key -> new LinkedHashMap<>())
+                    .putIfAbsent(record.getEmployeeNo(), record);
+        }
+        Map<ReviewerWhitelistRole, List<ReviewerWhitelistView>> result = new LinkedHashMap<>();
+        for (ReviewerWhitelistRole role : SUPPORTED_ROLE_ORDER) {
+            Map<String, ReviewerWhitelistRecord> people = grouped.get(role);
+            if (people == null) {
+                continue;
+            }
+            result.put(role, people.values().stream()
+                    .map(record -> toView(record, rolesByEmployee.getOrDefault(record.getEmployeeNo(), List.of())))
+                    .toList());
+        }
+        return result;
     }
 
     private Map<String, List<ReviewerWhitelistRole>> rolesByEmployee(List<String> employeeNos) {
@@ -226,19 +228,16 @@ public class ReviewerWhitelistApplicationService {
         return employeeNos.stream().distinct().map(this::findByEmployeeNo).toList();
     }
 
-    /** 按角色校验任务实际分配人员，不能只按工号命中任意一条白名单记录。 */
+    /** 暂不校验人员和角色是否属于白名单；已有人员资料仍用于返回展示信息。 */
     public List<WhitelistPersonView> findByRoleAndEmployeeNos(ReviewerWhitelistRole whitelistRole,
                                                                List<String> employeeNos) {
         if (employeeNos == null || employeeNos.isEmpty()) {
             return List.of();
         }
         return employeeNos.stream().distinct().map(employeeNo -> {
-            ReviewerWhitelistRecord record = whitelistMapper.findByRoleAndEmployeeNo(whitelistRole.name(), employeeNo);
-            if (record == null) {
-                throw new BusinessException(ErrorCode.VALIDATION_ERROR,
-                        "人员 " + employeeNo + " 不在" + whitelistRole.displayName() + "白名单中");
-            }
-            return WhitelistPersonView.from(record);
+            ReviewerWhitelistRecord record = whitelistMapper.findActiveByEmployeeNo(employeeNo);
+            return record == null ? new WhitelistPersonView(employeeNo, null, null, null, null)
+                    : WhitelistPersonView.from(record);
         }).toList();
     }
 
@@ -265,12 +264,6 @@ public class ReviewerWhitelistApplicationService {
     private ReviewerWhitelistView toView(ReviewerWhitelistRecord record, List<ReviewerWhitelistRole> roles) {
         return new ReviewerWhitelistView(record.getId(), List.copyOf(roles), record.getEmployeeNo(),
                 record.getDisplayName(), record.getEmail(), record.getMobile(), record.getDepartmentName(), record.getCreatedAt());
-    }
-
-    private void requireManagePermission(CurrentUser currentUser) {
-        if (!permissionPolicy.has(currentUser.roles(), Permission.MANAGE_USER)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "无评审白名单维护权限");
-        }
     }
 
     private int normalizePageNum(Integer pageNum) {

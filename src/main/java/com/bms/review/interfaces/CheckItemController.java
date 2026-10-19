@@ -2,7 +2,6 @@ package com.bms.review.interfaces;
 
 import com.bms.common.ApiResponse;
 import com.bms.common.TraceIdFilter;
-import com.bms.identity.application.CurrentUserHolder;
 import com.bms.review.application.TaskCheckItemApplicationService;
 import com.bms.review.domain.CheckResult;
 import io.swagger.v3.oas.annotations.Operation;
@@ -18,6 +17,9 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.validation.annotation.Validated;
+import jakarta.validation.constraints.NotBlank;
+import org.springframework.web.bind.annotation.RequestHeader;
 
 import java.util.List;
 
@@ -27,6 +29,7 @@ import java.util.List;
  * @description 提供任务内互检固定检查项的查询和意见提交接口
  */
 @RestController
+@Validated
 @RequestMapping("/tasks/{taskId}/check-items")
 @Tag(name = "任务互检检查项", description = "查询任务内固定互检检查项，填写互检单意见。")
 public class CheckItemController {
@@ -39,28 +42,28 @@ public class CheckItemController {
     @GetMapping
     @Operation(summary = "查询任务互检单详情", description = "任务的互检单详情")
     ApiResponse<List<TaskCheckItemApplicationService.CheckItemCategoryView>> list(@PathVariable long taskId,
-                                                                                    HttpServletRequest servletRequest) {
-        return ApiResponse.ok(taskCheckItemApplicationService.list(taskId, CurrentUserHolder.require()), traceId(servletRequest));
+                                                                                    @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(taskCheckItemApplicationService.list(taskId, employeeNo, null), traceId(servletRequest));
     }
 
     @PutMapping("/{itemId}")
     @Operation(summary = "提交互检检查项结论", description = "comment 是用户填写的文字意见，richText 是富文本信息，result 可传 PASS（合格）、FAIL（不合格）或 NC")
     ApiResponse<TaskCheckItemApplicationService.CheckItemView> submit(@PathVariable long taskId, @PathVariable long itemId,
                                                                         @Valid @RequestBody SubmitCheckItemRequest request,
-                                                                        HttpServletRequest servletRequest) {
+                                                                        @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
         return ApiResponse.ok(taskCheckItemApplicationService.submit(taskId, itemId,
                 new TaskCheckItemApplicationService.SubmitCheckItemCommand(request.result(), request.comment(), request.richText()),
-                CurrentUserHolder.require()), traceId(servletRequest));
+                employeeNo, userName), traceId(servletRequest));
     }
 
     @PutMapping("/batch")
     @Operation(summary = "批量提交整张互检单", description = "每项仅接收 itemId、result、comment、richText。comment 是用户填写的文字意见，richText 是富文本信息，result 可传 PASS（合格）、FAIL（不合格）或 NC")
     ApiResponse<List<TaskCheckItemApplicationService.CheckItemView>> submitBatch(@PathVariable long taskId,
                                                                                    @Valid @RequestBody SubmitCheckItemsRequest request,
-                                                                                   HttpServletRequest servletRequest) {
+                                                                                   @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
         return ApiResponse.ok(taskCheckItemApplicationService.submitBatch(taskId, request.items().stream()
                 .map(item -> new TaskCheckItemApplicationService.SubmitBatchItemCommand(item.itemId(), item.result(), item.comment(), item.richText())).toList(),
-                CurrentUserHolder.require()), traceId(servletRequest));
+                employeeNo, userName), traceId(servletRequest));
     }
 
     private String traceId(HttpServletRequest request) {

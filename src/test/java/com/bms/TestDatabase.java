@@ -21,7 +21,7 @@ import java.lang.annotation.Target;
         "spring.datasource.driver-class-name=org.h2.Driver",
         "spring.datasource.username=sa", "spring.datasource.password=",
         "spring.cloud.nacos.discovery.enabled=false", "spring.cloud.discovery.enabled=false",
-        "user-center.current-user-url=", "user-center.user-profile-url-template=",
+        "user-center.user-profile-url-template=",
         "resource-service.mock-enabled=true",
         "notification.dispatch.initial-delay-ms=86400000"
 })

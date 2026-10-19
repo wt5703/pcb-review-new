@@ -10,10 +10,10 @@ import org.springframework.context.annotation.Configuration;
 /**
  * @author 王涛
  * @date 2026-09-18
- * @description 配置后端 OpenAPI 文档元数据和本地 Mock 身份请求头说明，使接口联调人员可从 Swagger UI 获取当前可用接口契约。
+ * @description 配置后端 OpenAPI 文档元数据及请求头说明。
  */
 @Configuration
 @OpenAPIDefinition(info = @Info(title = "PCB评审平台后端 API", version = "v1",
-        description = "当前登录用户由后端调用用户中心当前用户接口获取；未配置或调用失败时使用默认 Mock 用户。"))
+        description = "业务接口按需通过请求头 userId 获取员工工号、userName 获取姓名；暂不校验角色权限。"))
 public class OpenApiConfiguration {
 }

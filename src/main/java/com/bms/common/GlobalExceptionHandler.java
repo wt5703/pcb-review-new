@@ -1,6 +1,7 @@
 package com.bms.common;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -25,8 +26,15 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({IllegalArgumentException.class, MethodArgumentNotValidException.class})
     ResponseEntity<ErrorResponse> handleValidation(Exception exception, HttpServletRequest request) {
+        exception.printStackTrace();
         return ResponseEntity.badRequest()
                 .body(new ErrorResponse(ErrorCode.VALIDATION_ERROR.name(), "请求参数不合法", traceId(request)));
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    ResponseEntity<ErrorResponse> handleConstraintViolation(ConstraintViolationException exception, HttpServletRequest request) {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse(ErrorCode.VALIDATION_ERROR.name(), "请求头或请求参数不能为空", traceId(request)));
     }
 
     /** 将超出 multipart 上限转换为前端可读取的 JSON，而不是代理层的连接失败。 */

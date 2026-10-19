@@ -1,11 +1,9 @@
 package com.bms.review.application;
 
 import com.bms.common.BusinessException;
-import com.bms.identity.application.CurrentUser;
 import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import com.bms.review.domain.OpinionSourceType;
 import com.bms.task.application.TaskProcessorAuthorizationService;
-import com.bms.identity.domain.Role;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.review.domain.CheckResult;
 import com.bms.review.infrastructure.CheckItemTemplateMapper;
@@ -47,10 +45,10 @@ class TaskCheckItemApplicationServiceTest {
     private final UserCenterUserProfileClient userProfileClient = mock(UserCenterUserProfileClient.class);
     private final TaskCheckItemApplicationService service = new TaskCheckItemApplicationService(taskMapper, templateMapper,
             taskCheckItemMapper, assignmentAccessMapper, taskProcessorAuthorizationService, opinionMapper, userProfileClient);
-    private final CurrentUser pcbLeader = new CurrentUser("BMS001", Set.of(Role.PCB_LEADER));
 
     @Test
     void shouldMaterializeCurrentTemplateForActiveTask() {
+        when(assignmentAccessMapper.isAssignedToTask(1001L, "BMS001")).thenReturn(true);
         ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
         CheckItemTemplateRecord template = template(31L, "线距检查");
         TaskCheckItemRecord materialized = item(51L, 31L);
@@ -60,7 +58,7 @@ class TaskCheckItemApplicationServiceTest {
         when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of(), List.of(materialized));
         when(taskCheckItemMapper.nextId()).thenReturn(51L);
 
-        List<TaskCheckItemApplicationService.CheckItemCategoryView> items = service.list(1001L, pcbLeader);
+        List<TaskCheckItemApplicationService.CheckItemCategoryView> items = service.list(1001L, "BMS001", "BMS001");
 
         assertThat(items).extracting(item -> item.category().itemName()).containsExactly("线距检查");
         verify(taskCheckItemMapper).insert(any(TaskCheckItemRecord.class));
@@ -73,7 +71,7 @@ class TaskCheckItemApplicationServiceTest {
         when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(item(51L, 31L));
 
         assertThatThrownBy(() -> service.submit(1001L, 51L,
-                new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.FAIL, null, null), pcbLeader))
+                new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.FAIL, null, null), "BMS001", "BMS001"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("不合格或 NC 检查项必须填写意见");
         verify(templateMapper, never()).findEnabledByReviewType(ReviewType.PCB.name());
@@ -94,7 +92,7 @@ class TaskCheckItemApplicationServiceTest {
         when(opinionMapper.updateStatus(any(ReviewOpinionRecord.class))).thenReturn(1);
 
         service.submit(1001L, 51L,
-                new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.PASS, null, null), pcbLeader);
+                new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.PASS, null, null), "BMS001", "BMS001");
 
         assertThat(checkItem.getCheckResult()).isEqualTo(CheckResult.PASS.name());
         verify(opinionMapper).updateStatus(argThat(value -> "WITHDRAWN".equals(value.getStatus())));
@@ -111,7 +109,7 @@ class TaskCheckItemApplicationServiceTest {
         when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
 
         List<TaskCheckItemApplicationService.CheckItemView> result = service.submitBatch(1001L,
-                List.of(new TaskCheckItemApplicationService.SubmitBatchItemCommand(51L, CheckResult.PASS, null, null)), pcbLeader);
+                List.of(new TaskCheckItemApplicationService.SubmitBatchItemCommand(51L, CheckResult.PASS, null, null)), "BMS001", "BMS001");
 
         assertThat(result).hasSize(1);
         assertThat(checkItem.getCheckResult()).isEqualTo(CheckResult.PASS.name());
@@ -120,6 +118,7 @@ class TaskCheckItemApplicationServiceTest {
 
     @Test
     void shouldKeepExistingSnapshotWhenTaskIsFinished() {
+        when(assignmentAccessMapper.isAssignedToTask(1001L, "BMS001")).thenReturn(true);
         ReviewTaskRecord task = task(TaskStatus.FINISHED);
         TaskCheckItemRecord category = item(41L, 30L);
         category.setParentId(null);
@@ -129,7 +128,7 @@ class TaskCheckItemApplicationServiceTest {
         when(templateMapper.findByIds(List.of(30L, 31L))).thenReturn(List.of(template(30L, "结束时的类别"),
                 template(31L, "结束时的线距检查")));
 
-        List<TaskCheckItemApplicationService.CheckItemCategoryView> items = service.list(1001L, pcbLeader);
+        List<TaskCheckItemApplicationService.CheckItemCategoryView> items = service.list(1001L, "BMS001", "BMS001");
 
         assertThat(items).extracting(item -> item.category().itemName()).containsExactly("结束时的类别");
         assertThat(items.get(0).items()).extracting(TaskCheckItemApplicationService.CheckItemListItemView::itemName).containsExactly("结束时的线距检查");

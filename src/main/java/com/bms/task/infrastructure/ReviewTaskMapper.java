@@ -65,7 +65,7 @@ public interface ReviewTaskMapper {
             + "SELECT id, review_type AS reviewType, task_name AS taskName, project_name AS projectName, designer_employee_no AS designerEmployeeNo, "
             + "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, "
             + "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, "
-            + "assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, review_description AS reviewDescription, status, initial_file_ids AS initialFileIds, version "
+            + "assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, review_description AS reviewDescription, status, initial_file_ids AS initialFileIds, version, created_at AS createdAt "
             + "FROM review_task "
             + "<where>"
             + "<if test='keyword != null and keyword != \"\"'>"
@@ -81,7 +81,7 @@ public interface ReviewTaskMapper {
             + "OR CONCAT(',', COALESCE(assigned_reviewer_employee_nos, ''), ',') LIKE CONCAT('%,', #{employeeNo}, ',%')) "
             + "</if>"
             + "</where>"
-            + "ORDER BY id LIMIT #{limit} OFFSET #{offset}"
+            + "ORDER BY id DESC LIMIT #{limit} OFFSET #{offset}"
             + "</script>")
     List<ReviewTaskRecord> findPage(@Param("keyword") String keyword, @Param("reviewType") String reviewType,
                                     @Param("statuses") List<String> statuses, @Param("taskId") Long taskId,

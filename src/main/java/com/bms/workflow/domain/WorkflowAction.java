@@ -13,7 +13,8 @@ public enum WorkflowAction {
     START_PCB_MATUAL_REVIEW("开启互检单评审"),
     START_SCHEMATIC_MATUAL_REVIEW("开启互检单评审"),
     START_SCHEMATIC_EXPERT_REVIEW("开启原理图专家评审"),
-    PREPARE_FINISH("准备结束"),
+    /** 设计者提交终版并将任务流转至待结束；与同名的任务状态分别表示动作和结果。 */
+    PENDING_FINISH("进入待结束"),
     FINISH("结束任务");
 
     private final String actionName;

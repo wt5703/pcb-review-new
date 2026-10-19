@@ -2,7 +2,6 @@ package com.bms.review.interfaces;
 
 import com.bms.common.ApiResponse;
 import com.bms.common.TraceIdFilter;
-import com.bms.identity.application.CurrentUserHolder;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.ReviewerWhitelistRole;
 import io.swagger.v3.oas.annotations.Operation;
@@ -22,8 +21,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.RequestHeader;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author 王涛
@@ -31,6 +33,7 @@ import java.util.List;
  * @description 对外提供评审角色白名单的批量新增入口，保存角色与员工工号的一对多映射。
  */
 @RestController
+@Validated
 @RequestMapping("/reviewer-whitelists")
 @Tag(name = "评审人员白名单", description = "维护硬件、EMC、结构、工艺、PCB 评审及 PCB/原理图互检职责的可选员工工号。")
 public class ReviewerWhitelistController {
@@ -48,27 +51,24 @@ public class ReviewerWhitelistController {
         ReviewerWhitelistQueryRequest query = request == null ? new ReviewerWhitelistQueryRequest(null, null, null) : request;
         return ApiResponse.ok(whitelistApplicationService.listPage(
                 new ReviewerWhitelistApplicationService.ReviewerWhitelistQuery(query.keyword(), query.pageNum(), query.pageSize()),
-                CurrentUserHolder.require()), traceId(servletRequest));
+                null, null), traceId(servletRequest));
     }
 
     @GetMapping("/people")
-    @Operation(summary = "查询白名单人员", description = "每人返回一条及全部有效角色；可传多个 roles 筛选匹配任一角色的人员，不传则返回全部白名单人员。")
-    ApiResponse<List<ReviewerWhitelistApplicationService.ReviewerWhitelistView>> people(
-            @RequestParam(required = false) @Parameter(description = "白名单角色，可重复传参或逗号分隔") List<ReviewerWhitelistRole> roles,
-            HttpServletRequest servletRequest) {
-        CurrentUserHolder.require();
-        return ApiResponse.ok(whitelistApplicationService.listPeople(roles), traceId(servletRequest));
+    @Operation(summary = "查询白名单人员", description = "无需传参，返回 Map：key 为角色、value 为该角色下的人员列表；同一人可同时出现在多个角色下。")
+    ApiResponse<Map<ReviewerWhitelistRole, List<ReviewerWhitelistApplicationService.ReviewerWhitelistView>>> people(HttpServletRequest servletRequest) {
+        return ApiResponse.ok(whitelistApplicationService.listPeopleGroupedByRole(), traceId(servletRequest));
     }
 
     @PostMapping
     @Operation(summary = "批量新增评审人员白名单", description = "按角色批量新增白名单。硬件评审=HARDWARE_EXPERT、EMC评审=EMC_EXPERT、结构评审=STRUCTURE_EXPERT、工艺评审=PROCESS_EXPERT、PCB评审=PCB_EXPERT、PCB互检=PCB_MUTUAL_CHECK、原理图互检=SCHEMATIC_MUTUAL_CHECK")
     ApiResponse<ReviewerWhitelistApplicationService.SaveResult> add(
             @Valid @RequestBody AddReviewerWhitelistRequest request,
-            HttpServletRequest servletRequest) {
+            @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         List<ReviewerWhitelistApplicationService.RoleEmployeeNos> mappings = request.roleEmployeeNos().stream()
                 .map(item -> new ReviewerWhitelistApplicationService.RoleEmployeeNos(item.reviewRole(), item.employeeNos()))
                 .toList();
-        return ApiResponse.ok(whitelistApplicationService.add(mappings, CurrentUserHolder.require()), traceId(servletRequest));
+        return ApiResponse.ok(whitelistApplicationService.add(mappings, employeeNo, null), traceId(servletRequest));
     }
 
     @DeleteMapping
@@ -76,15 +76,15 @@ public class ReviewerWhitelistController {
     ApiResponse<ReviewerWhitelistApplicationService.DeleteResult> remove(
             @RequestParam(required = false) @Schema(description = "白名单主键；与 employeeNo 二选一") Long id,
             @RequestParam(required = false) @Schema(description = "员工工号；与 id 二选一，传入后删除该工号下所有白名单角色映射") String employeeNo,
-            HttpServletRequest servletRequest) {
-        return ApiResponse.ok(whitelistApplicationService.remove(id, employeeNo, CurrentUserHolder.require()), traceId(servletRequest));
+            @NotBlank @RequestHeader("userId") String operatorEmployeeNo, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(whitelistApplicationService.remove(id, employeeNo, operatorEmployeeNo, null), traceId(servletRequest));
     }
 
     @DeleteMapping("/{id}/roles/{role}")
     @Operation(summary = "删除白名单人员的指定角色", description = "仅删除指定角色；若该人员没有其他有效角色，则同时停用人员。")
     ApiResponse<ReviewerWhitelistApplicationService.DeleteResult> removeRole(@PathVariable long id,
-            @PathVariable ReviewerWhitelistRole role, HttpServletRequest servletRequest) {
-        return ApiResponse.ok(whitelistApplicationService.removeRole(id, role, CurrentUserHolder.require()), traceId(servletRequest));
+            @PathVariable ReviewerWhitelistRole role, @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(whitelistApplicationService.removeRole(id, role, employeeNo, null), traceId(servletRequest));
     }
 
     private String traceId(HttpServletRequest request) {

@@ -39,15 +39,15 @@ class CheckItemOpinionIntegrationTest {
         taskMapper.insert(task(taskId));
 
         mockMvc.perform(post("/check-item-templates")
-                        .header("X-Mock-User-Id", "1")
-                        .header("X-Mock-Roles", "PCB_LEADER")
+                        .header("userId", "BMS001")
+                        .header("userName", "测试用户")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reviewType\":\"PCB\",\"categoryName\":\"集成测试类别\",\"items\":[{\"itemName\":\"线距检查\"}]}"))
                 .andExpect(status().isOk());
 
         String itemsResponse = mockMvc.perform(get("/tasks/{taskId}/check-items", taskId)
-                        .header("X-Mock-User-Id", "20")
-                .header("X-Mock-Roles", "HARDWARE_EXPERT"))
+                        .header("userId", "BMS020")
+                .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[?(@.category.itemName == '集成测试类别')].items[0].opinion").doesNotExist())
                 .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
@@ -55,8 +55,8 @@ class CheckItemOpinionIntegrationTest {
                 "$.data[?(@.category.itemName == '集成测试类别')].items[0].id")).get(0).longValue();
 
         mockMvc.perform(put("/tasks/{taskId}/check-items/batch", taskId)
-                        .header("X-Mock-User-Id", "20")
-                        .header("X-Mock-Roles", "HARDWARE_EXPERT")
+                        .header("userId", "BMS020")
+                        .header("userName", "测试用户")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"items\":[{\"itemId\":" + itemId + ",\"result\":\"FAIL\",\"comment\":\"线距不足\",\"richText\":\"线距不满足要求\"}]}"))
                 .andExpect(status().isOk())
@@ -65,8 +65,8 @@ class CheckItemOpinionIntegrationTest {
                 .andExpect(jsonPath("$.data[0].opinion.id").isNumber());
 
         mockMvc.perform(get("/tasks/{taskId}/check-items", taskId)
-                        .header("X-Mock-User-Id", "20")
-                .header("X-Mock-Roles", "HARDWARE_EXPERT"))
+                        .header("userId", "BMS020")
+                .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[?(@.category.itemName == '集成测试类别')].items[0].opinion.result").value("FAIL"))
                 .andExpect(jsonPath("$.data[?(@.category.itemName == '集成测试类别')].items[0].opinion.comment").value("线距不足"))
@@ -78,8 +78,8 @@ class CheckItemOpinionIntegrationTest {
     @Test
     void shouldListTemplateCategoriesAndLogicallyDisableCategoryWithChildren() throws Exception {
         String created = mockMvc.perform(post("/check-item-templates")
-                        .header("X-Mock-User-Id", "1")
-                        .header("X-Mock-Roles", "PCB_LEADER")
+                        .header("userId", "BMS001")
+                        .header("userName", "测试用户")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reviewType\":\"PCB\",\"categoryName\":\"模板树类别\",\"items\":[{\"itemName\":\"模板树检查项\"}]}"))
                 .andExpect(status().isOk())
@@ -91,37 +91,37 @@ class CheckItemOpinionIntegrationTest {
 
         mockMvc.perform(get("/check-item-templates")
                         .param("reviewType", "PCB")
-                        .header("X-Mock-User-Id", "1")
-                        .header("X-Mock-Roles", "PCB_LEADER"))
+                        .header("userId", "BMS001")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.reviewType").value("PCB"))
                 .andExpect(jsonPath("$.data.categories[?(@.category.id == " + categoryId + ")].items[0].itemName").value("模板树检查项"));
 
         mockMvc.perform(put("/check-item-templates")
-                        .header("X-Mock-User-Id", "1")
-                        .header("X-Mock-Roles", "PCB_LEADER")
+                        .header("userId", "BMS001")
+                        .header("userName", "测试用户")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"id\":" + itemId + ",\"itemName\":\"已修改检查项\"}"))
+                        .content("{\"itemId\":" + itemId + ",\"itemName\":\"已修改检查项\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.item.id").value(itemId))
                 .andExpect(jsonPath("$.data.item.itemName").value("已修改检查项"));
 
         mockMvc.perform(delete("/check-item-templates/{id}", itemId)
                         .param("category", "CATEGORY")
-                        .header("X-Mock-User-Id", "1")
-                        .header("X-Mock-Roles", "PCB_LEADER"))
+                        .header("userId", "BMS001")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isBadRequest());
 
         mockMvc.perform(delete("/check-item-templates/{id}", itemId)
                         .param("category", "ITEM")
-                        .header("X-Mock-User-Id", "1")
-                        .header("X-Mock-Roles", "PCB_LEADER"))
+                        .header("userId", "BMS001")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/check-item-templates")
                         .param("reviewType", "PCB")
-                        .header("X-Mock-User-Id", "1")
-                        .header("X-Mock-Roles", "PCB_LEADER"))
+                        .header("userId", "BMS001")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.categories[?(@.category.id == " + categoryId + ")].items[0].enabled").doesNotExist())
                 .andExpect(jsonPath("$.data.categories[?(@.category.id == " + categoryId + ")].items[0].reviewType").doesNotExist())
@@ -129,14 +129,14 @@ class CheckItemOpinionIntegrationTest {
 
         mockMvc.perform(delete("/check-item-templates/{id}", categoryId)
                         .param("category", "CATEGORY")
-                        .header("X-Mock-User-Id", "1")
-                        .header("X-Mock-Roles", "PCB_LEADER"))
+                        .header("userId", "BMS001")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/check-item-templates")
                 .param("reviewType", "PCB")
-                .header("X-Mock-User-Id", "1")
-                .header("X-Mock-Roles", "PCB_LEADER"))
+                .header("userId", "BMS001")
+                .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.categories[?(@.category.id == " + categoryId + ")]").isEmpty());
     }
@@ -144,8 +144,8 @@ class CheckItemOpinionIntegrationTest {
     @Test
     void shouldCreateCategoryWithoutItems() throws Exception {
         mockMvc.perform(post("/check-item-templates")
-                        .header("X-Mock-User-Id", "1")
-                        .header("X-Mock-Roles", "PCB_LEADER")
+                        .header("userId", "BMS001")
+                        .header("userName", "测试用户")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"reviewType\":\"PCB\",\"categoryName\":\"暂未配置子项的大类\"}"))
                 .andExpect(status().isOk())

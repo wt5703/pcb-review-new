@@ -1,8 +1,6 @@
 package com.bms.task.application;
 
 import com.bms.common.BusinessException;
-import com.bms.identity.application.CurrentUser;
-import com.bms.identity.domain.Role;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import org.junit.jupiter.api.Test;
 
@@ -18,10 +16,9 @@ class TaskProcessorAuthorizationServiceTest {
 
     @Test
     void shouldRejectUserWhoIsNotCurrentTaskProcessor() {
-        CurrentUser user = new CurrentUser("BMS088", Set.of(Role.PROCESS_EXPERT));
         when(accessMapper.isCurrentTaskProcessor(1001L, "BMS088")).thenReturn(false);
 
-        assertThatThrownBy(() -> service.requireCurrentTaskProcessor(1001L, user))
+        assertThatThrownBy(() -> service.requireCurrentTaskProcessor(1001L, "BMS088", "BMS088"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("当前任务节点不需要该用户处理");
     }
