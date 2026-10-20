@@ -42,7 +42,7 @@ public interface CheckItemTemplateMapper {
     List<CheckItemTemplateRecord> findByIds(@Param("itemIds") List<Long> itemIds);
 
     @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, "
-            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE review_type=#{reviewType} AND parent_id IS NULL AND item_name=#{itemName} LIMIT 1")
+            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE review_type=#{reviewType} AND parent_id IS NULL AND item_name=#{itemName} AND enabled=TRUE LIMIT 1")
     CheckItemTemplateRecord findCategoryByReviewTypeAndName(String reviewType, String itemName);
 
     @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, "

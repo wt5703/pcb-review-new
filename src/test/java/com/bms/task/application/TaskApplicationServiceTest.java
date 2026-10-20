@@ -189,6 +189,8 @@ class TaskApplicationServiceTest {
         task.setReviewRoles("HARDWARE_EXPERT,EMC_EXPERT,PCB_EXPERT,PROCESS_EXPERT,STRUCTURE_EXPERT");
         task.setReviewerAssignments("HARDWARE_EXPERT:BMS101;EMC_EXPERT:BMS102;PCB_EXPERT:BMS103;PROCESS_EXPERT:BMS104;STRUCTURE_EXPERT:BMS105");
         when(taskMapper.findById(101L)).thenReturn(task);
+        when(reviewerWhitelistApplicationService.findDisplayNamesByEmployeeNos(List.of("BMS101", "BMS102", "BMS103", "BMS104", "BMS105")))
+                .thenReturn(Map.of("BMS101", "硬件专家", "BMS102", "EMC专家", "BMS103", "PCB专家", "BMS104", "工艺专家", "BMS105", "结构专家"));
 
         TaskApplicationService.TaskView detail = service.getTaskDetail(101L, LEADER_NO, "组长");
 
@@ -198,6 +200,8 @@ class TaskApplicationServiceTest {
         assertThat(json.path("reviewerAssignments").get(0).path("reviewRole").asText()).isEqualTo("HARDWARE_EXPERT");
         assertThat(json.path("reviewerAssignments").get(0).path("reviewRoleName").asText()).isEqualTo("硬件评审");
         assertThat(json.path("reviewerAssignments").get(0).path("reviewerEmployeeNos").get(0).asText()).isEqualTo("BMS101");
+        assertThat(json.path("reviewerAssignments").get(0).path("reviewers").get(0).path("employeeNo").asText()).isEqualTo("BMS101");
+        assertThat(json.path("reviewerAssignments").get(0).path("reviewers").get(0).path("reviewerName").asText()).isEqualTo("硬件专家");
     }
 
     @Test

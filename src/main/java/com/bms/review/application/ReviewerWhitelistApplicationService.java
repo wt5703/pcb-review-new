@@ -221,6 +221,22 @@ public class ReviewerWhitelistApplicationService {
         return defaultName == null || defaultName.isBlank() ? employeeNo : defaultName;
     }
 
+    /** 批量读取白名单内已固化的姓名，供任务详情一次性补全评审人展示信息。 */
+    public Map<String, String> findDisplayNamesByEmployeeNos(List<String> employeeNos) {
+        if (employeeNos == null || employeeNos.isEmpty()) {
+            return Map.of();
+        }
+        List<String> distinctEmployeeNos = employeeNos.stream()
+                .filter(employeeNo -> employeeNo != null && !employeeNo.isBlank()).distinct().toList();
+        if (distinctEmployeeNos.isEmpty()) {
+            return Map.of();
+        }
+        return whitelistMapper.findActiveByEmployeeNos(distinctEmployeeNos).stream()
+                .collect(Collectors.toMap(ReviewerWhitelistRecord::getEmployeeNo,
+                        record -> record.getDisplayName() == null || record.getDisplayName().isBlank()
+                                ? record.getEmployeeNo() : record.getDisplayName()));
+    }
+
     public List<WhitelistPersonView> findByEmployeeNos(List<String> employeeNos) {
         if (employeeNos == null || employeeNos.isEmpty()) {
             return List.of();

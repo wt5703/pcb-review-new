@@ -95,6 +95,16 @@ class CheckItemTemplateApplicationServiceTest {
     }
 
     @Test
+    void shouldRejectDuplicateCategoryNameWhenCreatingTemplateCategory() {
+        when(templateMapper.findCategoryByReviewTypeAndName("PCB", "已有大类"))
+                .thenReturn(template(100L, null, 1));
+
+        assertThatThrownBy(() -> service.create(new CheckItemTemplateApplicationService.CreateCategoryCommand(
+                ReviewType.PCB, "已有大类", List.of()), "BMS001", "测试用户"))
+                .hasMessage("同一评审类型下不能存在同名检查项大类");
+    }
+
+    @Test
     void shouldRejectDuplicateNameWhenCreatingSingleItem() {
         CheckItemTemplateRecord category = template(100L, null, 1);
         category.setEnabled(true);

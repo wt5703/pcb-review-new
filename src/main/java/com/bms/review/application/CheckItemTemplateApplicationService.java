@@ -118,6 +118,9 @@ public class CheckItemTemplateApplicationService {
         requireName(command.categoryName(), "检查项大类名称");
         List<CreateItemCommand> requestedItems = command.items() == null ? List.of() : command.items();
         requireDistinctChildItemNames(requestedItems.stream().map(CreateItemCommand::itemName).toList());
+        if (templateMapper.findCategoryByReviewTypeAndName(command.reviewType().name(), command.categoryName().trim()) != null) {
+            throw new BusinessException(ErrorCode.DUPLICATE_REQUEST, "同一评审类型下不能存在同名检查项大类");
+        }
         CheckItemTemplateRecord category = newTemplate(command.reviewType(), null, command.categoryName(), nextCategorySort(command.reviewType()), true);
         templateMapper.insert(category);
         List<TemplateView> items = new ArrayList<>();

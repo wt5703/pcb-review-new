@@ -222,8 +222,12 @@ public class TaskApplicationService {
     }
 
     private TaskView toTaskDetailView(ReviewTask task, List<TaskFlowRecordView> flowRecords) {
+        List<String> reviewerEmployeeNos = task.reviewerAssignments().stream()
+                .flatMap(assignment -> assignment.reviewerEmployeeNos().stream()).distinct().toList();
+        Map<String, String> reviewerNames = reviewerWhitelistApplicationService.findDisplayNamesByEmployeeNos(reviewerEmployeeNos);
         return TaskView.from(task, task.designerName(),
-                lookupEmployeeName(task.expertLeaderEmployeeNo(), task.expertLeaderName()), flowRecords);
+                lookupEmployeeName(task.expertLeaderEmployeeNo(), task.expertLeaderName()), flowRecords,
+                reviewerNames == null ? Map.of() : reviewerNames);
     }
 
     private String lookupEmployeeName(String employeeNo, String defaultName) {
@@ -341,14 +345,25 @@ public class TaskApplicationService {
                            @Schema(description = "任务创建日期，格式 yyyy-MM-dd", example = "2026-10-19")
                            @JsonInclude(JsonInclude.Include.NON_NULL) @JsonFormat(pattern = "yyyy-MM-dd") LocalDate createdDate) {
         static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords) {
-            return from(task, designerName, expertLeaderName, flowRecords, null);
+            return from(task, designerName, expertLeaderName, flowRecords, (LocalDate) null);
         }
 
         static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords,
                              LocalDate createdDate) {
+            return from(task, designerName, expertLeaderName, flowRecords, createdDate, Map.of());
+        }
+
+        static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords,
+                             Map<String, String> reviewerNames) {
+            return from(task, designerName, expertLeaderName, flowRecords, (LocalDate) null, reviewerNames);
+        }
+
+        private static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords,
+                                     LocalDate createdDate, Map<String, String> reviewerNames) {
             return new TaskView(task.id(), task.reviewType(), task.taskName(), task.projectName(), task.designerEmployeeNo(), designerName,
                     task.designName(), task.pcbType(), task.expectedCompletedDate(), task.expertLeaderEmployeeNo(), expertLeaderName,
-                    task.reviewRoles(), task.reviewerAssignments().stream().map(ReviewerAssignmentView::from).toList(),
+                    task.reviewRoles(), task.reviewerAssignments().stream()
+                    .map(assignment -> ReviewerAssignmentView.from(assignment, reviewerNames)).toList(),
                     task.reviewDescription(), task.status().name(), List.copyOf(flowRecords), createdDate);
         }
     }
@@ -356,11 +371,30 @@ public class TaskApplicationService {
     /** 前端同时使用评审角色编码和中文名称，人员工号保持原有结构。 */
     public record ReviewerAssignmentView(ReviewRole reviewRole,
                                          @Schema(description = "评审角色中文名称", example = "硬件评审") String reviewRoleName,
-                                         List<String> reviewerEmployeeNos) {
+                                         List<String> reviewerEmployeeNos,
+                                         @Schema(description = "评审人明细，任务详情中包含员工工号及白名单姓名") List<ReviewerView> reviewers) {
+        public ReviewerAssignmentView(ReviewRole reviewRole, String reviewRoleName, List<String> reviewerEmployeeNos) {
+            this(reviewRole, reviewRoleName, reviewerEmployeeNos, List.of());
+        }
+
         static ReviewerAssignmentView from(TaskReviewerAssignment assignment) {
-            return new ReviewerAssignmentView(assignment.reviewRole(), assignment.reviewRole().displayName(), assignment.reviewerEmployeeNos());
+            return new ReviewerAssignmentView(assignment.reviewRole(), assignment.reviewRole().displayName(),
+                    assignment.reviewerEmployeeNos(), List.of());
+        }
+
+        static ReviewerAssignmentView from(TaskReviewerAssignment assignment, Map<String, String> reviewerNames) {
+            List<String> employeeNos = assignment.reviewerEmployeeNos();
+            if (reviewerNames == null || reviewerNames.isEmpty()) {
+                return from(assignment);
+            }
+            return new ReviewerAssignmentView(assignment.reviewRole(), assignment.reviewRole().displayName(), employeeNos,
+                    employeeNos.stream().map(employeeNo -> new ReviewerView(employeeNo,
+                            reviewerNames.getOrDefault(employeeNo, employeeNo))).toList());
         }
     }
+
+    public record ReviewerView(@Schema(description = "评审人工号") String employeeNo,
+                               @Schema(description = "评审人姓名") String reviewerName) { }
 
     /** 任务详情中的流程审计记录；邮件投递记录不属于任务详情返回范围。 */
     public record TaskFlowRecordView(Long id, String action, String actionName, String operatorEmployeeNo, String operatorName,
