@@ -46,7 +46,7 @@ public interface CheckItemTemplateMapper {
     CheckItemTemplateRecord findCategoryByReviewTypeAndName(String reviewType, String itemName);
 
     @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, "
-            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE parent_id=#{parentId} AND item_name=#{itemName} LIMIT 1")
+            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE parent_id=#{parentId} AND item_name=#{itemName} AND enabled=TRUE LIMIT 1")
     CheckItemTemplateRecord findChildByParentIdAndName(long parentId, String itemName);
 
     @Update("UPDATE check_item_template SET parent_id=#{parentId}, item_name=#{itemName}, item_rich_text=#{itemRichText}, sort_no=#{sortNo}, "

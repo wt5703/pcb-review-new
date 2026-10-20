@@ -84,14 +84,23 @@ public class CheckItemTemplateController {
         return ApiResponse.ok(created, traceId(servletRequest));
     }
 
+    @PostMapping("/{categoryId}/items")
+    @Operation(summary = "新增检查项小类", description = "向指定检查项大类追加一个子检查项。categoryId 必须是当前启用的大类 ID。")
+    ApiResponse<CheckItemTemplateApplicationService.TemplateView> createItem(
+            @PathVariable long categoryId, @Valid @RequestBody CreateTemplateItemRequest request,
+            HttpServletRequest servletRequest) {
+        return ApiResponse.ok(templateApplicationService.createItem(categoryId, request.itemName()), traceId(servletRequest));
+    }
+
 
     @PutMapping
-    @Operation(summary = "修改检查项", description = "itemId 指向大类时可同时传 items 维护其子项；指向小类时仅传 itemId、itemName")
+    @Operation(summary = "修改检查项", description = "itemId 指向大类时可通过 items 新增或修改子项，并通过 deletedItemIds 删除指定子项；指向小类时仅传 itemId、itemName")
     ApiResponse<CheckItemTemplateApplicationService.TemplateUpdateView> update(@Valid @RequestBody UpdateTemplateRequest request,
                                                                                HttpServletRequest servletRequest) {
         return ApiResponse.ok(templateApplicationService.update(new CheckItemTemplateApplicationService.UpdateTemplateCommand(
                         request.itemId(), request.itemName(), (request.items() == null ? List.<UpdateTemplateItemRequest>of() : request.items()).stream()
-                        .map(item -> new CheckItemTemplateApplicationService.UpdateItemCommand(item.itemId(), item.itemName())).toList()),
+                        .map(item -> new CheckItemTemplateApplicationService.UpdateItemCommand(item.itemId(), item.itemName())).toList(),
+                        request.deletedItemIds()),
                 null, null), traceId(servletRequest));
     }
 
@@ -137,12 +146,18 @@ public class CheckItemTemplateController {
     record UpdateTemplateRequest(
             @Schema(description = "待修改的大类或小类 itemId", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull Long itemId,
             @Schema(description = "修改后的名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String itemName,
-            @Schema(description = "仅修改大类时可传：完整子项列表；已有子项传 itemId，新增子项不传") List<@Valid UpdateTemplateItemRequest> items) {
+            @Schema(description = "仅修改大类时可传：待新增或修改的子项列表；已有子项传 itemId，新增子项不传") List<@Valid UpdateTemplateItemRequest> items,
+            @Schema(description = "仅修改大类时可传：需要删除的既有子项 itemId 列表") List<@NotNull Long> deletedItemIds) {
     }
 
     @Schema(description = "检查项子类内容")
     record TemplateItemRequest(
             @Schema(description = "检查项名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String itemName) {
+    }
+
+    @Schema(description = "新增检查项小类请求")
+    record CreateTemplateItemRequest(
+            @Schema(description = "检查项小类名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String itemName) {
     }
 
     @Schema(description = "修改检查项子类内容")

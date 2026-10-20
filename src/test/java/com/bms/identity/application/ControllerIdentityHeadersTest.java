@@ -23,7 +23,8 @@ class ControllerIdentityHeadersTest {
                 "WorkflowController.listMutualCheckReviewers", "ReviewerWhitelistController.list",
                 "ReviewerWhitelistController.people", "CheckItemTemplateController.checkExistence",
                 "CheckItemTemplateController.importWorkbook", "CheckItemTemplateController.get",
-                "CheckItemTemplateController.create", "CheckItemTemplateController.update",
+                "CheckItemTemplateController.create", "CheckItemTemplateController.createItem",
+                "CheckItemTemplateController.update",
                 "CheckItemTemplateController.disable");
         Set<String> bothIdentityHeaders = Set.of(
                 "CurrentUserController.currentUser", "TaskController.saveTaskDraft", "TaskController.submitTask",

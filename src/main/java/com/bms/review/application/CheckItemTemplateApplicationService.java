@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -115,10 +116,11 @@ public class CheckItemTemplateApplicationService {
     @Transactional
     public TemplateCategoryView create(CreateCategoryCommand command, String operatorEmployeeNo, String operatorName) {
         requireName(command.categoryName(), "检查项大类名称");
+        List<CreateItemCommand> requestedItems = command.items() == null ? List.of() : command.items();
+        requireDistinctChildItemNames(requestedItems.stream().map(CreateItemCommand::itemName).toList());
         CheckItemTemplateRecord category = newTemplate(command.reviewType(), null, command.categoryName(), nextCategorySort(command.reviewType()), true);
         templateMapper.insert(category);
         List<TemplateView> items = new ArrayList<>();
-        List<CreateItemCommand> requestedItems = command.items() == null ? List.of() : command.items();
         for (int index = 0; index < requestedItems.size(); index++) {
             CreateItemCommand item = requestedItems.get(index);
             requireName(item.itemName(), "检查项名称");
@@ -129,6 +131,26 @@ public class CheckItemTemplateApplicationService {
         return new TemplateCategoryView(TemplateView.from(category), List.copyOf(items));
     }
 
+    /** 将一个子检查项追加到指定大类末尾，已有任务使用的是快照，不受模板变更影响。 */
+    @Transactional
+    public TemplateView createItem(long categoryId, String itemName) {
+        CheckItemTemplateRecord category = templateMapper.findById(categoryId);
+        if (category == null || category.getParentId() != null || !Boolean.TRUE.equals(category.getEnabled())) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项大类不存在或已停用");
+        }
+        requireName(itemName, "检查项名称");
+        if (templateMapper.findChildByParentIdAndName(categoryId, itemName.trim()) != null) {
+            throw duplicateChildItemName();
+        }
+        int sortNo = templateMapper.findAll(category.getReviewType()).stream()
+                .filter(record -> Objects.equals(record.getParentId(), categoryId))
+                .map(CheckItemTemplateRecord::getSortNo).filter(Objects::nonNull)
+                .max(Integer::compareTo).map(value -> value + 1).orElse(1);
+        CheckItemTemplateRecord item = newTemplate(ReviewType.valueOf(category.getReviewType()), categoryId, itemName, sortNo, true);
+        templateMapper.insert(item);
+        return TemplateView.from(item);
+    }
+
     @Transactional
     public TemplateUpdateView update(UpdateTemplateCommand command, String operatorEmployeeNo, String operatorName) {
         CheckItemTemplateRecord target = templateMapper.findById(command.itemId());
@@ -137,8 +159,9 @@ public class CheckItemTemplateApplicationService {
         }
         requireName(command.itemName(), "检查项名称");
         if (target.getParentId() != null) {
-            if (command.items() != null && !command.items().isEmpty()) {
-                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "修改检查项小类时不能携带子项列表");
+            if ((command.items() != null && !command.items().isEmpty())
+                    || (command.deletedItemIds() != null && !command.deletedItemIds().isEmpty())) {
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "修改检查项小类时不能携带子项新增、修改或删除列表");
             }
             target.setItemName(command.itemName().trim());
             templateMapper.update(target);
@@ -150,6 +173,8 @@ public class CheckItemTemplateApplicationService {
 
         List<TemplateView> items = new ArrayList<>();
         List<UpdateItemCommand> requestedItems = command.items() == null ? List.of() : command.items();
+        validateChildNamesAfterUpdate(target, requestedItems, command.deletedItemIds());
+        deleteRequestedChildren(target, requestedItems, command.deletedItemIds());
         for (int index = 0; index < requestedItems.size(); index++) {
             UpdateItemCommand item = requestedItems.get(index);
             requireName(item.itemName(), "检查项名称");
@@ -169,6 +194,70 @@ public class CheckItemTemplateApplicationService {
             items.add(TemplateView.from(child));
         }
         return new TemplateUpdateView(TemplateView.from(target), List.copyOf(items));
+    }
+
+    /**
+     * 只允许删除当前大类的启用子项。按原排序号倒序处理，避免连续删除多个子项后留下排序空档。
+     */
+    private void deleteRequestedChildren(CheckItemTemplateRecord category, List<UpdateItemCommand> requestedItems,
+                                         List<Long> deletedItemIds) {
+        if (deletedItemIds == null || deletedItemIds.isEmpty()) {
+            return;
+        }
+        List<Long> ids = deletedItemIds.stream().filter(Objects::nonNull).toList();
+        if (ids.size() != deletedItemIds.size() || new HashSet<>(ids).size() != ids.size()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "待删除的子检查项 ID 不能为空且不能重复");
+        }
+        Set<Long> updatedIds = requestedItems.stream().map(UpdateItemCommand::itemId)
+                .filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        if (ids.stream().anyMatch(updatedIds::contains)) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "同一子检查项不能同时修改和删除");
+        }
+        List<CheckItemTemplateRecord> children = templateMapper.findByIds(ids);
+        if (children.size() != ids.size() || children.stream().anyMatch(child -> !Objects.equals(child.getParentId(), category.getId())
+                || !category.getReviewType().equals(child.getReviewType()) || !Boolean.TRUE.equals(child.getEnabled()))) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "待删除的检查项不存在、已停用或不属于当前类别");
+        }
+        children.stream().sorted(Comparator.comparing(CheckItemTemplateRecord::getSortNo).reversed()).forEach(child -> {
+            templateMapper.disableById(child.getId());
+            templateMapper.decrementSiblingItemSortAfter(category.getId(), child.getSortNo());
+        });
+    }
+
+    /** 合并现有、待修改和待新增子项后统一校验，避免批量操作绕过同父类重名限制。 */
+    private void validateChildNamesAfterUpdate(CheckItemTemplateRecord category, List<UpdateItemCommand> requestedItems,
+                                               List<Long> deletedItemIds) {
+        Set<Long> deletedIds = deletedItemIds == null ? Set.of() : new HashSet<>(deletedItemIds);
+        Map<Long, String> namesById = new LinkedHashMap<>();
+        List<CheckItemTemplateRecord> records = templateMapper.findAll(category.getReviewType());
+        if (records != null) {
+            records.stream().filter(record -> Objects.equals(record.getParentId(), category.getId()))
+                    .filter(record -> !deletedIds.contains(record.getId()))
+                    .forEach(record -> namesById.put(record.getId(), record.getItemName()));
+        }
+        long temporaryId = Long.MIN_VALUE;
+        for (UpdateItemCommand item : requestedItems) {
+            requireName(item.itemName(), "检查项名称");
+            if (item.itemId() != null && !namesById.containsKey(item.itemId())) {
+                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不属于当前类别");
+            }
+            namesById.put(item.itemId() == null ? temporaryId++ : item.itemId(), item.itemName().trim());
+        }
+        requireDistinctChildItemNames(new ArrayList<>(namesById.values()));
+    }
+
+    private void requireDistinctChildItemNames(List<String> itemNames) {
+        Set<String> names = new HashSet<>();
+        for (String itemName : itemNames) {
+            requireName(itemName, "检查项名称");
+            if (!names.add(itemName.trim())) {
+                throw duplicateChildItemName();
+            }
+        }
+    }
+
+    private BusinessException duplicateChildItemName() {
+        return new BusinessException(ErrorCode.DUPLICATE_REQUEST, "同一检查项大类下不能存在同名子检查项");
     }
 
 
@@ -354,7 +443,8 @@ public class CheckItemTemplateApplicationService {
 
     public record CreateCategoryCommand(ReviewType reviewType, String categoryName, List<CreateItemCommand> items) { }
     public record CreateItemCommand(String itemName) { }
-    public record UpdateTemplateCommand(long itemId, String itemName, List<UpdateItemCommand> items) { }
+    public record UpdateTemplateCommand(long itemId, String itemName, List<UpdateItemCommand> items,
+                                        List<Long> deletedItemIds) { }
     public record UpdateItemCommand(Long itemId, String itemName) { }
     public enum DeleteTargetCategory { CATEGORY, ITEM }
     public record ImportResult(int totalRows, int createdCount, int replacedCount) { }
