@@ -104,6 +104,35 @@ class WorkflowApplicationServiceTest {
     }
 
     @Test
+    void shouldKeepStructureReviewersWhenProcessReviewStartsLater() {
+        ReviewTaskRecord task = task(TaskStatus.PCB_EXPERT_REVIEWING);
+        task.setReviewerAssignments("PCB_EXPERT:A,B;STRUCTURE_EXPERT:A,B;PROCESS_EXPERT:B");
+        task.setAssignedReviewerEmployeeNos("A,B");
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        ReviewOpinionRecord submitted = new ReviewOpinionRecord();
+        submitted.setSourceType(OpinionSourceType.PCB_REVIEW);
+        submitted.setRaisedByEmployeeNo("A");
+        submitted.setStatus("CONFIRMED_PASS");
+        ReviewOpinionRecord submittedByB = new ReviewOpinionRecord();
+        submittedByB.setSourceType(OpinionSourceType.PCB_REVIEW);
+        submittedByB.setRaisedByEmployeeNo("B");
+        submittedByB.setStatus("CONFIRMED_PASS");
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(submitted, submittedByB));
+        when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_STRUCTURE_REVIEW"))
+                .thenReturn(List.of(new ReviewFileRecord()));
+        when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_PROCESS_REVIEW"))
+                .thenReturn(List.of(new ReviewFileRecord()));
+        when(taskMapper.update(any())).thenReturn(1);
+
+        service.transition(1001L, WorkflowAction.START_PCB_STRUCTURE_REVIEW, null, "BMS010", "BMS010");
+        WorkflowApplicationService.WorkflowView view = service.transition(1001L,
+                WorkflowAction.START_PCB_PROCESS_REVIEW, null, "BMS010", "BMS010");
+
+        assertThat(view.assignedReviewerEmployeeNos()).containsExactly("A", "B");
+        assertThat(task.getAssignedReviewerEmployeeNos()).isEqualTo("A,B");
+    }
+
+    @Test
     void shouldRejectStartingPcbStageReviewWhenAnAssignedExpertHasNotSubmitted() {
         when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PCB_EXPERT_REVIEWING));
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());

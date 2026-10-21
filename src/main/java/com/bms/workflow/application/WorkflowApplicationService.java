@@ -256,8 +256,12 @@ public class WorkflowApplicationService {
         Set<String> activeReviewerEmployeeNos = new LinkedHashSet<>(TaskReviewerAssignmentCodec.decodeReviewerEmployeeNos(task.getAssignedReviewerEmployeeNos()));
         switch (context.action()) {
             case START_PCB_PROCESS_REVIEW, START_PCB_STRUCTURE_REVIEW -> {
-                // 进入工艺/结构前已校验 PCB、EMC 专家全部提交，故不再保留其待办。
-                activeReviewerEmployeeNos.removeAll(reviewerEmployeeNosForRoles(task, ReviewRole.PCB_EXPERT, ReviewRole.EMC_EXPERT));
+                // 首次进入工艺/结构阶段时，前序 PCB、EMC 待办已全部闭环，直接重建当前阶段人员。
+                // 后续再开启另一类评审时必须保留已开启分支的人员：同一人可能同时是 PCB/EMC 与
+                // 工艺/结构专家，按工号删除前序角色人员会误删仍在进行中的结构或工艺待办。
+                if (context.fromStatus() == TaskStatus.PCB_EXPERT_REVIEWING) {
+                    activeReviewerEmployeeNos.clear();
+                }
                 activeReviewerEmployeeNos.addAll(context.action() == WorkflowAction.START_PCB_PROCESS_REVIEW
                         ? reviewerEmployeeNosForRoles(task, ReviewRole.PROCESS_EXPERT)
                         : reviewerEmployeeNosForRoles(task, ReviewRole.STRUCTURE_EXPERT));
