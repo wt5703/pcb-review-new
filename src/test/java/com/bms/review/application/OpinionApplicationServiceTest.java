@@ -100,7 +100,7 @@ class OpinionApplicationServiceTest {
     }
 
     @Test
-    void shouldRemoveReviewerFromActiveAssignmentsAfterAllPcbOpinionsPass() {
+    void shouldRemoveReviewerFromActiveAssignmentsOnlyAfterConfirmingSubmission() {
         ReviewTaskRecord activeTask = task("BMS009");
         activeTask.setStatus(TaskStatus.PCB_EXPERT_REVIEWING.name());
         activeTask.setReviewerAssignments("PCB_EXPERT:BMS020");
@@ -120,8 +120,29 @@ class OpinionApplicationServiceTest {
         service.confirm(31L, new OpinionApplicationService.ConfirmOpinionCommand(true, "确认通过"),
                 "BMS020", "BMS020");
 
+        assertThat(activeTask.getAssignedReviewerEmployeeNos()).isEqualTo("BMS020");
+
+        service.submitNoOpinion(1001L, OpinionSourceType.PCB_REVIEW, "BMS020", "BMS020");
+
         assertThat(activeTask.getAssignedReviewerEmployeeNos()).isEmpty();
         verify(taskMapper).updateAssignedReviewerEmployeeNos(activeTask);
+    }
+
+    @Test
+    void shouldRejectSubmissionWhenReviewerHasUnconfirmedOpinion() {
+        ReviewTaskRecord activeTask = task("BMS009");
+        activeTask.setStatus(TaskStatus.PCB_EXPERT_REVIEWING.name());
+        activeTask.setReviewerAssignments("PCB_EXPERT:BMS020");
+        activeTask.setAssignedReviewerEmployeeNos("BMS020");
+        ReviewOpinionRecord opinion = opinion(31L, 1001L, "BMS020", OpinionStatus.PENDING_CONFIRMATION);
+        opinion.setSourceType(OpinionSourceType.PCB_REVIEW);
+        when(taskMapper.findById(1001L)).thenReturn(activeTask);
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(opinion));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.submitNoOpinion(1001L,
+                        OpinionSourceType.PCB_REVIEW, "BMS020", "BMS020"))
+                .isInstanceOf(com.bms.common.BusinessException.class)
+                .hasMessage("仍存在未答复、未确认或未确认通过的评审意见，不能确认提交");
     }
 
     @Test

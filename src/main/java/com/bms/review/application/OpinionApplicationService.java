@@ -92,21 +92,38 @@ public class OpinionApplicationService {
     }
 
     /**
-     * 评审人确认当前阶段没有意见。该操作不触发工作流，而是持久化一条已通过的
-     * 已确认的无意见记录，使“已提交无意见”与实际评审意见一样可审计、可追溯。
+     * 评审人确认当前阶段的评审结果已经提交完毕。没有提出意见时保存一条无意见记录；
+     * 已提出意见时，必须等本人该阶段的全部意见均确认通过后才允许提交。
      */
     @Transactional
     public OpinionView submitNoOpinion(long taskId, OpinionSourceType sourceType, String operatorEmployeeNo, String operatorName) {
         ReviewTaskRecord task = requireOpenTask(taskId);
         taskProcessorAuthorizationService.requireCurrentTaskProcessor(taskId, operatorEmployeeNo, operatorName);
-        if (!isNoOpinionSourceAvailable(task, sourceType)) {
-            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "当前评审节点不支持提交无意见");
+        if (!isReviewSubmissionAvailable(task, sourceType)) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "当前评审节点不支持确认提交");
         }
-        boolean alreadySubmitted = opinionMapper.findByTaskId(taskId).stream()
-                .anyMatch(item -> operatorEmployeeNo.equals(item.getRaisedByEmployeeNo()) && sourceType == item.getSourceType());
-        if (alreadySubmitted) {
-            throw new BusinessException(ErrorCode.OPINION_STATUS_CONFLICT, "当前阶段已提交评审意见，不能重复提交无意见");
+        List<ReviewOpinionRecord> reviewerOpinions = opinionsRaisedByReviewer(taskId, sourceType, operatorEmployeeNo);
+        boolean alreadyConfirmedSubmission = reviewerOpinions.stream().anyMatch(ReviewOpinionRecord::isNoOpinion);
+        if (alreadyConfirmedSubmission) {
+            throw new BusinessException(ErrorCode.OPINION_STATUS_CONFLICT, "当前评审阶段已确认提交");
         }
+
+        List<ReviewOpinionRecord> actualOpinions = reviewerOpinions.stream()
+                .filter(item -> !item.isNoOpinion())
+                .toList();
+        if (!actualOpinions.isEmpty()) {
+            boolean allConfirmedPass = actualOpinions.stream()
+                    .allMatch(item -> OpinionStatus.CONFIRMED_PASS.name().equals(item.getStatus()));
+            if (!allConfirmedPass) {
+                throw new BusinessException(ErrorCode.OPINION_STATUS_CONFLICT,
+                        "仍存在未答复、未确认或未确认通过的评审意见，不能确认提交");
+            }
+            // 评审意见全部确认通过后，明确由本次确认提交操作结束该专家在当前阶段的待办。
+            releaseReviewerWhenCurrentStagesCompleted(taskId, operatorEmployeeNo, sourceType);
+            return toView(actualOpinions.get(actualOpinions.size() - 1));
+        }
+
+        // 没有提出具体意见时，保存无意见记录，保证该阶段的提交结果可审计、可追溯。
         ReviewOpinionRecord record = new ReviewOpinionRecord();
         record.setId(opinionMapper.nextOpinionId());
         record.setTaskId(taskId);
@@ -197,10 +214,6 @@ public class OpinionApplicationService {
         confirmation.setConfirmedByEmployeeNo(operatorEmployeeNo);
         opinionMapper.insertConfirmation(confirmation);
         updateStatus(opinion, command.passed() ? OpinionStatus.CONFIRMED_PASS : OpinionStatus.CONFIRMED_REJECTED);
-        if (command.passed()) {
-            releaseReviewerWhenCurrentStagesCompleted(opinion.getTaskId(), opinion.getRaisedByEmployeeNo(),
-                    opinion.getSourceType());
-        }
         return toView(opinion);
     }
 
@@ -301,7 +314,7 @@ public class OpinionApplicationService {
                 unsubmittedReviewers(task, sourceTypes));
     }
 
-    private boolean isNoOpinionSourceAvailable(ReviewTaskRecord task, OpinionSourceType sourceType) {
+    private boolean isReviewSubmissionAvailable(ReviewTaskRecord task, OpinionSourceType sourceType) {
         TaskStatus status = TaskStatus.valueOf(task.getStatus());
         ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
         return switch (sourceType) {
@@ -311,6 +324,14 @@ public class OpinionApplicationService {
                     && status == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING;
             default -> false;
         };
+    }
+
+    private List<ReviewOpinionRecord> opinionsRaisedByReviewer(long taskId, OpinionSourceType sourceType,
+                                                                 String reviewerEmployeeNo) {
+        List<ReviewOpinionRecord> opinions = opinionMapper.findByTaskId(taskId);
+        return (opinions == null ? List.<ReviewOpinionRecord>of() : opinions).stream()
+                .filter(item -> reviewerEmployeeNo.equals(item.getRaisedByEmployeeNo()) && sourceType == item.getSourceType())
+                .toList();
     }
 
     private boolean reviewerRoleMatchesCurrentSummary(ReviewTaskRecord task, List<OpinionSourceType> sourceTypes, String reviewRole) {

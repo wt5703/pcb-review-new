@@ -90,9 +90,24 @@ class OpinionControllerIntegrationTest {
         mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)
                         .header("userId", "BMS020")
                         .header("userName", "测试用户"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.confirmedPass").value(1));
+
+        // 单条意见确认通过后，专家仍可查看并确认提交当前阶段的全部评审结果。
+        mockMvc.perform(post("/tasks/{taskId}/opinions/no-opinion", taskId)
+                        .header("userId", "BMS020")
+                        .header("userName", "测试用户")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sourceType\":\"PCB_REVIEW\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CONFIRMED_PASS"));
+
+        // 确认提交后才释放评审人的待办，由任务设计者继续查看汇总。
+        mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)
+                        .header("userId", "BMS020")
+                        .header("userName", "测试用户"))
                 .andExpect(status().isForbidden());
 
-        // 确认通过后评审人的待办已释放，由任务设计者查看汇总。
         mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)
                         .header("userId", "BMS010")
                         .header("userName", "测试用户"))

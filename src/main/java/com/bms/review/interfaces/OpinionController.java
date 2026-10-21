@@ -54,7 +54,7 @@ public class OpinionController {
     }
 
     @PostMapping("/tasks/{taskId}/opinions/no-opinion")
-    @Operation(summary = "无意见确认提交", description = "专家、工艺或结构评审人在当前评审节点确认无意见。接口不推进流程。")
+    @Operation(summary = "确认提交评审结果", description = "专家、工艺或结构评审人确认当前阶段不再提交意见。未提出意见时可直接提交；已提出意见时，必须全部答复并由提出人确认通过后才能提交。接口不推进流程。")
     ApiResponse<OpinionApplicationService.OpinionView> submitNoOpinion(@PathVariable long taskId,
                                                                          @Valid @RequestBody SubmitNoOpinionRequest request,
                                                                          @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
