@@ -270,6 +270,9 @@ public class WorkflowApplicationService {
                 // 互检人员以本次分配为准，且前序阶段意见已在流转校验中闭环。
                 activeReviewerEmployeeNos.clear();
                 activeReviewerEmployeeNos.addAll(context.reviewerEmployeeNos());
+                // 单独保留互检单分配快照，避免人员完成待办后从 active 字段移除，任务列表无法追溯实际分配人。
+                task.setMutualCheckReviewerEmployeeNos(TaskReviewerAssignmentCodec
+                        .encodeReviewerEmployeeNos(context.reviewerEmployeeNos()));
             }
             case START_SCHEMATIC_EXPERT_REVIEW -> {
                 // 原理图互检意见已闭环，切换到创建任务时已指定的原理图评审专家。

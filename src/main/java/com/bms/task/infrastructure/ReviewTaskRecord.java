@@ -23,6 +23,8 @@ public class ReviewTaskRecord {
     private String reviewRoles;
     private String reviewerAssignments;
     private String assignedReviewerEmployeeNos;
+    /** 互检单实际分配人员，独立于当前待办，任务完成后仍用于列表展示和追溯。 */
+    private String mutualCheckReviewerEmployeeNos;
     private String reviewDescription;
     private String status;
     private String initialFileIds;
@@ -57,6 +59,8 @@ public class ReviewTaskRecord {
     public void setReviewerAssignments(String reviewerAssignments) { this.reviewerAssignments = reviewerAssignments; }
     public String getAssignedReviewerEmployeeNos() { return assignedReviewerEmployeeNos; }
     public void setAssignedReviewerEmployeeNos(String assignedReviewerEmployeeNos) { this.assignedReviewerEmployeeNos = assignedReviewerEmployeeNos; }
+    public String getMutualCheckReviewerEmployeeNos() { return mutualCheckReviewerEmployeeNos; }
+    public void setMutualCheckReviewerEmployeeNos(String mutualCheckReviewerEmployeeNos) { this.mutualCheckReviewerEmployeeNos = mutualCheckReviewerEmployeeNos; }
     public String getReviewDescription() { return reviewDescription; }
     public void setReviewDescription(String reviewDescription) { this.reviewDescription = reviewDescription; }
     public String getStatus() { return status; }

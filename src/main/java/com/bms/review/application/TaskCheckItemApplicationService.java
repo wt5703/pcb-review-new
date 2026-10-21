@@ -119,7 +119,7 @@ public class TaskCheckItemApplicationService {
     /**
      * @author 王涛
      * @date 2026-09-18
-     * @description 以互检单为原子单位提交多个检查项；不合格项自动建立或更新同源互检意见，图文提取意见以富文本字符串保存。
+     * @description 以互检单为原子单位提交多个检查项；不合格项自动建立或更新同源互检意见，NC 可不填写文字或富文本说明。
      */
     @Transactional
     public List<CheckItemView> submitBatch(long taskId, List<SubmitBatchItemCommand> commands, String operatorEmployeeNo, String operatorName) {
@@ -254,21 +254,24 @@ public class TaskCheckItemApplicationService {
 
     private void validateResult(CheckResult result, String comment) {
         if (result == null) { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "检查结果不能为空"); }
-        if ((result == CheckResult.FAIL || result == CheckResult.NC) && (comment == null || comment.isBlank())) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "不合格或 NC 检查项必须填写意见");
+        if (result == CheckResult.FAIL && (comment == null || comment.isBlank())) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "不合格检查项必须填写意见");
         }
     }
 
     private ReviewOpinionRecord createOrUpdateMutualOpinion(long taskId, TaskCheckItemRecord item, String comment, String richText, String operatorEmployeeNo, String operatorName) {
-        String opinionContent = richText == null || richText.isBlank() ? comment.trim() : richText.trim();
+        // comment 是问题描述，必须保留前端传入的纯文本；richText 仅保存富文本内容。
+        // 未传富文本时才以 comment 作为富文本回显的兜底值，不能反向覆盖 comment。
+        String opinionComment = comment.trim();
+        String opinionRichText = richText == null || richText.isBlank() ? opinionComment : richText.trim();
         ReviewOpinionRecord opinion = opinionMapper.findActiveMutualCheckItemOpinion(taskId, item.getId(), OpinionSourceType.MUTUAL_CHECK_ITEM);
         if (opinion == null) {
             opinion = new ReviewOpinionRecord(); opinion.setId(opinionMapper.nextOpinionId()); opinion.setTaskId(taskId);
             opinion.setSourceType(OpinionSourceType.MUTUAL_CHECK_ITEM); opinion.setSourceItemId(item.getId()); opinion.setSeverity(OpinionSeverity.GENERAL);
-            opinion.setComment(opinionContent); opinion.setRichText(opinionContent); opinion.setRaisedByEmployeeNo(operatorEmployeeNo); opinion.setRaisedByName(operatorName);
+            opinion.setComment(opinionComment); opinion.setRichText(opinionRichText); opinion.setRaisedByEmployeeNo(operatorEmployeeNo); opinion.setRaisedByName(operatorName);
             opinion.setStatus("PENDING_REPLY"); opinionMapper.insert(opinion);
         } else {
-            opinion.setComment(opinionContent); opinion.setRichText(opinionContent);
+            opinion.setComment(opinionComment); opinion.setRichText(opinionRichText);
             if (opinionMapper.updateOpinion(opinion) != 1) { throw new BusinessException(ErrorCode.VERSION_CONFLICT, "关联互检意见已被其他操作更新，请刷新后重试"); }
         }
         return opinion;

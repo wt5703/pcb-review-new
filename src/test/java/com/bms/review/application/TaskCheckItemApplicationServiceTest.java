@@ -29,11 +29,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.never;
+import org.mockito.ArgumentCaptor;
 
 /**
  * @author 王涛
  * @date 2026-09-15
- * @description 验证进行中任务按当前模板生成检查项实例、结束任务通过 itemId 查询模板名称，以及不合格检查项必须带说明的约束。
+ * @description 验证进行中任务按当前模板生成检查项实例、结束任务通过 itemId 查询模板名称，以及不合格检查项必须带说明、NC 可为空的约束。
  */
 class TaskCheckItemApplicationServiceTest {
     private final ReviewTaskMapper taskMapper = mock(ReviewTaskMapper.class);
@@ -73,8 +74,52 @@ class TaskCheckItemApplicationServiceTest {
         assertThatThrownBy(() -> service.submit(1001L, 51L,
                 new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.FAIL, null, null), "BMS001", "BMS001"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessage("不合格或 NC 检查项必须填写意见");
+                .hasMessage("不合格检查项必须填写意见");
         verify(templateMapper, never()).findEnabledByReviewType(ReviewType.PCB.name());
+    }
+
+    @Test
+    void shouldAllowNcCheckItemWithoutCommentOrRichText() {
+        ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
+        TaskCheckItemRecord checkItem = item(51L, 31L);
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(checkItem);
+        when(templateMapper.findById(31L)).thenReturn(template(31L, "线距检查"));
+        when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
+
+        service.submit(1001L, 51L,
+                new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.NC, null, null), "BMS001", "BMS001");
+
+        assertThat(checkItem.getCheckResult()).isEqualTo(CheckResult.NC.name());
+        assertThat(checkItem.getComment()).isNull();
+        assertThat(checkItem.getRichText()).isNull();
+        verify(opinionMapper, never()).insert(any(ReviewOpinionRecord.class));
+    }
+
+    @Test
+    void shouldKeepPlainCommentSeparateFromRichTextWhenSubmittingFailedCheckItem() {
+        ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
+        TaskCheckItemRecord checkItem = item(51L, 31L);
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(checkItem);
+        when(templateMapper.findById(31L)).thenReturn(template(31L, "线距检查"));
+        when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
+        when(opinionMapper.nextOpinionId()).thenReturn(71L);
+        when(userProfileClient.getByEmployeeNo("BMS001"))
+                .thenReturn(new UserCenterUserProfileClient.UserProfile("BMS001", "王工", null, null, null));
+
+        TaskCheckItemApplicationService.CheckItemView result = service.submit(1001L, 51L,
+                new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.FAIL, "线距不足", "<p>线距不足，需整改</p>"),
+                "BMS001", "王工");
+
+        ArgumentCaptor<ReviewOpinionRecord> captor = ArgumentCaptor.forClass(ReviewOpinionRecord.class);
+        verify(opinionMapper).insert(captor.capture());
+        assertThat(captor.getValue().getComment()).isEqualTo("线距不足");
+        assertThat(captor.getValue().getRichText()).isEqualTo("<p>线距不足，需整改</p>");
+        assertThat(result.comment()).isEqualTo("线距不足");
+        assertThat(result.richText()).isEqualTo("<p>线距不足，需整改</p>");
+        assertThat(result.opinion().comment()).isEqualTo("线距不足");
+        assertThat(result.opinion().richText()).isEqualTo("<p>线距不足，需整改</p>");
     }
 
     @Test
@@ -100,7 +145,7 @@ class TaskCheckItemApplicationServiceTest {
     }
 
     @Test
-    void shouldNotSynchronizeTemplateWhenSubmittingBatch() {
+    void shouldAllowNcWithoutCommentOrRichTextWhenSubmittingBatch() {
         ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
         TaskCheckItemRecord checkItem = item(51L, 31L);
         when(taskMapper.findById(1001L)).thenReturn(task);
@@ -109,10 +154,13 @@ class TaskCheckItemApplicationServiceTest {
         when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
 
         List<TaskCheckItemApplicationService.CheckItemView> result = service.submitBatch(1001L,
-                List.of(new TaskCheckItemApplicationService.SubmitBatchItemCommand(51L, CheckResult.PASS, null, null)), "BMS001", "BMS001");
+                List.of(new TaskCheckItemApplicationService.SubmitBatchItemCommand(51L, CheckResult.NC, null, null)), "BMS001", "BMS001");
 
         assertThat(result).hasSize(1);
-        assertThat(checkItem.getCheckResult()).isEqualTo(CheckResult.PASS.name());
+        assertThat(checkItem.getCheckResult()).isEqualTo(CheckResult.NC.name());
+        assertThat(checkItem.getComment()).isNull();
+        assertThat(checkItem.getRichText()).isNull();
+        verify(opinionMapper, never()).insert(any(ReviewOpinionRecord.class));
         verify(templateMapper, never()).findEnabledByReviewType(ReviewType.PCB.name());
     }
 

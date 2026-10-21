@@ -47,7 +47,7 @@ public class CheckItemController {
     }
 
     @PutMapping("/{itemId}")
-    @Operation(summary = "提交互检检查项结论", description = "comment 是用户填写的文字意见，richText 是富文本信息，result 可传 PASS（合格）、FAIL（不合格）或 NC")
+    @Operation(summary = "提交互检检查项结论", description = "comment 是用户填写的文字意见，richText 是富文本信息。FAIL（不合格）必须填写 comment；PASS（合格）和 NC 均可不填写 comment、richText。")
     ApiResponse<TaskCheckItemApplicationService.CheckItemView> submit(@PathVariable long taskId, @PathVariable long itemId,
                                                                         @Valid @RequestBody SubmitCheckItemRequest request,
                                                                         @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
@@ -57,7 +57,7 @@ public class CheckItemController {
     }
 
     @PutMapping("/batch")
-    @Operation(summary = "批量提交整张互检单", description = "每项仅接收 itemId、result、comment、richText。comment 是用户填写的文字意见，richText 是富文本信息，result 可传 PASS（合格）、FAIL（不合格）或 NC")
+    @Operation(summary = "批量提交整张互检单", description = "每项仅接收 itemId、result、comment、richText。FAIL（不合格）必须填写 comment；PASS（合格）和 NC 均可不填写 comment、richText。")
     ApiResponse<List<TaskCheckItemApplicationService.CheckItemView>> submitBatch(@PathVariable long taskId,
                                                                                    @Valid @RequestBody SubmitCheckItemsRequest request,
                                                                                    @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
@@ -72,7 +72,7 @@ public class CheckItemController {
 
     @Schema(description = "提交检查项结论请求")
     record SubmitCheckItemRequest(@Schema(description = "检查结论：PASS 合格、FAIL 不合格、NC", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull CheckResult result,
-                                  @Schema(description = "用户填写的文字意见；FAIL 或 NC 时必填") String comment,
+                                  @Schema(description = "用户填写的文字意见；仅 FAIL 时必填，NC 可为空") String comment,
                                   @Schema(description = "富文本补充说明；支持文字与内嵌 data URI 图片") String richText) {
     }
     @Schema(description = "整张互检单批量提交请求")
@@ -80,6 +80,6 @@ public class CheckItemController {
     @Schema(description = "互检单中的单条检查项结果")
     record BatchCheckItemRequest(@Schema(description = "任务检查项实例 ID", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull Long itemId,
                                  @Schema(description = "检查结果：PASS 合格、FAIL 不合格、NC", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull CheckResult result,
-                                 @Schema(description = "用户填写的文字意见；FAIL 或 NC 时必填") String comment,
+                                 @Schema(description = "用户填写的文字意见；仅 FAIL 时必填，NC 可为空") String comment,
                                  @Schema(description = "富文本补充说明，可包含文字和内嵌 data URI 图片；后端以字符串保存并回显") String richText) { }
 }

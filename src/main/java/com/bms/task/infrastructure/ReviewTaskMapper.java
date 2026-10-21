@@ -19,20 +19,20 @@ public interface ReviewTaskMapper {
     long nextId();
 
     @Insert("INSERT INTO review_task (id, review_type, task_name, project_name, designer_employee_no, designer_name, design_name, pcb_type, " +
-            "expected_completed_date, expert_leader_employee_no, expert_leader_name, review_roles, reviewer_assignments, assigned_reviewer_employee_nos, review_description, status, initial_file_ids, version) " +
+            "expected_completed_date, expert_leader_employee_no, expert_leader_name, review_roles, reviewer_assignments, assigned_reviewer_employee_nos, mutual_check_reviewer_employee_nos, review_description, status, initial_file_ids, version) " +
             "VALUES (#{id}, #{reviewType}, #{taskName}, #{projectName}, #{designerEmployeeNo}, COALESCE(#{designerName}, CONCAT('设计者#', #{designerEmployeeNo})), #{designName}, #{pcbType}, " +
-            "#{expectedCompletedDate}, #{expertLeaderEmployeeNo}, #{expertLeaderName}, COALESCE(#{reviewRoles}, ''), COALESCE(#{reviewerAssignments}, ''), COALESCE(#{assignedReviewerEmployeeNos}, ''), #{reviewDescription}, #{status}, #{initialFileIds}, #{version})")
+            "#{expectedCompletedDate}, #{expertLeaderEmployeeNo}, #{expertLeaderName}, COALESCE(#{reviewRoles}, ''), COALESCE(#{reviewerAssignments}, ''), COALESCE(#{assignedReviewerEmployeeNos}, ''), COALESCE(#{mutualCheckReviewerEmployeeNos}, ''), #{reviewDescription}, #{status}, #{initialFileIds}, #{version})")
     int insert(ReviewTaskRecord record);
 
     @Select("SELECT id, review_type AS reviewType, task_name AS taskName, project_name AS projectName, designer_employee_no AS designerEmployeeNo, " +
             "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, " +
-            "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, review_description AS reviewDescription, " +
+            "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, mutual_check_reviewer_employee_nos AS mutualCheckReviewerEmployeeNos, review_description AS reviewDescription, " +
             "status, initial_file_ids AS initialFileIds, version FROM review_task WHERE id = #{id}")
     ReviewTaskRecord findById(long id);
 
     @Select("SELECT id, review_type AS reviewType, task_name AS taskName, project_name AS projectName, designer_employee_no AS designerEmployeeNo, " +
             "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, " +
-            "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, review_description AS reviewDescription, " +
+            "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, mutual_check_reviewer_employee_nos AS mutualCheckReviewerEmployeeNos, review_description AS reviewDescription, " +
             "status, initial_file_ids AS initialFileIds, version FROM review_task ORDER BY id")
     List<ReviewTaskRecord> findAll();
 
@@ -43,9 +43,9 @@ public interface ReviewTaskMapper {
     @Select("<script>"
             + "SELECT COUNT(*) FROM review_task "
             + "<where>"
-            + "<if test='keyword != null and keyword != \"\"'>"
-            + "AND (task_name LIKE CONCAT('%', #{keyword}, '%') OR project_name LIKE CONCAT('%', #{keyword}, '%') OR designer_name LIKE CONCAT('%', #{keyword}, '%')) "
-            + "</if>"
+            + "<if test='taskName != null and taskName != \"\"'>AND task_name LIKE CONCAT('%', #{taskName}, '%') </if>"
+            + "<if test='projectName != null and projectName != \"\"'>AND project_name LIKE CONCAT('%', #{projectName}, '%') </if>"
+            + "<if test='designerEmployeeNo != null and designerEmployeeNo != \"\"'>AND designer_employee_no=#{designerEmployeeNo} </if>"
             + "<if test='reviewType != null and reviewType != \"\"'>AND review_type=#{reviewType} </if>"
             + "<if test='statuses != null and statuses.size() > 0'>"
             + "AND status IN <foreach collection='statuses' item='status' open='(' separator=',' close=')'>#{status}</foreach> "
@@ -57,7 +57,8 @@ public interface ReviewTaskMapper {
             + "</if>"
             + "</where>"
             + "</script>")
-    long countPage(@Param("keyword") String keyword, @Param("reviewType") String reviewType,
+    long countPage(@Param("taskName") String taskName, @Param("projectName") String projectName,
+                   @Param("designerEmployeeNo") String designerEmployeeNo, @Param("reviewType") String reviewType,
                    @Param("statuses") List<String> statuses, @Param("taskId") Long taskId,
                    @Param("employeeNo") String employeeNo, @Param("canViewAll") boolean canViewAll);
 
@@ -65,12 +66,12 @@ public interface ReviewTaskMapper {
             + "SELECT id, review_type AS reviewType, task_name AS taskName, project_name AS projectName, designer_employee_no AS designerEmployeeNo, "
             + "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, "
             + "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, "
-            + "assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, review_description AS reviewDescription, status, initial_file_ids AS initialFileIds, version, created_at AS createdAt "
+            + "assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, mutual_check_reviewer_employee_nos AS mutualCheckReviewerEmployeeNos, review_description AS reviewDescription, status, initial_file_ids AS initialFileIds, version, created_at AS createdAt "
             + "FROM review_task "
             + "<where>"
-            + "<if test='keyword != null and keyword != \"\"'>"
-            + "AND (task_name LIKE CONCAT('%', #{keyword}, '%') OR project_name LIKE CONCAT('%', #{keyword}, '%') OR designer_name LIKE CONCAT('%', #{keyword}, '%')) "
-            + "</if>"
+            + "<if test='taskName != null and taskName != \"\"'>AND task_name LIKE CONCAT('%', #{taskName}, '%') </if>"
+            + "<if test='projectName != null and projectName != \"\"'>AND project_name LIKE CONCAT('%', #{projectName}, '%') </if>"
+            + "<if test='designerEmployeeNo != null and designerEmployeeNo != \"\"'>AND designer_employee_no=#{designerEmployeeNo} </if>"
             + "<if test='reviewType != null and reviewType != \"\"'>AND review_type=#{reviewType} </if>"
             + "<if test='statuses != null and statuses.size() > 0'>"
             + "AND status IN <foreach collection='statuses' item='status' open='(' separator=',' close=')'>#{status}</foreach> "
@@ -83,7 +84,8 @@ public interface ReviewTaskMapper {
             + "</where>"
             + "ORDER BY id DESC LIMIT #{limit} OFFSET #{offset}"
             + "</script>")
-    List<ReviewTaskRecord> findPage(@Param("keyword") String keyword, @Param("reviewType") String reviewType,
+    List<ReviewTaskRecord> findPage(@Param("taskName") String taskName, @Param("projectName") String projectName,
+                                    @Param("designerEmployeeNo") String designerEmployeeNo, @Param("reviewType") String reviewType,
                                     @Param("statuses") List<String> statuses, @Param("taskId") Long taskId,
                                     @Param("employeeNo") String employeeNo, @Param("canViewAll") boolean canViewAll,
                                     @Param("offset") long offset, @Param("limit") int limit);
@@ -91,7 +93,7 @@ public interface ReviewTaskMapper {
     /** 我的待办只需要处理中任务，避免将已结束任务加载到应用层再过滤。 */
     @Select("SELECT id, review_type AS reviewType, task_name AS taskName, project_name AS projectName, designer_employee_no AS designerEmployeeNo, "
             + "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, "
-            + "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, review_description AS reviewDescription, "
+            + "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, mutual_check_reviewer_employee_nos AS mutualCheckReviewerEmployeeNos, review_description AS reviewDescription, "
             + "status, initial_file_ids AS initialFileIds, version FROM review_task WHERE status <> 'FINISHED' ORDER BY id")
     List<ReviewTaskRecord> findAllUnfinished();
 
@@ -99,12 +101,14 @@ public interface ReviewTaskMapper {
     int update(ReviewTaskRecord record);
 
     /** 仅维护当前流程节点待处理人员，不覆盖创建任务时保存的 reviewer_assignments。 */
-    @Update("UPDATE review_task SET assigned_reviewer_employee_nos=#{assignedReviewerEmployeeNos}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
+    @Update("UPDATE review_task SET assigned_reviewer_employee_nos=#{assignedReviewerEmployeeNos}, " +
+            "mutual_check_reviewer_employee_nos=COALESCE(#{mutualCheckReviewerEmployeeNos}, mutual_check_reviewer_employee_nos), " +
+            "updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
     int updateAssignedReviewerEmployeeNos(ReviewTaskRecord record);
 
     @Update("UPDATE review_task SET review_type=#{reviewType}, task_name=#{taskName}, project_name=#{projectName}, designer_name=#{designerName}, "
             + "design_name=#{designName}, pcb_type=#{pcbType}, expected_completed_date=#{expectedCompletedDate}, expert_leader_employee_no=#{expertLeaderEmployeeNo}, "
-            + "expert_leader_name=#{expertLeaderName}, review_roles=#{reviewRoles}, reviewer_assignments=#{reviewerAssignments}, assigned_reviewer_employee_nos=#{assignedReviewerEmployeeNos}, review_description=#{reviewDescription}, updated_at=CURRENT_TIMESTAMP "
+            + "expert_leader_name=#{expertLeaderName}, review_roles=#{reviewRoles}, reviewer_assignments=#{reviewerAssignments}, assigned_reviewer_employee_nos=#{assignedReviewerEmployeeNos}, mutual_check_reviewer_employee_nos=COALESCE(#{mutualCheckReviewerEmployeeNos}, mutual_check_reviewer_employee_nos), review_description=#{reviewDescription}, updated_at=CURRENT_TIMESTAMP "
             + "WHERE id=#{id} AND status='DRAFT'")
     int updateDraft(ReviewTaskRecord record);
 }

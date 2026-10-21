@@ -18,6 +18,7 @@ CREATE TABLE review_task (
     review_roles VARCHAR(500) NOT NULL DEFAULT '',
     reviewer_assignments VARCHAR(4000) NOT NULL DEFAULT '',
     assigned_reviewer_employee_nos VARCHAR(2000) NOT NULL DEFAULT '',
+    mutual_check_reviewer_employee_nos VARCHAR(2000) NOT NULL DEFAULT '',
     review_description VARCHAR(2000),
     version BIGINT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

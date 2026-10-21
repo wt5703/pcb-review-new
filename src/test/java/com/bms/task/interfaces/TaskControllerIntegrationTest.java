@@ -123,14 +123,14 @@ class TaskControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PCB_EXPERT_REVIEWING"));
 
-        mockMvc.perform(get("/tasks").param("keyword", "REST-BMS").param("pageNum", "1").param("pageSize", "10")
+        mockMvc.perform(get("/tasks").param("taskName", "REST-BMS").param("pageNum", "1").param("pageSize", "10")
                         .header("userId", "BMS010")
                         .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.items[0].id").value(taskId));
 
-        mockMvc.perform(get("/tasks").param("keyword", "REST-BMS").param("pageNum", "2").param("pageSize", "1")
+        mockMvc.perform(get("/tasks").param("taskName", "REST-BMS").param("pageNum", "2").param("pageSize", "1")
                         .header("userId", "BMS010")
                         .header("userName", "测试用户"))
                 .andExpect(status().isOk())

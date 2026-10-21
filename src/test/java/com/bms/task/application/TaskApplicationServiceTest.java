@@ -132,7 +132,7 @@ class TaskApplicationServiceTest {
         mockTaskPage(2, List.of(record(1L, "BMS PCB评审", TaskStatus.DRAFT, 0L)));
 
         TaskApplicationService.TaskPage page = service.listTasks(new TaskApplicationService.TaskQuery(
-                "BMS", null, null, 1, 1, null), LEADER_NO, "组长");
+                "BMS", null, null, null, null, 1, 1, null), LEADER_NO, "组长");
 
         assertThat(page.total()).isEqualTo(2);
         assertThat(page.items()).extracting(TaskApplicationService.TaskView::id).containsExactly(1L);
@@ -140,17 +140,17 @@ class TaskApplicationServiceTest {
     }
 
     @Test
-    void shouldMatchKeywordAgainstProjectTaskAndDesignerName() {
-        when(taskMapper.countPage(any(), any(), any(), any(), any(), anyBoolean())).thenReturn(1L, 2L);
-        when(taskMapper.findPage(any(), any(), any(), any(), any(), anyBoolean(), anyLong(), anyInt()))
+    void shouldFilterByProjectNameAndDesignerEmployeeNo() {
+        when(taskMapper.countPage(any(), any(), any(), any(), any(), any(), any(), anyBoolean())).thenReturn(1L, 2L);
+        when(taskMapper.findPage(any(), any(), any(), any(), any(), any(), any(), anyBoolean(), anyLong(), anyInt()))
                 .thenReturn(List.of(record(2L, "原理图任务", TaskStatus.DRAFT, 0L)), List.of(
                         record(1L, "PCB任务", TaskStatus.DRAFT, 0L),
                         record(2L, "原理图任务", TaskStatus.DRAFT, 0L)));
 
         TaskApplicationService.TaskPage projectPage = service.listTasks(new TaskApplicationService.TaskQuery(
-                "VCU", null, null, 1, 20, null), LEADER_NO, "组长");
+                null, "VCU", null, null, null, 1, 20, null), LEADER_NO, "组长");
         TaskApplicationService.TaskPage designerPage = service.listTasks(new TaskApplicationService.TaskQuery(
-                "设计者", null, null, 1, 20, null), LEADER_NO, "组长");
+                null, null, DESIGNER_NO, null, null, 1, 20, null), LEADER_NO, "组长");
 
         assertThat(projectPage.items()).extracting(TaskApplicationService.TaskView::id).containsExactly(2L);
         assertThat(designerPage.items()).extracting(TaskApplicationService.TaskView::id).containsExactly(1L, 2L);
@@ -163,7 +163,7 @@ class TaskApplicationServiceTest {
                 record(3L, "BMS第二轮评审", TaskStatus.PCB_EXPERT_REVIEWING, 0L)));
 
         TaskApplicationService.TaskPage page = service.listTasks(new TaskApplicationService.TaskQuery(
-                null, null, List.of(TaskStatus.DRAFT, TaskStatus.PCB_EXPERT_REVIEWING), 1, 20, null), LEADER_NO, "组长");
+                null, null, null, null, List.of(TaskStatus.DRAFT, TaskStatus.PCB_EXPERT_REVIEWING), 1, 20, null), LEADER_NO, "组长");
 
         assertThat(page.total()).isEqualTo(2);
         assertThat(page.items()).extracting(TaskApplicationService.TaskView::id).containsExactly(1L, 3L);
@@ -181,6 +181,22 @@ class TaskApplicationServiceTest {
         assertThat(page.items()).singleElement().satisfies(item -> assertThat(item.reviewerAssignments()).containsExactly(
                 new TaskApplicationService.ReviewerAssignmentView(ReviewRole.HARDWARE_EXPERT, "硬件评审", List.of("BMS101", "BMS102")),
                 new TaskApplicationService.ReviewerAssignmentView(ReviewRole.EMC_EXPERT, "EMC评审", List.of("BMS103"))));
+    }
+
+    @Test
+    void shouldIncludeMutualCheckReviewersWithEmployeeNoAndNameInTaskListItems() {
+        ReviewTaskRecord task = record(1L, "BMS PCB评审", TaskStatus.MUTUAL_CHECK_REVIEWING, 0L);
+        task.setMutualCheckReviewerEmployeeNos("BMS201,BMS202");
+        mockTaskPage(1, List.of(task));
+        when(reviewerWhitelistApplicationService.findDisplayNamesByEmployeeNos(List.of("BMS201", "BMS202")))
+                .thenReturn(Map.of("BMS201", "互检员甲", "BMS202", "互检员乙"));
+
+        TaskApplicationService.TaskPage page = service.listTasks(null, LEADER_NO, "组长");
+
+        assertThat(page.items()).singleElement().satisfies(item ->
+                assertThat(item.mutualCheckReviewers()).containsExactly(
+                        new TaskApplicationService.ReviewerView("BMS201", "互检员甲"),
+                        new TaskApplicationService.ReviewerView("BMS202", "互检员乙")));
     }
 
     @Test
@@ -252,8 +268,8 @@ class TaskApplicationServiceTest {
     }
 
     private void mockTaskPage(long total, List<ReviewTaskRecord> records) {
-        when(taskMapper.countPage(any(), any(), any(), any(), any(), anyBoolean())).thenReturn(total);
-        when(taskMapper.findPage(any(), any(), any(), any(), any(), anyBoolean(), anyLong(), anyInt()))
+        when(taskMapper.countPage(any(), any(), any(), any(), any(), any(), any(), anyBoolean())).thenReturn(total);
+        when(taskMapper.findPage(any(), any(), any(), any(), any(), any(), any(), anyBoolean(), anyLong(), anyInt()))
                 .thenReturn(records);
     }
 

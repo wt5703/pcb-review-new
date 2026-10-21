@@ -104,14 +104,15 @@ public class TaskApplicationService {
      * 读取任务详情，并附带可追溯的流程操作记录。
      */
     public TaskView getTaskDetail(long taskId, String operatorEmployeeNo, String operatorName) {
-        ReviewTask task = loadTask(taskId);
+        ReviewTaskRecord taskRecord = loadTaskRecord(taskId);
+        ReviewTask task = restoreTask(taskRecord);
         if (!canCurrentUserViewTask(task, operatorEmployeeNo, operatorName)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看该任务");
         }
         List<TaskFlowRecordView> flowRecords = flowMapper.findByTaskId(taskId).stream()
                 .map(this::toTaskFlowRecordView)
                 .toList();
-        return toTaskDetailView(task, flowRecords);
+        return toTaskDetailView(task, taskRecord.getMutualCheckReviewerEmployeeNos(), flowRecords);
     }
 
     /** 返回当前用户可见的全部任务，供不分页的内部调用使用。 */
@@ -126,13 +127,17 @@ public class TaskApplicationService {
         boolean canViewAll = false;
         List<String> statusNames = validQuery.statuses().stream().map(Enum::name).toList();
         String reviewTypeName = validQuery.reviewType() == null ? null : validQuery.reviewType().name();
-        long total = taskMapper.countPage(validQuery.normalizedKeyword(), reviewTypeName, statusNames, validQuery.taskId(),
+        long total = taskMapper.countPage(validQuery.normalizedTaskName(), validQuery.normalizedProjectName(),
+                validQuery.normalizedDesignerEmployeeNo(), reviewTypeName, statusNames, validQuery.taskId(),
                 operatorEmployeeNo, canViewAll);
         long offset = (long) (validQuery.pageNum() - 1) * validQuery.pageSize();
-        List<TaskView> items = total == 0 ? List.of()
-                : taskMapper.findPage(validQuery.normalizedKeyword(), reviewTypeName, statusNames, validQuery.taskId(),
-                operatorEmployeeNo, canViewAll, offset, validQuery.pageSize()).stream()
-                .map(this::toTaskListItem)
+        List<ReviewTaskRecord> records = total == 0 ? List.of()
+                : taskMapper.findPage(validQuery.normalizedTaskName(), validQuery.normalizedProjectName(),
+                validQuery.normalizedDesignerEmployeeNo(), reviewTypeName, statusNames, validQuery.taskId(),
+                operatorEmployeeNo, canViewAll, offset, validQuery.pageSize());
+        Map<String, String> mutualCheckReviewerNames = findMutualCheckReviewerNames(records);
+        List<TaskView> items = records.stream()
+                .map(record -> toTaskListItem(record, mutualCheckReviewerNames))
                 .toList();
         return new TaskPage(total, validQuery.pageNum(), validQuery.pageSize(), items);
     }
@@ -214,20 +219,46 @@ public class TaskApplicationService {
                 lookupEmployeeName(task.expertLeaderEmployeeNo(), task.expertLeaderName()), List.of());
     }
 
-    /** 任务列表已包含冗余的设计者、组长姓名，不需要为展示列表查询白名单。 */
-    private TaskView toTaskListItem(ReviewTaskRecord record) {
+    /** 任务列表仅为互检单实际分配人员批量读取白名单姓名，避免逐条查询。 */
+    private TaskView toTaskListItem(ReviewTaskRecord record, Map<String, String> mutualCheckReviewerNames) {
         ReviewTask task = restoreTask(record);
         LocalDate createdDate = record.getCreatedAt() == null ? null : record.getCreatedAt().toLocalDate();
-        return TaskView.from(task, task.designerName(), task.expertLeaderName(), List.of(), createdDate);
+        return TaskView.from(task, task.designerName(), task.expertLeaderName(), List.of(), createdDate, Map.of(),
+                toReviewerViews(record.getMutualCheckReviewerEmployeeNos(), mutualCheckReviewerNames));
     }
 
-    private TaskView toTaskDetailView(ReviewTask task, List<TaskFlowRecordView> flowRecords) {
+    private TaskView toTaskDetailView(ReviewTask task, String mutualCheckReviewerEmployeeNos, List<TaskFlowRecordView> flowRecords) {
         List<String> reviewerEmployeeNos = task.reviewerAssignments().stream()
-                .flatMap(assignment -> assignment.reviewerEmployeeNos().stream()).distinct().toList();
+                .flatMap(assignment -> assignment.reviewerEmployeeNos().stream())
+                .collect(Collectors.collectingAndThen(Collectors.toCollection(java.util.LinkedHashSet::new), List::copyOf));
+        reviewerEmployeeNos = java.util.stream.Stream.concat(reviewerEmployeeNos.stream(),
+                        TaskReviewerAssignmentCodec.decodeReviewerEmployeeNos(mutualCheckReviewerEmployeeNos).stream())
+                .distinct().toList();
         Map<String, String> reviewerNames = reviewerWhitelistApplicationService.findDisplayNamesByEmployeeNos(reviewerEmployeeNos);
         return TaskView.from(task, task.designerName(),
                 lookupEmployeeName(task.expertLeaderEmployeeNo(), task.expertLeaderName()), flowRecords,
-                reviewerNames == null ? Map.of() : reviewerNames);
+                reviewerNames == null ? Map.of() : reviewerNames,
+                toReviewerViews(mutualCheckReviewerEmployeeNos, reviewerNames));
+    }
+
+    private Map<String, String> findMutualCheckReviewerNames(List<ReviewTaskRecord> records) {
+        List<String> employeeNos = records.stream()
+                .flatMap(record -> TaskReviewerAssignmentCodec.decodeReviewerEmployeeNos(
+                        record.getMutualCheckReviewerEmployeeNos()).stream())
+                .distinct()
+                .toList();
+        if (employeeNos.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> names = reviewerWhitelistApplicationService.findDisplayNamesByEmployeeNos(employeeNos);
+        return names == null ? Map.of() : names;
+    }
+
+    private List<ReviewerView> toReviewerViews(String reviewerEmployeeNos, Map<String, String> reviewerNames) {
+        Map<String, String> safeReviewerNames = reviewerNames == null ? Map.of() : reviewerNames;
+        return TaskReviewerAssignmentCodec.decodeReviewerEmployeeNos(reviewerEmployeeNos).stream()
+                .map(employeeNo -> new ReviewerView(employeeNo, safeReviewerNames.getOrDefault(employeeNo, employeeNo)))
+                .toList();
     }
 
     private String lookupEmployeeName(String employeeNo, String defaultName) {
@@ -341,6 +372,7 @@ public class TaskApplicationService {
     public record TaskView(Long id, ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo, String designerName,
                            String designName, String pcbType, LocalDate expectedCompletedDate, String expertLeaderEmployeeNo, String expertLeaderName,
                            List<ReviewRole> reviewRoles, List<ReviewerAssignmentView> reviewerAssignments, String reviewDescription, String status,
+                           @Schema(description = "互检单实际分配人员，包含工号和姓名；任务完成后仍保留用于追溯") List<ReviewerView> mutualCheckReviewers,
                            List<TaskFlowRecordView> flowRecords,
                            @Schema(description = "任务创建日期，格式 yyyy-MM-dd", example = "2026-10-19")
                            @JsonInclude(JsonInclude.Include.NON_NULL) @JsonFormat(pattern = "yyyy-MM-dd") LocalDate createdDate) {
@@ -350,21 +382,27 @@ public class TaskApplicationService {
 
         static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords,
                              LocalDate createdDate) {
-            return from(task, designerName, expertLeaderName, flowRecords, createdDate, Map.of());
+            return from(task, designerName, expertLeaderName, flowRecords, createdDate, Map.of(), List.of());
         }
 
         static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords,
                              Map<String, String> reviewerNames) {
-            return from(task, designerName, expertLeaderName, flowRecords, (LocalDate) null, reviewerNames);
+            return from(task, designerName, expertLeaderName, flowRecords, (LocalDate) null, reviewerNames, List.of());
+        }
+
+        static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords,
+                             Map<String, String> reviewerNames, List<ReviewerView> mutualCheckReviewers) {
+            return from(task, designerName, expertLeaderName, flowRecords, (LocalDate) null, reviewerNames, mutualCheckReviewers);
         }
 
         private static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords,
-                                     LocalDate createdDate, Map<String, String> reviewerNames) {
+                                     LocalDate createdDate, Map<String, String> reviewerNames,
+                                     List<ReviewerView> mutualCheckReviewers) {
             return new TaskView(task.id(), task.reviewType(), task.taskName(), task.projectName(), task.designerEmployeeNo(), designerName,
                     task.designName(), task.pcbType(), task.expectedCompletedDate(), task.expertLeaderEmployeeNo(), expertLeaderName,
                     task.reviewRoles(), task.reviewerAssignments().stream()
                     .map(assignment -> ReviewerAssignmentView.from(assignment, reviewerNames)).toList(),
-                    task.reviewDescription(), task.status().name(), List.copyOf(flowRecords), createdDate);
+                    task.reviewDescription(), task.status().name(), List.copyOf(mutualCheckReviewers), List.copyOf(flowRecords), createdDate);
         }
     }
 
@@ -407,9 +445,10 @@ public class TaskApplicationService {
         }
     }
 
-    public record TaskQuery(String keyword, ReviewType reviewType, List<TaskStatus> statuses, Integer pageNum, Integer pageSize, Long taskId) {
+    public record TaskQuery(String taskName, String projectName, String designerEmployeeNo, ReviewType reviewType,
+                            List<TaskStatus> statuses, Integer pageNum, Integer pageSize, Long taskId) {
         static TaskQuery defaultQuery() {
-            return new TaskQuery(null, null, null, 1, 20, null);
+            return new TaskQuery(null, null, null, null, null, 1, 20, null);
         }
 
         TaskQuery normalized() {
@@ -422,20 +461,34 @@ public class TaskApplicationService {
                     .filter(java.util.Objects::nonNull)
                     .distinct()
                     .toList();
-            return new TaskQuery(normalizedKeyword(), reviewType, normalizedStatuses, normalizedPageNum, normalizedPageSize, taskId);
+            return new TaskQuery(normalizedTaskName(), normalizedProjectName(), normalizedDesignerEmployeeNo(), reviewType,
+                    normalizedStatuses, normalizedPageNum, normalizedPageSize, taskId);
         }
 
-        String normalizedKeyword() {
-            return keyword == null || keyword.isBlank() ? null : keyword.trim();
+        String normalizedTaskName() {
+            return normalizeText(taskName);
+        }
+
+        String normalizedProjectName() {
+            return normalizeText(projectName);
+        }
+
+        String normalizedDesignerEmployeeNo() {
+            return normalizeText(designerEmployeeNo);
         }
 
         boolean matches(ReviewTask task) {
-            return (contains(task.taskName(), keyword)
-                    || contains(task.projectName(), keyword)
-                    || contains(task.designerName(), keyword))
+            return contains(task.taskName(), taskName)
+                    && contains(task.projectName(), projectName)
+                    && (designerEmployeeNo == null || designerEmployeeNo.isBlank()
+                    || designerEmployeeNo.trim().equals(task.designerEmployeeNo()))
                     && (reviewType == null || reviewType == task.reviewType())
                     && (statuses == null || statuses.isEmpty() || statuses.contains(task.status()))
                     && (taskId == null || taskId == task.id());
+        }
+
+        private static String normalizeText(String value) {
+            return value == null || value.isBlank() ? null : value.trim();
         }
 
         private static boolean contains(String value, String condition) {
@@ -461,6 +514,7 @@ public class TaskApplicationService {
         record.setReviewerAssignments(TaskReviewerAssignmentCodec.encode(task.reviewerAssignments()));
         // 创建、保存草稿时不预先激活未来节点的专家。
         record.setAssignedReviewerEmployeeNos("");
+        record.setMutualCheckReviewerEmployeeNos("");
         record.setReviewDescription(task.reviewDescription());
         record.setStatus(task.status().name());
         record.setInitialFileIds(task.initialFileIds().stream().map(String::valueOf).collect(Collectors.joining(",")));
