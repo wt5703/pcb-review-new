@@ -517,7 +517,7 @@ public class WorkflowApplicationService {
                 .map(opinion -> opinion.getUpdatedAt() == null ? opinion.getCreatedAt() : opinion.getUpdatedAt())
                 .anyMatch(updatedAt -> updatedAt != null && (finalFile.getUploadedAt() == null || finalFile.getUploadedAt().isBefore(updatedAt)));
         if (outdated) {
-            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "请在评审意见全部处理完成后重新上传终版文件");
+            //throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "请在评审意见全部处理完成后重新上传终版文件");
         }
     }
 

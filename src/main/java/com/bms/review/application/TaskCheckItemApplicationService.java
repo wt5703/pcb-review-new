@@ -98,11 +98,11 @@ public class TaskCheckItemApplicationService {
         requireLeafCheckItem(record);
         validateCommand(command);
 
-        // 3. 不合格创建/更新同源意见；改为合格则撤回尚未闭环的旧意见。
+        // 3. 不合格创建/更新同源意见；专家改判为合格即确认该意见通过。
         ReviewOpinionRecord opinion = command.result() == CheckResult.FAIL
                 ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), operatorEmployeeNo, operatorName) : null;
         if (command.result() == CheckResult.PASS) {
-            withdrawUnresolvedMutualOpinion(taskId, record);
+            confirmMutualOpinionWhenCheckPass(taskId, record);
         }
 
         // 4. 将结论、文字和富文本原样写入任务快照，再返回最新结果。
@@ -139,10 +139,10 @@ public class TaskCheckItemApplicationService {
             requireLeafCheckItem(record);
             validateBatchCommand(command);
 
-            // 3. 结论与同源意见保持一致：FAIL 创建/更新，PASS 撤回未闭环意见。
+            // 3. 结论与同源意见保持一致：FAIL 创建/更新，PASS 确认关联意见通过。
             ReviewOpinionRecord opinion = command.result() == CheckResult.FAIL ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), operatorEmployeeNo, operatorName) : null;
             if (command.result() == CheckResult.PASS) {
-                withdrawUnresolvedMutualOpinion(taskId, record);
+                confirmMutualOpinionWhenCheckPass(taskId, record);
             }
 
             // 4. 持久化当前任务检查项的结论和说明，不影响同任务的其他子项。
@@ -271,22 +271,28 @@ public class TaskCheckItemApplicationService {
             opinion.setComment(opinionComment); opinion.setRichText(opinionRichText); opinion.setRaisedByEmployeeNo(operatorEmployeeNo); opinion.setRaisedByName(operatorName);
             opinion.setStatus("PENDING_REPLY"); opinionMapper.insert(opinion);
         } else {
+            String originalStatus = opinion.getStatus();
             opinion.setComment(opinionComment); opinion.setRichText(opinionRichText);
             if (opinionMapper.updateOpinion(opinion) != 1) { throw new BusinessException(ErrorCode.VERSION_CONFLICT, "关联互检意见已被其他操作更新，请刷新后重试"); }
+            // 已确认通过的检查项再次被判定为不合格时，重新进入待设计者答复状态。
+            if (!OpinionStatus.PENDING_REPLY.name().equals(originalStatus)) {
+                opinion.setStatus(OpinionStatus.PENDING_REPLY.name());
+                if (opinionMapper.updateStatus(opinion) != 1) { throw new BusinessException(ErrorCode.VERSION_CONFLICT, "关联互检意见状态更新失败，请刷新后重试"); }
+            }
         }
         return opinion;
     }
 
     /**
-     * 检查项由不合格改回合格时，原问题已不再需要设计者答复或专家确认。
-     * 仅撤回尚未确认通过的同源意见，保留已经闭环的历史记录。
+     * 专家将检查项由不合格改回合格，等同于确认该项意见已经通过。
+     * 此处直接更新关联互检意见，意见总览会将其纳入 confirmedPass 统计。
      */
-    private void withdrawUnresolvedMutualOpinion(long taskId, TaskCheckItemRecord item) {
+    private void confirmMutualOpinionWhenCheckPass(long taskId, TaskCheckItemRecord item) {
         ReviewOpinionRecord opinion = opinionMapper.findActiveMutualCheckItemOpinion(taskId, item.getId(), OpinionSourceType.MUTUAL_CHECK_ITEM);
         if (opinion == null || OpinionStatus.CONFIRMED_PASS.name().equals(opinion.getStatus())) {
             return;
         }
-        opinion.setStatus(OpinionStatus.WITHDRAWN.name());
+        opinion.setStatus(OpinionStatus.CONFIRMED_PASS.name());
         if (opinionMapper.updateStatus(opinion) != 1) {
             throw new BusinessException(ErrorCode.VERSION_CONFLICT, "关联互检意见状态更新失败，请刷新后重试");
         }

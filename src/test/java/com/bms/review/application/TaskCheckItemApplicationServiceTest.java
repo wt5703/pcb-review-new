@@ -123,7 +123,7 @@ class TaskCheckItemApplicationServiceTest {
     }
 
     @Test
-    void shouldWithdrawUnresolvedOpinionWhenFailedItemIsChangedToPass() {
+    void shouldConfirmOpinionWhenFailedItemIsChangedToPass() {
         ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
         TaskCheckItemRecord checkItem = item(51L, 31L);
         ReviewOpinionRecord opinion = new ReviewOpinionRecord();
@@ -140,8 +140,33 @@ class TaskCheckItemApplicationServiceTest {
                 new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.PASS, null, null), "BMS001", "BMS001");
 
         assertThat(checkItem.getCheckResult()).isEqualTo(CheckResult.PASS.name());
-        verify(opinionMapper).updateStatus(argThat(value -> "WITHDRAWN".equals(value.getStatus())));
+        verify(opinionMapper).updateStatus(argThat(value -> "CONFIRMED_PASS".equals(value.getStatus())));
         verify(templateMapper, never()).findEnabledByReviewType(ReviewType.PCB.name());
+    }
+
+    @Test
+    void shouldReopenConfirmedOpinionWhenCheckItemIsChangedBackToFail() {
+        ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
+        TaskCheckItemRecord checkItem = item(51L, 31L);
+        ReviewOpinionRecord opinion = new ReviewOpinionRecord();
+        opinion.setId(71L);
+        opinion.setStatus("CONFIRMED_PASS");
+        opinion.setRaisedByEmployeeNo("BMS001");
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(checkItem);
+        when(templateMapper.findById(31L)).thenReturn(template(31L, "线距检查"));
+        when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
+        when(opinionMapper.findActiveMutualCheckItemOpinion(1001L, 51L, OpinionSourceType.MUTUAL_CHECK_ITEM)).thenReturn(opinion);
+        when(opinionMapper.updateOpinion(any(ReviewOpinionRecord.class))).thenReturn(1);
+        when(opinionMapper.updateStatus(any(ReviewOpinionRecord.class))).thenReturn(1);
+        when(userProfileClient.getByEmployeeNo("BMS001"))
+                .thenReturn(new UserCenterUserProfileClient.UserProfile("BMS001", "王工", null, null, null));
+
+        service.submit(1001L, 51L,
+                new TaskCheckItemApplicationService.SubmitCheckItemCommand(CheckResult.FAIL, "线距不足", "<p>线距不足</p>"), "BMS001", "王工");
+
+        assertThat(checkItem.getCheckResult()).isEqualTo(CheckResult.FAIL.name());
+        verify(opinionMapper).updateStatus(argThat(value -> "PENDING_REPLY".equals(value.getStatus())));
     }
 
     @Test

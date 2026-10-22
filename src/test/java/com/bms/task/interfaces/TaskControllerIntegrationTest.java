@@ -143,7 +143,9 @@ class TaskControllerIntegrationTest {
                         .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(taskId))
-                .andExpect(jsonPath("$.data.taskName").value("REST-BMS PCB评审（已编辑）"));
+                .andExpect(jsonPath("$.data.taskName").value("REST-BMS PCB评审（已编辑）"))
+                .andExpect(jsonPath("$.data.createdDate").isNotEmpty())
+                .andExpect(jsonPath("$.data.createdTime").isNotEmpty());
     }
 
     @Test

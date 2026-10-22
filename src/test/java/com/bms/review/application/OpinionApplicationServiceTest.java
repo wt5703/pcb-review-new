@@ -151,13 +151,14 @@ class OpinionApplicationServiceTest {
         when(taskMapper.findById(1001L)).thenReturn(task("BMS009"));
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(
                 opinion(31L, 1001L, "BMS020", OpinionStatus.PENDING_REPLY),
-                opinion(32L, 1001L, "BMS020", OpinionStatus.CONFIRMED_PASS)));
+                opinion(32L, 1001L, "BMS020", OpinionStatus.CONFIRMED_PASS),
+                opinion(33L, 1001L, "BMS020", OpinionStatus.CONFIRMED_PASS)));
 
         OpinionApplicationService.OpinionSummary summary = service.summary(1001L, "BMS020", "BMS020");
 
-        assertThat(summary.total()).isEqualTo(2);
+        assertThat(summary.total()).isEqualTo(3);
         assertThat(summary.pendingReply()).isEqualTo(1);
-        assertThat(summary.confirmedPass()).isEqualTo(1);
+        assertThat(summary.confirmedPass()).isEqualTo(2);
     }
 
     @Test

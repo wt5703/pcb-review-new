@@ -27,7 +27,7 @@ public interface ReviewTaskMapper {
     @Select("SELECT id, review_type AS reviewType, task_name AS taskName, project_name AS projectName, designer_employee_no AS designerEmployeeNo, " +
             "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, " +
             "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, mutual_check_reviewer_employee_nos AS mutualCheckReviewerEmployeeNos, review_description AS reviewDescription, " +
-            "status, initial_file_ids AS initialFileIds, version FROM review_task WHERE id = #{id}")
+            "status, initial_file_ids AS initialFileIds, version, created_at AS createdAt FROM review_task WHERE id = #{id}")
     ReviewTaskRecord findById(long id);
 
     @Select("SELECT id, review_type AS reviewType, task_name AS taskName, project_name AS projectName, designer_employee_no AS designerEmployeeNo, " +

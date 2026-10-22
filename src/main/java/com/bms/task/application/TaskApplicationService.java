@@ -112,7 +112,7 @@ public class TaskApplicationService {
         List<TaskFlowRecordView> flowRecords = flowMapper.findByTaskId(taskId).stream()
                 .map(this::toTaskFlowRecordView)
                 .toList();
-        return toTaskDetailView(task, taskRecord.getMutualCheckReviewerEmployeeNos(), flowRecords);
+        return toTaskDetailView(task, taskRecord.getMutualCheckReviewerEmployeeNos(), flowRecords, taskRecord.getCreatedAt());
     }
 
     /** 返回当前用户可见的全部任务，供不分页的内部调用使用。 */
@@ -227,7 +227,8 @@ public class TaskApplicationService {
                 toReviewerViews(record.getMutualCheckReviewerEmployeeNos(), mutualCheckReviewerNames));
     }
 
-    private TaskView toTaskDetailView(ReviewTask task, String mutualCheckReviewerEmployeeNos, List<TaskFlowRecordView> flowRecords) {
+    private TaskView toTaskDetailView(ReviewTask task, String mutualCheckReviewerEmployeeNos, List<TaskFlowRecordView> flowRecords,
+                                      java.time.LocalDateTime createdAt) {
         List<String> reviewerEmployeeNos = task.reviewerAssignments().stream()
                 .flatMap(assignment -> assignment.reviewerEmployeeNos().stream())
                 .collect(Collectors.collectingAndThen(Collectors.toCollection(java.util.LinkedHashSet::new), List::copyOf));
@@ -237,7 +238,7 @@ public class TaskApplicationService {
         Map<String, String> reviewerNames = reviewerWhitelistApplicationService.findDisplayNamesByEmployeeNos(reviewerEmployeeNos);
         return TaskView.from(task, task.designerName(),
                 lookupEmployeeName(task.expertLeaderEmployeeNo(), task.expertLeaderName()), flowRecords,
-                reviewerNames == null ? Map.of() : reviewerNames,
+                createdAt == null ? null : createdAt.toLocalDate(), createdAt, reviewerNames == null ? Map.of() : reviewerNames,
                 toReviewerViews(mutualCheckReviewerEmployeeNos, reviewerNames));
     }
 
@@ -375,7 +376,9 @@ public class TaskApplicationService {
                            @Schema(description = "互检单实际分配人员，包含工号和姓名；任务完成后仍保留用于追溯") List<ReviewerView> mutualCheckReviewers,
                            List<TaskFlowRecordView> flowRecords,
                            @Schema(description = "任务创建日期，格式 yyyy-MM-dd", example = "2026-10-19")
-                           @JsonInclude(JsonInclude.Include.NON_NULL) @JsonFormat(pattern = "yyyy-MM-dd") LocalDate createdDate) {
+                           @JsonInclude(JsonInclude.Include.NON_NULL) @JsonFormat(pattern = "yyyy-MM-dd") LocalDate createdDate,
+                           @Schema(description = "任务创建时间，任务详情返回，格式 yyyy-MM-dd HH:mm:ss", example = "2026-10-19 15:30:00")
+                           @JsonInclude(JsonInclude.Include.NON_NULL) @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss") java.time.LocalDateTime createdTime) {
         static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords) {
             return from(task, designerName, expertLeaderName, flowRecords, (LocalDate) null);
         }
@@ -398,11 +401,17 @@ public class TaskApplicationService {
         private static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords,
                                      LocalDate createdDate, Map<String, String> reviewerNames,
                                      List<ReviewerView> mutualCheckReviewers) {
+            return from(task, designerName, expertLeaderName, flowRecords, createdDate, null, reviewerNames, mutualCheckReviewers);
+        }
+
+        private static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords,
+                                     LocalDate createdDate, java.time.LocalDateTime createdTime, Map<String, String> reviewerNames,
+                                     List<ReviewerView> mutualCheckReviewers) {
             return new TaskView(task.id(), task.reviewType(), task.taskName(), task.projectName(), task.designerEmployeeNo(), designerName,
                     task.designName(), task.pcbType(), task.expectedCompletedDate(), task.expertLeaderEmployeeNo(), expertLeaderName,
                     task.reviewRoles(), task.reviewerAssignments().stream()
                     .map(assignment -> ReviewerAssignmentView.from(assignment, reviewerNames)).toList(),
-                    task.reviewDescription(), task.status().name(), List.copyOf(mutualCheckReviewers), List.copyOf(flowRecords), createdDate);
+                    task.reviewDescription(), task.status().name(), List.copyOf(mutualCheckReviewers), List.copyOf(flowRecords), createdDate, createdTime);
         }
     }
 

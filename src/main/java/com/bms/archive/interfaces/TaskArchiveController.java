@@ -8,7 +8,6 @@ import com.bms.task.application.TaskApplicationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +18,9 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.validation.annotation.Validated;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.util.UriUtils;
+
+import java.nio.charset.StandardCharsets;
 
 /**
  * @author 王涛
@@ -57,9 +59,13 @@ public class TaskArchiveController {
         TaskArchiveOpinionExportApplicationService.ExportedExcel excel = taskArchiveOpinionExportApplicationService.export(taskId);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
-                        .filename(excel.fileName(), java.nio.charset.StandardCharsets.UTF_8).build().toString())
+                // 仅输出 RFC 5987 的 filename* 参数，避免浏览器把 Spring 生成的 =?UTF-8?Q?...?= 兼容参数拼进实际文件名。
+                .header(HttpHeaders.CONTENT_DISPOSITION, attachmentFileName(excel.fileName()))
                 .body(excel.content());
+    }
+
+    private String attachmentFileName(String fileName) {
+        return "attachment; filename*=UTF-8''" + UriUtils.encode(fileName, StandardCharsets.UTF_8);
     }
 
     private String traceId(HttpServletRequest request) { return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString(); }

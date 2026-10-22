@@ -246,8 +246,10 @@ class TaskApplicationServiceTest {
     }
 
     @Test
-    void shouldIncludeTaskFlowRecordsWhenLoadingTaskDetail() {
-        when(taskMapper.findById(101L)).thenReturn(record(101L, "BMS PCB评审", TaskStatus.PCB_EXPERT_REVIEWING, 0L));
+    void shouldIncludeTaskFlowRecordsWhenLoadingTaskDetail() throws Exception {
+        ReviewTaskRecord task = record(101L, "BMS PCB评审", TaskStatus.PCB_EXPERT_REVIEWING, 0L);
+        task.setCreatedAt(LocalDateTime.of(2026, 10, 19, 15, 30));
+        when(taskMapper.findById(101L)).thenReturn(task);
         TaskFlowRecord flow = new TaskFlowRecord();
         flow.setId(201L);
         flow.setTaskId(101L);
@@ -265,6 +267,10 @@ class TaskApplicationServiceTest {
             assertThat(record.operatorEmployeeNo()).isEqualTo(DESIGNER_NO);
             assertThat(record.operatorName()).isEqualTo("设计者");
         });
+        assertThat(result.createdDate()).isEqualTo(LocalDate.of(2026, 10, 19));
+        assertThat(result.createdTime()).isEqualTo(LocalDateTime.of(2026, 10, 19, 15, 30));
+        String json = new ObjectMapper().registerModule(new JavaTimeModule()).writeValueAsString(result);
+        assertThat(json).contains("\"createdTime\":\"2026-10-19 15:30:00\"");
     }
 
     private void mockTaskPage(long total, List<ReviewTaskRecord> records) {
