@@ -97,7 +97,7 @@ class TaskApplicationServiceTest {
 
         assertThat(result.status()).isEqualTo(TaskStatus.PCB_EXPERT_REVIEWING.name());
         verify(flowMapper).insert(any(TaskFlowRecord.class));
-        verify(reviewMailNotificationApplicationService).enqueueTaskCreated(any());
+        verify(reviewMailNotificationApplicationService).enqueueTaskCreated(org.mockito.ArgumentMatchers.<ReviewTaskRecord>any());
     }
 
     @Test
@@ -115,6 +115,10 @@ class TaskApplicationServiceTest {
         ArgumentCaptor<ReviewTaskRecord> captor = ArgumentCaptor.forClass(ReviewTaskRecord.class);
         verify(taskMapper).updateAssignedReviewerEmployeeNos(captor.capture());
         assertThat(captor.getValue().getAssignedReviewerEmployeeNos()).isEqualTo("BMS011,BMS012");
+        ArgumentCaptor<ReviewTaskRecord> taskCaptor = ArgumentCaptor.forClass(ReviewTaskRecord.class);
+        verify(taskMapper).update(taskCaptor.capture());
+        assertThat(taskCaptor.getValue().getReviewerAssignments())
+                .isEqualTo("PCB_EXPERT:BMS011;EMC_EXPERT:BMS012;PROCESS_EXPERT:BMS013;STRUCTURE_EXPERT:BMS014");
     }
 
     @Test

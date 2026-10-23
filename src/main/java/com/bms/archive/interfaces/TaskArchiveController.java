@@ -32,6 +32,8 @@ import java.nio.charset.StandardCharsets;
 @RequestMapping("/tasks/{taskId}/archive")
 @Tag(name = "任务归档", description = "读取已结束评审任务的不可变归档快照，返回流程节点、阶段文件和邮件投递记录。")
 public class TaskArchiveController {
+    private static final MediaType EXCEL_MEDIA_TYPE = MediaType.parseMediaType(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     private final TaskApplicationService taskApplicationService;
     private final TaskArchiveApplicationService taskArchiveApplicationService;
     private final TaskArchiveOpinionExportApplicationService taskArchiveOpinionExportApplicationService;
@@ -50,7 +52,7 @@ public class TaskArchiveController {
         return ApiResponse.ok(taskArchiveApplicationService.get(taskId), traceId(servletRequest));
     }
 
-    @GetMapping("/export")
+    @GetMapping(value = "/export", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     @Operation(summary = "导出归档评审意见 Excel", description = "仅支持已结束且已归档任务。PCB 按评审角色拆分工作表；原理图使用“评审问题记录”单工作表模板。一条意见存在多轮设计者答复时，每轮答复导出一行；不包含互检单意见。")
     ResponseEntity<byte[]> exportOpinions(@PathVariable long taskId,
                                           @NotBlank @RequestHeader("userId") String employeeNo) {
@@ -58,14 +60,18 @@ public class TaskArchiveController {
         taskArchiveApplicationService.get(taskId);
         TaskArchiveOpinionExportApplicationService.ExportedExcel excel = taskArchiveOpinionExportApplicationService.export(taskId);
         return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-                // 仅输出 RFC 5987 的 filename* 参数，避免浏览器把 Spring 生成的 =?UTF-8?Q?...?= 兼容参数拼进实际文件名。
+                .contentType(EXCEL_MEDIA_TYPE)
+                .contentLength(excel.content().length)
+                // filename 提供纯 ASCII 兜底，filename* 供支持 RFC 5987 的浏览器显示中文文件名；
+                // 不再使用 Spring 的 MIME Q 编码文件名，避免其被客户端下载成乱码文件。
                 .header(HttpHeaders.CONTENT_DISPOSITION, attachmentFileName(excel.fileName()))
+                .header("X-Content-Type-Options", "nosniff")
                 .body(excel.content());
     }
 
     private String attachmentFileName(String fileName) {
-        return "attachment; filename*=UTF-8''" + UriUtils.encode(fileName, StandardCharsets.UTF_8);
+        return "attachment; filename=\"review-opinions.xlsx\"; filename*=UTF-8''"
+                + UriUtils.encode(fileName, StandardCharsets.UTF_8);
     }
 
     private String traceId(HttpServletRequest request) { return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString(); }

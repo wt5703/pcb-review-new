@@ -149,16 +149,16 @@ class TaskControllerIntegrationTest {
     }
 
     @Test
-    void shouldUseEmployeeNumberAndNameFromRequestHeaders() throws Exception {
+    void shouldPreferDesignerNameFromRequestBodyOverRequestHeader() throws Exception {
         String taskRequest = """
-                {"reviewType":"PCB","taskName":"无权任务","projectName":"BMS","designName":"BMS-P1","pcbType":"BMU"}
+                {"reviewType":"PCB","taskName":"设计者名称来源","projectName":"BMS","designerName":"设计师张三","designName":"BMS-P1","pcbType":"BMU"}
                 """;
         mockMvc.perform(post("/tasks/save").contentType(MediaType.APPLICATION_JSON).content(taskRequest)
                         .header("userId", "BMS010")
-                        .header("userName", "测试用户"))
+                        .header("userName", "header-user-name"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.designerEmployeeNo").value("BMS010"))
-                .andExpect(jsonPath("$.data.designerName").value("测试用户"));
+                .andExpect(jsonPath("$.data.designerName").value("设计师张三"));
     }
 
     private ReviewFileRecord pending(String fileId, String fileName, long fileSize, String resourcePath) {

@@ -63,6 +63,22 @@ class ReviewMailNotificationApplicationServiceTest {
     }
 
     @Test
+    void shouldUsePersistedReviewerAssignmentsForTaskCreatedMail() throws Exception {
+        when(whitelistMapper.findActiveByEmployeeNo("BMS001")).thenReturn(user(1L, "BMS001", "王鹏飞", "wang@bms.example.com"));
+        when(whitelistMapper.findActiveByEmployeeNo("BMS002")).thenReturn(user(2L, "BMS002", "刘满红", "liu@bms.example.com"));
+        when(fileMapper.findById(101L)).thenReturn(file(101L, "初版PCB.zip", "PCB_REVIEW"));
+        ReviewTaskRecord task = task(10L, "PCB", "BMS", "HARDWARE_EXPERT:BMS001;EMC_EXPERT:BMS002");
+        task.setInitialFileIds("101");
+        task.setReviewRoles("HARDWARE_EXPERT,EMC_EXPERT");
+
+        service.enqueueTaskCreated(task);
+
+        MailMessage message = payload();
+        assertThat(message.recipients()).extracting(MailMessage.MailRecipient::email)
+                .containsExactly("wang@bms.example.com", "liu@bms.example.com");
+    }
+
+    @Test
     void shouldAttachOnlyProcessAndStructureFilesWhenOpeningTheirReviews() throws Exception {
         when(whitelistMapper.findActiveByEmployeeNo("BMS003")).thenReturn(user(3L, "BMS003", "章俊", "zhang@bms.example.com"));
         when(whitelistMapper.findActiveByEmployeeNo("BMS004")).thenReturn(user(4L, "BMS004", "陈远杰", "chen@bms.example.com"));

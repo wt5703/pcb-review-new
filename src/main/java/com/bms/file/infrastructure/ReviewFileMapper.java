@@ -42,6 +42,24 @@ public interface ReviewFileMapper {
             + "is_latest=TRUE, uploaded_stage=#{uploadedStage} WHERE id=#{id} AND task_id IS NULL")
     int bindToTask(ReviewFileRecord record);
 
+    /**
+     * 取消上传只解除文件与任务的关联，不删除公司资源服务中的原始文件。
+     */
+    @Update("UPDATE review_file SET task_id=NULL, uploaded_stage=NULL, is_latest=FALSE "
+            + "WHERE task_id=#{taskId} AND file_id=#{fileId}")
+    int unbindFromTask(long taskId, String fileId);
+
+    /** 取消最新版本后，用该类别最近的历史版本恢复为当前有效文件。 */
+    @Select("SELECT id, task_id AS taskId, file_category AS fileCategory, file_id AS fileId, file_name AS fileName, "
+            + "file_format AS fileFormat, file_size AS fileSize, md5, resource_path AS resourcePath, is_latest AS latest, "
+            + "uploaded_by_employee_no AS uploadedByEmployeeNo, uploaded_at AS uploadedAt, uploaded_stage AS uploadedStage "
+            + "FROM review_file WHERE task_id=#{taskId} AND file_category=#{fileCategory} AND is_latest=FALSE "
+            + "ORDER BY uploaded_at DESC, id DESC LIMIT 1")
+    ReviewFileRecord findLatestHistoricalByTaskIdAndCategory(long taskId, String fileCategory);
+
+    @Update("UPDATE review_file SET is_latest=TRUE WHERE id=#{id} AND task_id=#{taskId}")
+    int markAsLatest(long taskId, long id);
+
     @Insert("INSERT INTO review_file (id, task_id, file_category, file_name, file_format, file_size, md5, "
             + "file_id, resource_path, is_latest, uploaded_by_employee_no, uploaded_stage) VALUES (#{id}, #{taskId}, #{fileCategory}, #{fileName}, #{fileFormat}, "
             + "#{fileSize}, #{md5}, #{fileId}, #{resourcePath}, #{latest}, #{uploadedByEmployeeNo}, #{uploadedStage})")

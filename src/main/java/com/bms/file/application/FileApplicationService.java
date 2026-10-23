@@ -157,6 +157,43 @@ public class FileApplicationService {
         return fileMapper.findLatestByTaskIdAndCategory(taskId, category.name()).stream().map(FileView::from).toList();
     }
 
+    /**
+     * 取消用户刚上传的文件与任务之间的关联。文件元数据和公司资源均保留，避免误删可恢复的上传内容。
+     */
+    @Transactional
+    public void unbindFile(long taskId, String fileId, String operatorEmployeeNo, String operatorName) {
+        String normalizedFileId = requireFileUuid(fileId);
+        ReviewFileRecord file = fileMapper.findByFileId(normalizedFileId);
+        if (file == null || !Long.valueOf(taskId).equals(file.getTaskId())) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "当前任务不存在该文件");
+        }
+        ReviewTaskRecord task = requireTaskAccess(taskId, operatorEmployeeNo, operatorName,
+                FileCategory.valueOf(file.getFileCategory()), false);
+        if (TaskStatus.FINISHED.name().equals(task.getStatus())) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许取消文件上传");
+        }
+        if (!operatorEmployeeNo.equals(task.getDesignerEmployeeNo())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅任务设计者可以取消文件上传");
+        }
+        if (fileMapper.unbindFromTask(taskId, normalizedFileId) != 1) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "当前任务不存在该文件");
+        }
+        restorePreviousLatestFile(taskId, file);
+        // 初始文件主键属于任务表的冗余字段；解除关联后必须同步清理，避免草稿误认为仍有该文件。
+        taskMapper.removeInitialFileId(taskId, file.getId());
+    }
+
+    private void restorePreviousLatestFile(long taskId, ReviewFileRecord cancelledFile) {
+        if (!Boolean.TRUE.equals(cancelledFile.getLatest())) {
+            return;
+        }
+        ReviewFileRecord previousFile = fileMapper.findLatestHistoricalByTaskIdAndCategory(taskId,
+                cancelledFile.getFileCategory());
+        if (previousFile != null) {
+            fileMapper.markAsLatest(taskId, previousFile.getId());
+        }
+    }
+
     private ReviewTaskRecord requireTaskAccess(long taskId, String operatorEmployeeNo, String operatorName, FileCategory category, boolean upload) {
         ReviewTaskRecord task = taskMapper.findById(taskId);
         if (task == null) {

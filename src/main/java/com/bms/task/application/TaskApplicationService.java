@@ -93,10 +93,11 @@ public class TaskApplicationService {
         requireDesignerPermission(task.designerEmployeeNo(), operatorEmployeeNo, operatorName, "提交");
         addInitialFiles(task, initialFileIds);
         task.submit();
-        persistSubmittedTask(task);
+        ReviewTaskRecord persistedTask = persistSubmittedTask(task);
         activateReviewersAtTaskSubmission(task);
         recordTaskFlow(task.id(), WorkflowAction.CREATE, operatorEmployeeNo, "提交评审任务");
-        reviewMailNotificationApplicationService.enqueueTaskCreated(task);
+        // 邮件收件人必须以已落库的 reviewer_assignments 为准，不能读取提交过程中的临时对象。
+        reviewMailNotificationApplicationService.enqueueTaskCreated(persistedTask);
         return toTaskSummary(task);
     }
 
@@ -208,10 +209,12 @@ public class TaskApplicationService {
         (initialFileIds == null ? List.<Long>of() : initialFileIds).forEach(task::addInitialFile);
     }
 
-    private void persistSubmittedTask(ReviewTask task) {
-        if (taskMapper.update(toTaskRecord(task)) != 1) {
+    private ReviewTaskRecord persistSubmittedTask(ReviewTask task) {
+        ReviewTaskRecord record = toTaskRecord(task);
+        if (taskMapper.update(record) != 1) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
         }
+        return record;
     }
 
     private TaskView toTaskSummary(ReviewTask task) {

@@ -11,11 +11,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/** 验证中文 Excel 文件名仅使用 RFC 5987 filename*，避免浏览器下载名称混入 MIME 编码文本。 */
+/** 验证 Excel 下载响应使用二进制媒体类型，并为中文文件名提供标准的 RFC 5987 编码。 */
 class TaskArchiveControllerTest {
 
     @Test
-    void shouldUseOnlyRfc5987EncodedFileNameForOpinionExport() {
+    void shouldReturnExcelDownloadResponseForOpinionExport() {
         TaskApplicationService taskApplicationService = mock(TaskApplicationService.class);
         TaskArchiveApplicationService taskArchiveApplicationService = mock(TaskArchiveApplicationService.class);
         TaskArchiveOpinionExportApplicationService exportApplicationService = mock(TaskArchiveOpinionExportApplicationService.class);
@@ -27,7 +27,10 @@ class TaskArchiveControllerTest {
         ResponseEntity<byte[]> response = controller.exportOpinions(101L, "BMS001");
 
         String disposition = response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION);
-        assertThat(disposition).startsWith("attachment; filename*=UTF-8''")
-                .doesNotContain("filename=", "=?UTF-8?Q?", "?=");
+        assertThat(response.getHeaders().getContentType().toString())
+                .isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        assertThat(response.getHeaders().getContentLength()).isEqualTo(3L);
+        assertThat(disposition).startsWith("attachment; filename=\"review-opinions.xlsx\"; filename*=UTF-8''")
+                .doesNotContain("=?UTF-8?Q?", "?=");
     }
 }

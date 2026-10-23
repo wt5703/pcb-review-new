@@ -69,6 +69,25 @@ public class ReviewMailNotificationApplicationService {
                 initialAttachments(task.initialFileIds(), FileCategory.SCHEMATIC_REVIEW), Map.of("projectName", task.projectName()));
     }
 
+    /**
+     * 提交任务后使用已经持久化的角色—专家分配组装邮件，防止草稿编辑后的最新分配未被邮件通知读取。
+     */
+    public void enqueueTaskCreated(ReviewTaskRecord task) {
+        List<TaskReviewerAssignment> assignments = assignments(task);
+        ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
+        if (reviewType == ReviewType.PCB) {
+            List<TaskReviewerAssignment> receivers = filter(assignments, assignment -> assignment.reviewRole() == ReviewRole.HARDWARE_EXPERT
+                    || assignment.reviewRole() == ReviewRole.EMC_EXPERT);
+            enqueue(task.getId(), ReviewMailType.PCB_TASK_CREATED, task.getProjectName() + " PCB布局布线评审", receivers,
+                    initialAttachments(parseInitialFileIds(task.getInitialFileIds()), FileCategory.PCB_REVIEW),
+                    Map.of("projectName", task.getProjectName()));
+            return;
+        }
+        enqueue(task.getId(), ReviewMailType.SCHEMATIC_TASK_CREATED, task.getProjectName() + "原理图评审", assignments,
+                initialAttachments(parseInitialFileIds(task.getInitialFileIds()), FileCategory.SCHEMATIC_REVIEW),
+                Map.of("projectName", task.getProjectName()));
+    }
+
     /** PCB 设计者开启工艺和/或结构评审后，仅通知本次实际开启阶段的评审人员。 */
     public void enqueuePcbStageReview(ReviewTaskRecord task, Collection<FileCategory> requestedCategories) {
         List<FileCategory> categories = requestedCategories.stream()
@@ -168,6 +187,17 @@ public class ReviewMailNotificationApplicationService {
 
     private List<TaskReviewerAssignment> filter(List<TaskReviewerAssignment> source, Predicate<TaskReviewerAssignment> predicate) {
         return source.stream().filter(predicate).toList();
+    }
+
+    private List<Long> parseInitialFileIds(String initialFileIds) {
+        if (initialFileIds == null || initialFileIds.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(initialFileIds.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .map(Long::valueOf)
+                .toList();
     }
 
     private List<MailMessage.MailRecipient> recipients(List<TaskReviewerAssignment> assignments) {

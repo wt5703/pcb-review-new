@@ -97,8 +97,15 @@ public interface ReviewTaskMapper {
             + "status, initial_file_ids AS initialFileIds, version FROM review_task WHERE status <> 'FINISHED' ORDER BY id")
     List<ReviewTaskRecord> findAllUnfinished();
 
-    @Update("UPDATE review_task SET pcb_type=#{pcbType}, status=#{status}, initial_file_ids=#{initialFileIds}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
+    /** 提交任务或保存初始文件时，同步保存角色—专家分配，供邮件通知等后续流程读取。 */
+    @Update("UPDATE review_task SET pcb_type=#{pcbType}, review_roles=#{reviewRoles}, reviewer_assignments=#{reviewerAssignments}, "
+            + "status=#{status}, initial_file_ids=#{initialFileIds}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
     int update(ReviewTaskRecord record);
+
+    /** 取消初始文件上传时，同步去掉任务中冗余保存的文件主键。 */
+    @Update("UPDATE review_task SET initial_file_ids=TRIM(BOTH ',' FROM REPLACE(CONCAT(',', COALESCE(initial_file_ids, ''), ','), "
+            + "CONCAT(',', #{fileRecordId}, ','), ',')), updated_at=CURRENT_TIMESTAMP WHERE id=#{taskId}")
+    int removeInitialFileId(@Param("taskId") long taskId, @Param("fileRecordId") long fileRecordId);
 
     /** 仅维护当前流程节点待处理人员，不覆盖创建任务时保存的 reviewer_assignments。 */
     @Update("UPDATE review_task SET assigned_reviewer_employee_nos=#{assignedReviewerEmployeeNos}, " +

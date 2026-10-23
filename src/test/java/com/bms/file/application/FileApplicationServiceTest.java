@@ -106,6 +106,38 @@ class FileApplicationServiceTest {
                 .satisfies(file -> assertThat(file.fileId()).isEqualTo(fileId));
     }
 
+    @Test
+    void shouldOnlyUnbindCancelledFileFromTask() {
+        String fileId = "b4466fe0-2c68-44b5-92d2-100000000002";
+        ReviewFileRecord file = record(101L, "md5-a");
+        file.setFileId(fileId);
+        when(fileMapper.findByFileId(fileId)).thenReturn(file);
+        when(taskMapper.findById(1L)).thenReturn(taskRecord());
+        when(fileMapper.unbindFromTask(1L, fileId)).thenReturn(1);
+
+        service.unbindFile(1L, fileId, "10", "10");
+
+        verify(fileMapper).unbindFromTask(1L, fileId);
+        verify(taskMapper).removeInitialFileId(1L, 101L);
+    }
+
+    @Test
+    void shouldRestorePreviousVersionWhenCancellingLatestFile() {
+        String fileId = "b4466fe0-2c68-44b5-92d2-100000000003";
+        ReviewFileRecord latest = record(102L, "md5-latest");
+        latest.setFileId(fileId);
+        ReviewFileRecord historical = record(101L, "md5-history");
+        historical.setLatest(false);
+        when(fileMapper.findByFileId(fileId)).thenReturn(latest);
+        when(taskMapper.findById(1L)).thenReturn(taskRecord());
+        when(fileMapper.unbindFromTask(1L, fileId)).thenReturn(1);
+        when(fileMapper.findLatestHistoricalByTaskIdAndCategory(1L, FileCategory.PCB_REVIEW.name())).thenReturn(historical);
+
+        service.unbindFile(1L, fileId, "10", "10");
+
+        verify(fileMapper).markAsLatest(1L, 101L);
+    }
+
     private ReviewFileRecord record(long id, String md5) {
         ReviewFileRecord record = new ReviewFileRecord();
         record.setId(id);

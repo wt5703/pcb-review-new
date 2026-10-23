@@ -127,11 +127,12 @@ public class TaskController {
                 && (request.expertLeaderEmployeeNo() == null || request.expertLeaderEmployeeNo().isBlank())) {
             throw new IllegalArgumentException("原理图评审必须选择组长并传入组长工号");
         }
+        String designerName = designerName(request.designerName(), userName);
         ReviewerWhitelistApplicationService.WhitelistPersonView leader = request.expertLeaderEmployeeNo() == null || request.expertLeaderEmployeeNo().isBlank()
-                ? new ReviewerWhitelistApplicationService.WhitelistPersonView(employeeNo, userName, null, null, null)
+                ? new ReviewerWhitelistApplicationService.WhitelistPersonView(employeeNo, designerName, null, null, null)
                 : whitelistApplicationService.findByEmployeeNo(request.expertLeaderEmployeeNo());
         return new TaskApplicationService.CreateTaskCommand(request.reviewType(), request.taskName(), request.projectName(), employeeNo,
-                userName, request.designName(), request.pcbType(), request.expectedCompletedDate() == null ? LocalDate.now() : request.expectedCompletedDate(),
+                designerName, request.designName(), request.pcbType(), request.expectedCompletedDate() == null ? LocalDate.now() : request.expectedCompletedDate(),
                 leader.employeeNo(), leader.displayName(),
                 request.reviewRoles() == null || request.reviewRoles().isEmpty() ? List.of(ReviewRole.PCB_EXPERT) : request.reviewRoles(),
                 (request.reviewerAssignments() == null ? List.<ReviewerAssignmentRequest>of() : request.reviewerAssignments()).stream()
@@ -141,11 +142,20 @@ public class TaskController {
                 request.reviewDescription());
     }
 
+    /**
+     * 设计者姓名由任务表单的 JSON 正文传入，避免中文姓名经过 HTTP 请求头或网关时发生字符集转换。
+     * 保留请求头作为旧版前端未传 designerName 时的兼容兜底。
+     */
+    private String designerName(String requestDesignerName, String headerUserName) {
+        return requestDesignerName != null && !requestDesignerName.isBlank() ? requestDesignerName.trim() : headerUserName;
+    }
+
     @Schema(description = "创建评审任务草稿请求")
     record CreateTaskRequest(
             @Schema(description = "评审类型：PCB 表示 PCB 评审，SCHEMATIC 表示原理图评审", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull ReviewType reviewType,
             @Schema(description = "任务名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String taskName,
             @Schema(description = "项目名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String projectName,
+            @Schema(description = "设计者姓名；优先使用该 JSON 字段保存，避免中文姓名通过请求头传输时乱码", requiredMode = Schema.RequiredMode.REQUIRED) String designerName,
             @Schema(description = "原理图名称或 PCB 名称；随评审类型在页面显示不同标签", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String designName,
             @Schema(description = "PCB 板类型。PCB 评审必填，可选 BMU板、BSU板、分流器板、高压板、转接板、储能板、其他；原理图评审可不传") String pcbType,
             @Schema(description = "期望完成日期，格式 yyyy-MM-dd", example = "2026-09-30", requiredMode = Schema.RequiredMode.REQUIRED) @JsonFormat(pattern = "yyyy-MM-dd") LocalDate expectedCompletedDate,

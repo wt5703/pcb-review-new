@@ -12,6 +12,7 @@ import jakarta.validation.constraints.NotNull;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -59,6 +60,16 @@ public class FileController {
         FileApplicationService.DownloadContent content = fileApplicationService.downloadFile(fileId, employeeNo, null);
         return ResponseEntity.ok().header("Content-Disposition", ContentDisposition.attachment().filename(content.fileName()).build().toString())
                 .contentType(MediaType.APPLICATION_OCTET_STREAM).body(content.content());
+    }
+
+    @DeleteMapping("/files")
+    @Operation(summary = "取消上传文件", description = "fileId 为上传接口返回的文件 UUID，不是 review_file 主键。仅解除该文件与 taskId 的绑定关系，不删除公司资源服务中的原始文件。")
+    ApiResponse<Void> unbind(@RequestParam long taskId,
+                             @RequestParam @NotBlank @Schema(description = "文件 UUID，即上传接口返回的 fileId", requiredMode = Schema.RequiredMode.REQUIRED) String fileId,
+                             @NotBlank @RequestHeader("userId") String employeeNo,
+                             HttpServletRequest servletRequest) {
+        fileApplicationService.unbindFile(taskId, fileId, employeeNo, null);
+        return ApiResponse.ok(null, traceId(servletRequest));
     }
 
     @GetMapping("/files/latest")
