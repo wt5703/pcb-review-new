@@ -319,7 +319,10 @@ public class OpinionApplicationService {
         ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
         return switch (sourceType) {
             case PCB_REVIEW -> reviewType == ReviewType.PCB && status == TaskStatus.PCB_EXPERT_REVIEWING;
-            case SCHEMATIC_REVIEW -> reviewType == ReviewType.SCHEMATIC && status == TaskStatus.SCHEMATIC_REVIEWING;
+            // 原理图没有独立的专家分配节点：互检阶段由当前互检执行人使用
+            // SCHEMATIC_REVIEW 确认其评审结果。
+            case SCHEMATIC_REVIEW -> reviewType == ReviewType.SCHEMATIC
+                    && (status == TaskStatus.SCHEMATIC_REVIEWING || status == TaskStatus.MUTUAL_CHECK_REVIEWING);
             case PCB_PROCESS_REVIEW, PCB_STRUCTURE_REVIEW -> reviewType == ReviewType.PCB
                     && status == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING;
             default -> false;
@@ -493,6 +496,10 @@ public class OpinionApplicationService {
         TaskStatus status = TaskStatus.valueOf(task.getStatus());
         ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
         if (status == TaskStatus.MUTUAL_CHECK_REVIEWING) {
+            // 原理图互检阶段以 SCHEMATIC_REVIEW 表示确认提交；PCB 仍按互检意见来源处理。
+            if (reviewType == ReviewType.SCHEMATIC && completedSource == OpinionSourceType.SCHEMATIC_REVIEW) {
+                return List.of(OpinionSourceType.SCHEMATIC_REVIEW);
+            }
             // 互检分配并未保存角色映射；仅在该专家自己提交的互检来源全部闭环后释放待办。
             return completedSource == OpinionSourceType.MUTUAL_CHECK_ITEM || completedSource == OpinionSourceType.MUTUAL_EXTRA
                     ? List.of(completedSource) : List.of();

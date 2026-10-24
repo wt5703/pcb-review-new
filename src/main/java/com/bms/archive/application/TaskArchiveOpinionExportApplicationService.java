@@ -16,12 +16,15 @@ import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.ClientAnchor;
 import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.Drawing;
 import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.HorizontalAlignment;
 import org.apache.poi.ss.usermodel.VerticalAlignment;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFFont;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 
@@ -30,6 +33,7 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
@@ -37,6 +41,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * @author 王涛
@@ -57,6 +63,10 @@ public class TaskArchiveOpinionExportApplicationService {
     private static final String[] SCHEMATIC_HEADERS = {"评审问题序号", "评审问题提出时间", "评审对象", "问题描述", "问题等级", "原因分析",
             "处理措施", "计划解决时间", "实际解决时间", "责任人", "状态", "备注"};
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy/M/d");
+    private static final Pattern DATA_IMAGE_PATTERN = Pattern.compile("(?i)data:image/([a-z0-9.+-]+);base64,([a-z0-9+/=]+)");
+    private static final int LOCATION_COLUMN = 2;
+    private static final float MAX_LOCATION_ROW_HEIGHT_POINTS = 400F;
+    private static final float DEFAULT_IMAGE_HEIGHT_POINTS = 160F;
     private final ReviewTaskMapper taskMapper;
     private final ReviewOpinionMapper opinionMapper;
     private final UserCenterUserProfileClient userProfileClient;
@@ -156,7 +166,7 @@ public class TaskArchiveOpinionExportApplicationService {
     }
 
     private ExportRow row(ReviewOpinionRecord opinion, String handling, String confirmation) {
-        return new ExportRow(phaseName(opinion.getSourceType()), richTextToPlainText(opinion.getRichText()), opinion.getComment(),
+        return new ExportRow(phaseName(opinion.getSourceType()), richTextContent(opinion.getRichText()), opinion.getComment(),
                 raisedByName(opinion), severityName(opinion.getSeverity()), handling, confirmation);
     }
 
@@ -170,7 +180,9 @@ public class TaskArchiveOpinionExportApplicationService {
         var headerRow = sheet.createRow(3); for (int index = 0; index < HEADERS.length; index++) write(headerRow, index, HEADERS[index], headerStyle);
         for (int index = 0; index < rows.size(); index++) {
             ExportRow row = rows.get(index); var excelRow = sheet.createRow(index + 4); excelRow.setHeightInPoints(48);
-            write(excelRow, 0, index + 1, bodyStyle); write(excelRow, 1, row.phase(), bodyStyle); write(excelRow, 2, row.location(), bodyStyle); write(excelRow, 3, row.description(), bodyStyle);
+            write(excelRow, 0, index + 1, bodyStyle); write(excelRow, 1, row.phase(), bodyStyle);
+            writeRichTextLocation(workbook, sheet, excelRow, row.location(), bodyStyle);
+            write(excelRow, 3, row.description(), bodyStyle);
             write(excelRow, 4, row.raisedByName(), bodyStyle); write(excelRow, 5, row.severity(), bodyStyle); write(excelRow, 6, row.handling(), bodyStyle); write(excelRow, 7, row.confirmation(), bodyStyle);
         }
         sheet.setAutoFilter(new CellRangeAddress(3, Math.max(4, rows.size() + 3), 0, HEADERS.length - 1)); sheet.createFreezePane(0, 4);
@@ -228,6 +240,44 @@ public class TaskArchiveOpinionExportApplicationService {
     private void styleRow(org.apache.poi.ss.usermodel.Row row, CellStyle style) { for (int index = 0; index < HEADERS.length; index++) { Cell cell = row.getCell(index); if (cell == null) cell = row.createCell(index); cell.setCellStyle(style); } }
     private void write(org.apache.poi.ss.usermodel.Row row, int column, Object value, CellStyle style) { Cell cell = row.createCell(column); cell.setCellValue(value == null ? "" : String.valueOf(value)); cell.setCellStyle(style); }
 
+    /**
+     * 富文本中的普通文字写入“位置”单元格；前端粘贴图片产生的 data URL 则解码并嵌入该单元格。
+     * Excel 不支持在单个单元格内混排 HTML，因此图片以跟随单元格移动和缩放的绘图对象呈现。
+     */
+    private void writeRichTextLocation(XSSFWorkbook workbook, XSSFSheet sheet, org.apache.poi.ss.usermodel.Row row,
+                                       RichTextContent richText, CellStyle style) {
+        write(row, LOCATION_COLUMN, richText.plainText(), style);
+        if (richText.images().isEmpty()) {
+            return;
+        }
+        float textHeight = textHeight(richText.plainText());
+        float imageHeight = Math.min(DEFAULT_IMAGE_HEIGHT_POINTS,
+                Math.max(32F, (MAX_LOCATION_ROW_HEIGHT_POINTS - textHeight - 8F) / richText.images().size()));
+        row.setHeightInPoints(Math.min(MAX_LOCATION_ROW_HEIGHT_POINTS,
+                textHeight + imageHeight * richText.images().size() + 8F));
+        Drawing<?> drawing = sheet.createDrawingPatriarch();
+        for (int index = 0; index < richText.images().size(); index++) {
+            EmbeddedImage image = richText.images().get(index);
+            ClientAnchor anchor = workbook.getCreationHelper().createClientAnchor();
+            anchor.setAnchorType(ClientAnchor.AnchorType.MOVE_AND_RESIZE);
+            anchor.setCol1(LOCATION_COLUMN);
+            anchor.setCol2(LOCATION_COLUMN + 1);
+            anchor.setRow1(row.getRowNum());
+            anchor.setRow2(row.getRowNum() + 1);
+            anchor.setDy1(org.apache.poi.util.Units.toEMU((int) (textHeight + imageHeight * index)));
+            anchor.setDy2(org.apache.poi.util.Units.toEMU((int) (textHeight + imageHeight * (index + 1) - 4F)));
+            drawing.createPicture(anchor, workbook.addPicture(image.content(), image.pictureType()));
+        }
+    }
+
+    private float textHeight(String text) {
+        if (text == null || text.isBlank()) {
+            return 20F;
+        }
+        int lines = Math.max(1, text.split("\\R", -1).length);
+        return Math.min(140F, Math.max(20F, lines * 16F));
+    }
+
     private ReviewTaskRecord requireFinishedTask(long taskId) {
         ReviewTaskRecord task = taskMapper.findById(taskId); if (task == null) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "评审任务不存在");
         if (!TaskStatus.FINISHED.name().equals(task.getStatus())) throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "任务尚未结束，不能导出归档意见"); return task;
@@ -245,11 +295,45 @@ public class TaskArchiveOpinionExportApplicationService {
     }
     private String employeeName(String employeeNo) { return userProfileClient.getByEmployeeNo(employeeNo).displayName(); }
     private String formatDate(LocalDateTime dateTime) { return dateTime == null ? "" : DATE_FORMATTER.format(dateTime); }
+    private RichTextContent richTextContent(String richText) {
+        if (richText == null || richText.isBlank()) {
+            return new RichTextContent("", List.of());
+        }
+        List<EmbeddedImage> images = new ArrayList<>();
+        Matcher matcher = DATA_IMAGE_PATTERN.matcher(richText);
+        while (matcher.find()) {
+            image(matcher.group(1), matcher.group(2)).ifPresent(images::add);
+        }
+        String textWithImagePlaceholders = matcher.reset().replaceAll("[图片]");
+        return new RichTextContent(richTextToPlainText(textWithImagePlaceholders), List.copyOf(images));
+    }
+
+    private java.util.Optional<EmbeddedImage> image(String imageType, String encodedContent) {
+        int pictureType = switch (imageType.toLowerCase(java.util.Locale.ROOT)) {
+            case "png" -> XSSFWorkbook.PICTURE_TYPE_PNG;
+            case "jpeg", "jpg" -> XSSFWorkbook.PICTURE_TYPE_JPEG;
+            case "gif" -> XSSFWorkbook.PICTURE_TYPE_GIF;
+            case "bmp" -> XSSFWorkbook.PICTURE_TYPE_DIB;
+            default -> -1;
+        };
+        if (pictureType < 0) {
+            return java.util.Optional.empty();
+        }
+        try {
+            byte[] content = Base64.getDecoder().decode(encodedContent);
+            return content.length == 0 ? java.util.Optional.empty() : java.util.Optional.of(new EmbeddedImage(content, pictureType));
+        } catch (IllegalArgumentException exception) {
+            return java.util.Optional.empty();
+        }
+    }
+
     private String richTextToPlainText(String richText) { if (richText == null || richText.isBlank()) return ""; return richText.replaceAll("(?i)<br\\s*/?>", "\\n").replaceAll("(?i)</(p|div|li|tr|h[1-6])>", "\\n").replaceAll("(?s)<img[^>]*>", "[图片]").replaceAll("(?s)<[^>]+>", "").replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replaceAll("\\n{3,}", "\\n\\n").trim(); }
     private String fileName(ReviewTaskRecord task) { return (task.getProjectName() + "_" + task.getDesignName() + "_评审意见").replaceAll("[\\\\/:*?\"<>|]", "_") + ".xlsx"; }
 
     public record ExportedExcel(String fileName, byte[] content) { }
-    private record ExportRow(String phase, String location, String description, String raisedByName, String severity, String handling, String confirmation) { }
+    private record ExportRow(String phase, RichTextContent location, String description, String raisedByName, String severity, String handling, String confirmation) { }
+    private record RichTextContent(String plainText, List<EmbeddedImage> images) { }
+    private record EmbeddedImage(byte[] content, int pictureType) { }
     private record SchematicExportRow(LocalDateTime raisedAt, String reviewObject, String description, String severity,
                                       String causeAnalysis, String handlingMeasure, LocalDateTime resolvedAt,
                                       String responsiblePerson, String status, String remark) { }

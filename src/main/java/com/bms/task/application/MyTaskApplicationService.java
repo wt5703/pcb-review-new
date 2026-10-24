@@ -64,6 +64,28 @@ public class MyTaskApplicationService {
                 .map(task -> toView(task, actions.get(task.getId()))).toList();
     }
 
+    /**
+     * 工作台卡片统计复用“我的待办”的任务范围，保证统计数字与待办列表一致。
+     * 本月已结束以任务最终状态写入时间为准，并只统计当前设计者创建的任务。
+     */
+    public WorkbenchTaskStatistics statistics(String operatorEmployeeNo) {
+        List<MyTaskView> myTasks = list(operatorEmployeeNo, null);
+        int reviewingTaskCount = (int) myTasks.stream()
+                .filter(task -> task.actions().contains(MyTaskAction.REVIEW))
+                .count();
+        int pendingReplyTaskCount = (int) myTasks.stream()
+                .filter(task -> task.actions().contains(MyTaskAction.REPLY_OPINION))
+                .count();
+        int pendingConfirmationTaskCount = (int) myTasks.stream()
+                .filter(task -> task.actions().contains(MyTaskAction.CONFIRM_OPINION))
+                .count();
+        LocalDate firstDayOfMonth = LocalDate.now().withDayOfMonth(1);
+        long finishedThisMonthCount = taskMapper.countFinishedByDesignerEmployeeNoInPeriod(operatorEmployeeNo,
+                firstDayOfMonth.atStartOfDay(), firstDayOfMonth.plusMonths(1).atStartOfDay());
+        return new WorkbenchTaskStatistics(myTasks.size(), reviewingTaskCount, pendingReplyTaskCount,
+                pendingConfirmationTaskCount, finishedThisMonthCount);
+    }
+
     private MyTaskView toView(ReviewTaskRecord task, EnumSet<MyTaskAction> actions) {
         return MyTaskView.from(task,
                 reviewerWhitelistApplicationService.findDisplayNameOrDefault(task.getDesignerEmployeeNo(), task.getDesignerName()),
@@ -96,4 +118,7 @@ public class MyTaskApplicationService {
                     TaskStatus.valueOf(record.getStatus()), List.copyOf(actions));
         }
     }
+
+    public record WorkbenchTaskStatistics(int myTaskCount, int reviewingTaskCount, int pendingReplyTaskCount,
+                                          int pendingConfirmationTaskCount, long finishedThisMonthCount) { }
 }

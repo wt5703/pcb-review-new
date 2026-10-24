@@ -14,7 +14,7 @@ import java.util.List;
 
 /** 使用项目配置的 JavaMailSender 投递 Outbox 邮件，并从文件资源服务读取已登记的附件。 */
 @Component
-@ConditionalOnProperty(prefix = "mail", name = "host")
+@ConditionalOnProperty(prefix = "spring.mail", name = "host")
 public class JavaMailGateway implements MailGateway {
     private final JavaMailSender mailSender;
     private final ResourceServiceClient resourceServiceClient;
@@ -42,6 +42,9 @@ public class JavaMailGateway implements MailGateway {
             helper.setText(message.content(), false);
             for (MailMessage.MailAttachment attachment : message.attachments()) {
                 byte[] content = resourceServiceClient.download(attachment.fileName(), attachment.resourcePath());
+                if (content == null || content.length == 0) {
+                    throw new IllegalStateException("邮件附件内容为空：" + attachment.fileName());
+                }
                 helper.addAttachment(attachment.fileName(), new ByteArrayResource(content));
             }
             mailSender.send(mimeMessage);

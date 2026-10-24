@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Set;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -56,6 +57,27 @@ class MyTaskApplicationServiceTest {
         List<MyTaskApplicationService.MyTaskView> leaderTasks = service.list("BMS001", "BMS001");
         assertThat(leaderTasks).extracting(MyTaskApplicationService.MyTaskView::id).containsExactly(2L);
         assertThat(leaderTasks.get(0).actions()).containsExactly(MyTaskAction.FINISH_TASK);
+    }
+
+    @Test
+    void shouldSummarizeCurrentUsersWorkbenchTasks() {
+        when(taskMapper.findAllUnfinished()).thenReturn(List.of(
+                task(1L, "BMS010", TaskStatus.MUTUAL_CHECK_REVIEWING),
+                task(2L, "BMS010", TaskStatus.MUTUAL_CHECK_REVIEWING),
+                task(3L, "BMS010", TaskStatus.MUTUAL_CHECK_REVIEWING)));
+        when(assignmentAccessMapper.isCurrentTaskProcessor(1L, "BMS010")).thenReturn(true);
+        when(opinionMapper.findPendingReplyTaskIdsForDesignerEmployeeNo("BMS010")).thenReturn(List.of(2L));
+        when(opinionMapper.findPendingConfirmationTaskIdsForRaiserEmployeeNo("BMS010")).thenReturn(List.of(3L));
+        when(taskMapper.countFinishedByDesignerEmployeeNoInPeriod(org.mockito.ArgumentMatchers.eq("BMS010"),
+                org.mockito.ArgumentMatchers.any(LocalDateTime.class), org.mockito.ArgumentMatchers.any(LocalDateTime.class))).thenReturn(16L);
+
+        MyTaskApplicationService.WorkbenchTaskStatistics statistics = service.statistics("BMS010");
+
+        assertThat(statistics.myTaskCount()).isEqualTo(3);
+        assertThat(statistics.reviewingTaskCount()).isEqualTo(1);
+        assertThat(statistics.pendingReplyTaskCount()).isEqualTo(1);
+        assertThat(statistics.pendingConfirmationTaskCount()).isEqualTo(1);
+        assertThat(statistics.finishedThisMonthCount()).isEqualTo(16);
     }
 
     private ReviewTaskRecord task(long id, String designerEmployeeNo, TaskStatus status) {

@@ -30,6 +30,18 @@ class TaskControllerIntegrationTest {
     private ReviewFileMapper reviewFileMapper;
 
     @Test
+    void shouldReturnWorkbenchTaskStatisticsForCurrentUser() throws Exception {
+        mockMvc.perform(get("/tasks/workbench/statistics")
+                        .header("userId", "BMS010"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.myTaskCount").isNumber())
+                .andExpect(jsonPath("$.data.reviewingTaskCount").isNumber())
+                .andExpect(jsonPath("$.data.pendingReplyTaskCount").isNumber())
+                .andExpect(jsonPath("$.data.pendingConfirmationTaskCount").isNumber())
+                .andExpect(jsonPath("$.data.finishedThisMonthCount").isNumber());
+    }
+
+    @Test
     void shouldCreateAndSubmitTaskWithCompanyFileReferences() throws Exception {
         String pcbFileId = "c778c14e-6f1a-4f4f-9f11-100000000001";
         String schematicFileId = "c778c14e-6f1a-4f4f-9f11-100000000002";

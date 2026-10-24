@@ -62,16 +62,14 @@ public class TaskArchiveController {
         return ResponseEntity.ok()
                 .contentType(EXCEL_MEDIA_TYPE)
                 .contentLength(excel.content().length)
-                // filename 提供纯 ASCII 兜底，filename* 供支持 RFC 5987 的浏览器显示中文文件名；
-                // 不再使用 Spring 的 MIME Q 编码文件名，避免其被客户端下载成乱码文件。
+                // 仅保留实际导出名称的 RFC 5987 参数，避免下载组件将多个 filename 参数拼入文件名。
                 .header(HttpHeaders.CONTENT_DISPOSITION, attachmentFileName(excel.fileName()))
                 .header("X-Content-Type-Options", "nosniff")
                 .body(excel.content());
     }
 
     private String attachmentFileName(String fileName) {
-        return "attachment; filename=\"review-opinions.xlsx\"; filename*=UTF-8''"
-                + UriUtils.encode(fileName, StandardCharsets.UTF_8);
+        return "attachment; filename*=UTF-8''" + UriUtils.encode(fileName, StandardCharsets.UTF_8);
     }
 
     private String traceId(HttpServletRequest request) { return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString(); }

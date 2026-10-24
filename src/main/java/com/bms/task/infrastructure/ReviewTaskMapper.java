@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -94,8 +95,15 @@ public interface ReviewTaskMapper {
     @Select("SELECT id, review_type AS reviewType, task_name AS taskName, project_name AS projectName, designer_employee_no AS designerEmployeeNo, "
             + "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, "
             + "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, mutual_check_reviewer_employee_nos AS mutualCheckReviewerEmployeeNos, review_description AS reviewDescription, "
-            + "status, initial_file_ids AS initialFileIds, version FROM review_task WHERE status <> 'FINISHED' ORDER BY id")
+            + "status, initial_file_ids AS initialFileIds, version FROM review_task WHERE status <> 'FINISHED' ORDER BY id DESC")
     List<ReviewTaskRecord> findAllUnfinished();
+
+    /** 工作台“本月已结束”仅统计当前设计者创建，并在指定自然月内结束的任务。 */
+    @Select("SELECT COUNT(*) FROM review_task WHERE designer_employee_no=#{designerEmployeeNo} AND status='FINISHED' "
+            + "AND updated_at >= #{monthStart} AND updated_at < #{nextMonthStart}")
+    long countFinishedByDesignerEmployeeNoInPeriod(@Param("designerEmployeeNo") String designerEmployeeNo,
+                                                   @Param("monthStart") LocalDateTime monthStart,
+                                                   @Param("nextMonthStart") LocalDateTime nextMonthStart);
 
     /** 提交任务或保存初始文件时，同步保存角色—专家分配，供邮件通知等后续流程读取。 */
     @Update("UPDATE review_task SET pcb_type=#{pcbType}, review_roles=#{reviewRoles}, reviewer_assignments=#{reviewerAssignments}, "

@@ -54,7 +54,7 @@ public class OpinionController {
     }
 
     @PostMapping("/tasks/{taskId}/opinions/no-opinion")
-    @Operation(summary = "确认提交评审结果", description = "专家、工艺或结构评审人确认当前阶段不再提交意见。未提出意见时可直接提交；已提出意见时，必须全部答复并由提出人确认通过后才能提交。接口不推进流程。")
+    @Operation(summary = "确认提交评审结果", description = "专家、工艺、结构或原理图互检评审人确认当前阶段不再提交意见。未提出意见时可直接提交；已提出意见时，必须全部答复并由提出人确认通过后才能提交。接口不推进流程。")
     ApiResponse<OpinionApplicationService.OpinionView> submitNoOpinion(@PathVariable long taskId,
                                                                          @Valid @RequestBody SubmitNoOpinionRequest request,
                                                                          @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
@@ -139,7 +139,7 @@ public class OpinionController {
                                @Schema(description = "问题等级：SERIOUS 严重、GENERAL 一般、MINOR 轻微") OpinionSeverity severity) {
     }
     @Schema(description = "无意见确认提交请求")
-    record SubmitNoOpinionRequest(@Schema(description = "当前评审来源，仅允许 PCB_REVIEW、PCB_PROCESS_REVIEW、PCB_STRUCTURE_REVIEW 或 SCHEMATIC_REVIEW", requiredMode = Schema.RequiredMode.REQUIRED)
+    record SubmitNoOpinionRequest(@Schema(description = "当前评审来源，仅允许 PCB_REVIEW、PCB_PROCESS_REVIEW、PCB_STRUCTURE_REVIEW 或 SCHEMATIC_REVIEW；原理图互检阶段使用 SCHEMATIC_REVIEW", requiredMode = Schema.RequiredMode.REQUIRED)
                                   @NotNull OpinionSourceType sourceType) { }
     @Schema(description = "编辑评审意见请求")
     record UpdateOpinionRequest(@Schema(description = "具体、可执行的评审意见内容", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String comment,

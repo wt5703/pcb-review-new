@@ -99,6 +99,13 @@ public class TaskController {
         return ApiResponse.ok(myTaskApplicationService.list(employeeNo, null), getTraceId(servletRequest));
     }
 
+    @GetMapping("/workbench/statistics")
+    @Operation(summary = "查询当前用户工作台任务统计", description = "返回当前用户的待办任务数、其中待评审数、待答复任务数、待确认任务数，以及当前用户作为设计者在本月已结束的任务数。")
+    ApiResponse<MyTaskApplicationService.WorkbenchTaskStatistics> workbenchStatistics(
+            @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(myTaskApplicationService.statistics(employeeNo), getTraceId(servletRequest));
+    }
+
     private String getTraceId(HttpServletRequest request) {
         return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString();
     }

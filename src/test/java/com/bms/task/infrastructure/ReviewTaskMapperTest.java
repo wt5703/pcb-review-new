@@ -21,4 +21,12 @@ class ReviewTaskMapperTest {
                         "ORDER BY id DESC LIMIT #{limit} OFFSET #{offset}")
                 .doesNotContain("#{keyword}");
     }
+
+    @Test
+    void myTasksShouldOrderUnfinishedTasksByIdDescending() throws Exception {
+        Select select = ReviewTaskMapper.class.getMethod("findAllUnfinished").getAnnotation(Select.class);
+
+        assertThat(String.join(" ", select.value()))
+                .contains("WHERE status <> 'FINISHED' ORDER BY id DESC");
+    }
 }

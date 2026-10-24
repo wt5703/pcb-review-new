@@ -40,7 +40,8 @@ class TaskArchiveOpinionExportApplicationServiceTest {
         ReviewTaskRecord task = new ReviewTaskRecord();
         task.setId(101L); task.setProjectName("BMS"); task.setDesignName("控制板"); task.setStatus("FINISHED");
         task.setReviewerAssignments("EMC_EXPERT:BMS010;STRUCTURE_EXPERT:BMS011");
-        ReviewOpinionRecord emcOpinion = opinion(1L, OpinionSourceType.PCB_REVIEW, "BMS010", "王工", OpinionSeverity.SERIOUS, "<p>CANH<br/>CANL</p><img src='data:image/png;base64,a' />", "CAN 总线问题");
+        ReviewOpinionRecord emcOpinion = opinion(1L, OpinionSourceType.PCB_REVIEW, "BMS010", "王工", OpinionSeverity.SERIOUS,
+                "<p>CANH<br/>CANL</p><img src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9J6v8AAAAASUVORK5CYII=' />", "CAN 总线问题");
         ReviewOpinionRecord structureOpinion = opinion(2L, OpinionSourceType.PCB_STRUCTURE_REVIEW, "BMS011", "张工", OpinionSeverity.GENERAL, "结构位置", "结构问题");
         OpinionReplyRecord firstReply = reply(21L, "ACCEPT", "已调整"); OpinionReplyRecord secondReply = reply(22L, "REJECT", "保留原设计");
         OpinionConfirmationRecord confirmation = new OpinionConfirmationRecord(); confirmation.setId(31L); confirmation.setReplyId(21L); confirmation.setPassed(true); confirmation.setComment("确认通过");
@@ -60,6 +61,7 @@ class TaskArchiveOpinionExportApplicationServiceTest {
             assertThat(emc).isNotNull(); assertThat(structure).isNotNull();
             assertThat(emc.getRow(4).getCell(1).getStringCellValue()).isEqualTo("专家评审");
             assertThat(emc.getRow(4).getCell(2).getStringCellValue()).contains("CANH", "[图片]");
+            assertThat(workbook.getAllPictures()).hasSize(2);
             assertThat(emc.getRow(4).getCell(6).getStringCellValue()).isEqualTo("接受并修改：已调整");
             assertThat(emc.getRow(4).getCell(7).getStringCellValue()).isEqualTo("确认通过：确认通过");
             assertThat(emc.getRow(5).getCell(6).getStringCellValue()).isEqualTo("不接受：保留原设计");

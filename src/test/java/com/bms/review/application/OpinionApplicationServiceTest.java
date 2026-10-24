@@ -23,6 +23,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.util.Set;
 import java.util.List;
+import java.util.ArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -143,6 +144,31 @@ class OpinionApplicationServiceTest {
                         OpinionSourceType.PCB_REVIEW, "BMS020", "BMS020"))
                 .isInstanceOf(com.bms.common.BusinessException.class)
                 .hasMessage("仍存在未答复、未确认或未确认通过的评审意见，不能确认提交");
+    }
+
+    @Test
+    void shouldAllowSchematicReviewerToSubmitNoOpinionDuringMutualCheck() {
+        ReviewTaskRecord activeTask = task("BMS009");
+        activeTask.setReviewType(ReviewType.SCHEMATIC.name());
+        activeTask.setStatus(TaskStatus.MUTUAL_CHECK_REVIEWING.name());
+        activeTask.setAssignedReviewerEmployeeNos("BMS020");
+        List<ReviewOpinionRecord> persistedOpinions = new ArrayList<>();
+        when(taskMapper.findById(1001L)).thenReturn(activeTask);
+        when(opinionMapper.findByTaskId(1001L)).thenAnswer(invocation -> persistedOpinions);
+        when(opinionMapper.nextOpinionId()).thenReturn(31L);
+        when(opinionMapper.insert(any())).thenAnswer(invocation -> {
+            persistedOpinions.add(invocation.getArgument(0));
+            return 1;
+        });
+        when(taskMapper.updateAssignedReviewerEmployeeNos(any())).thenReturn(1);
+
+        OpinionApplicationService.OpinionView view = service.submitNoOpinion(1001L,
+                OpinionSourceType.SCHEMATIC_REVIEW, "BMS020", "张工");
+
+        assertThat(view.sourceType()).isEqualTo(OpinionSourceType.SCHEMATIC_REVIEW);
+        assertThat(view.status()).isEqualTo(OpinionStatus.CONFIRMED_PASS);
+        assertThat(activeTask.getAssignedReviewerEmployeeNos()).isEmpty();
+        verify(taskMapper).updateAssignedReviewerEmployeeNos(activeTask);
     }
 
     @Test

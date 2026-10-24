@@ -21,6 +21,9 @@ spring:
         username: nacos
         password: nacos
         namespace: test
+  mail:
+    host: smtp.leapmotor.com
+    username: bms_alg@leapmotor.com
 server:
   servlet:
     context-path: /leapmotor/pcb_review
@@ -37,11 +40,12 @@ springdoc:
     path: /swagger-ui.html
 resource-service:
   # 公司资源服务基础地址及上传、下载路径均由环境变量覆盖，业务代码不固化公司接口地址。
+  # 运行环境默认调用真实资源服务，确保邮件附件下载到原始二进制内容；测试配置单独开启 Mock。
   api-prefix: ${RESOURCE_SERVICE_API_PREFIX:http://10.195.135.149:30860/leapmotor/pm/resource}
   upload-path: ${RESOURCE_SERVICE_UPLOAD_PATH:/upload}
   download-path: ${RESOURCE_SERVICE_DOWNLOAD_PATH:/download}
   dir-path: ${RESOURCE_SERVICE_DIR_PATH:/user/bms_platform/pcb_review/test1}
-  mock-enabled: ${RESOURCE_SERVICE_MOCK_ENABLED:true}
+  mock-enabled: ${RESOURCE_SERVICE_MOCK_ENABLED:false}
 user-center:
   # 白名单展示资料以员工工号从公司用户中心获取；开发环境默认不访问内网并展示员工工号。
   user-profile-url-template: ${USER_CENTER_USER_PROFILE_URL_TEMPLATE:}

@@ -30,7 +30,7 @@ class TaskArchiveControllerTest {
         assertThat(response.getHeaders().getContentType().toString())
                 .isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         assertThat(response.getHeaders().getContentLength()).isEqualTo(3L);
-        assertThat(disposition).startsWith("attachment; filename=\"review-opinions.xlsx\"; filename*=UTF-8''")
-                .doesNotContain("=?UTF-8?Q?", "?=");
+        assertThat(disposition).startsWith("attachment; filename*=UTF-8''")
+                .doesNotContain("review-opinions.xlsx", "=?UTF-8?Q?", "?=");
     }
 }
