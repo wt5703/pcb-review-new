@@ -3,9 +3,9 @@ spring:
     name: pcb-review
   datasource:
     # 默认沿用原 application-mysql.yml 的 MySQL 配置；部署环境可用环境变量覆盖。
-    url: ${SPRING_DATASOURCE_URL:${PCB_REVIEW_DB_URL:jdbc:mysql://localhost:3306/pcb_review?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai}}
+    url: ${SPRING_DATASOURCE_URL:${PCB_REVIEW_DB_URL:jdbc:mysql://10.195.135.149:32217/pcb?useUnicode=true&serverTimezone=Asia/Shanghai}
     username: ${SPRING_DATASOURCE_USERNAME:${PCB_REVIEW_DB_USERNAME:root}}
-    password: ${SPRING_DATASOURCE_PASSWORD:${PCB_REVIEW_DB_PASSWORD:Wt260831}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${PCB_REVIEW_DB_PASSWORD:qwer1234}}
     driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:${PCB_REVIEW_DB_DRIVER_CLASS_NAME:com.mysql.cj.jdbc.Driver}}
   jackson:
     default-property-inclusion: non_null
@@ -48,4 +48,4 @@ resource-service:
   mock-enabled: ${RESOURCE_SERVICE_MOCK_ENABLED:false}
 user-center:
   # 白名单展示资料以员工工号从公司用户中心获取；开发环境默认不访问内网并展示员工工号。
-  user-profile-url-template: ${USER_CENTER_USER_PROFILE_URL_TEMPLATE:}
+  user-profile-url-template: ${USER_CENTER_USER_PROFILE_URL_TEMPLATE:http://10.195.135.149:30167/leapenergy/portal/user/{employee}}

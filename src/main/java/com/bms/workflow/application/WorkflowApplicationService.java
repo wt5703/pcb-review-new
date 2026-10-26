@@ -420,18 +420,22 @@ public class WorkflowApplicationService {
     }
 
     /**
-     * 按动作核对前序意见。工艺、结构两个分支分别只要求专家评审意见闭环，
-     * 所以其中一个分支产生的新意见不会阻塞另一个分支的启动。
+     * 按动作核对前序意见和已分配评审人的完成情况。不能只校验“已有意见是否闭环”：
+     * 某位被分配专家完全没有提交时，也必须阻止设计者进入下一节点。
      */
     private void validateActionPrerequisites(ReviewTaskRecord task, WorkflowAction action) {
         switch (action) {
             case START_PCB_STRUCTURE_REVIEW, START_PCB_PROCESS_REVIEW -> {
                 requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.PCB_REVIEW), "专家评审意见尚未全部确认通过，不能开启工艺或结构评审");
                 requirePcbExpertsSubmitted(task.getId());
+                // 已处于工艺/结构阶段时，设计者再次开启另一分支前，先等待已开启分支的人员完成。
+                requireOpenedPcbOptionalReviewersCompleted(task);
             }
-            case START_PCB_MATUAL_ASSIGNMENT ->
+            case START_PCB_MATUAL_ASSIGNMENT -> {
                     requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.PCB_REVIEW, OpinionSourceType.PCB_PROCESS_REVIEW,
                             OpinionSourceType.PCB_STRUCTURE_REVIEW), "专家、工艺或结构评审意见尚未全部确认通过，不能开启互检单分配");
+                requireOpenedPcbOptionalReviewersCompleted(task);
+            }
             case START_SCHEMATIC_EXPERT_REVIEW ->
                     requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.MUTUAL_CHECK_ITEM, OpinionSourceType.MUTUAL_EXTRA),
                             "互检单意见尚未全部确认通过，不能开启原理图评审");
@@ -442,6 +446,9 @@ public class WorkflowApplicationService {
                 } else {
                     requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.SCHEMATIC_REVIEW),
                             "原理图专家评审意见尚未全部确认通过，不能进入待结束");
+                    requireAssignedReviewersCompleted(task, List.of(ReviewRole.HARDWARE_EXPERT),
+                            OpinionSourceType.SCHEMATIC_REVIEW,
+                            "仍有已分配原理图专家未提交评审意见或确认无意见，不能进入待结束");
                 }
             }
             default -> { }
@@ -465,14 +472,64 @@ public class WorkflowApplicationService {
         if (assignedExpertEmployeeNos.isEmpty() && task.getExpertLeaderEmployeeNo() != null) {
             assignedExpertEmployeeNos = List.of(task.getExpertLeaderEmployeeNo());
         }
-        List<String> requiredReviewerEmployeeNos = assignedExpertEmployeeNos;
-        boolean allSubmitted = !requiredReviewerEmployeeNos.isEmpty() && requiredReviewerEmployeeNos.stream().allMatch(reviewerEmployeeNo ->
-                opinionMapper.findByTaskId(taskId).stream().anyMatch(opinion -> OpinionSourceType.PCB_REVIEW == opinion.getSourceType()
-                        && reviewerEmployeeNo.equals(opinion.getRaisedByEmployeeNo())));
-        if (!allSubmitted) {
+        if (assignedExpertEmployeeNos.isEmpty() || !allAssignedReviewersCompleted(assignedExpertEmployeeNos,
+                OpinionSourceType.PCB_REVIEW, opinionsFor(taskId))) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT,
                     "仍有已分配专家未提交评审意见或确认无意见，不能开启工艺或结构评审");
         }
+    }
+
+    /**
+     * PCB 工艺、结构评审可先后开启。进入互检或开启另一分支前，已开启分支的每位分配专家
+     * 都必须有对应来源的意见记录，且这些意见已确认通过；无意见确认提交也会生成该来源的通过记录。
+     */
+    private void requireOpenedPcbOptionalReviewersCompleted(ReviewTaskRecord task) {
+        List<TaskFlowRecord> records = flowMapper.findByTaskId(task.getId());
+        List<TaskFlowRecord> safeRecords = records == null ? List.of() : records;
+        if (safeRecords.stream().anyMatch(record -> WorkflowAction.START_PCB_PROCESS_REVIEW.name().equals(record.getAction()))) {
+            requireAssignedReviewersCompleted(task, List.of(ReviewRole.PROCESS_EXPERT), OpinionSourceType.PCB_PROCESS_REVIEW,
+                    "仍有已分配工艺专家未提交评审意见或确认无意见，不能进入下一流程");
+        }
+        if (safeRecords.stream().anyMatch(record -> WorkflowAction.START_PCB_STRUCTURE_REVIEW.name().equals(record.getAction()))) {
+            requireAssignedReviewersCompleted(task, List.of(ReviewRole.STRUCTURE_EXPERT), OpinionSourceType.PCB_STRUCTURE_REVIEW,
+                    "仍有已分配结构专家未提交评审意见或确认无意见，不能进入下一流程");
+        }
+    }
+
+    /** 角色分配快照是“应完成人员”的依据；没有该角色分配时不凭空增加待办。 */
+    private void requireAssignedReviewersCompleted(ReviewTaskRecord task, List<ReviewRole> roles,
+                                                    OpinionSourceType sourceType, String message) {
+        Set<ReviewRole> requiredRoles = Set.copyOf(roles);
+        List<String> reviewerEmployeeNos = TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments()).stream()
+                .filter(assignment -> requiredRoles.contains(assignment.reviewRole()))
+                .flatMap(assignment -> assignment.reviewerEmployeeNos().stream())
+                .distinct()
+                .toList();
+        if (!reviewerEmployeeNos.isEmpty()
+                && !allAssignedReviewersCompleted(reviewerEmployeeNos, sourceType, opinionsFor(task.getId()))) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, message);
+        }
+    }
+
+    private boolean allAssignedReviewersCompleted(List<String> reviewerEmployeeNos, OpinionSourceType sourceType,
+                                                  List<com.bms.review.infrastructure.ReviewOpinionRecord> opinions) {
+        return reviewerEmployeeNos.stream().allMatch(reviewerEmployeeNo -> {
+            List<com.bms.review.infrastructure.ReviewOpinionRecord> reviewerOpinions = opinions.stream()
+                    .filter(opinion -> sourceType == opinion.getSourceType()
+                            && reviewerEmployeeNo.equals(opinion.getRaisedByEmployeeNo()))
+                    .toList();
+            return !reviewerOpinions.isEmpty() && reviewerOpinions.stream().allMatch(this::isConfirmedPassOrWithdrawn);
+        });
+    }
+
+    private List<com.bms.review.infrastructure.ReviewOpinionRecord> opinionsFor(long taskId) {
+        List<com.bms.review.infrastructure.ReviewOpinionRecord> opinions = opinionMapper.findByTaskId(taskId);
+        return opinions == null ? List.of() : opinions;
+    }
+
+    private boolean isConfirmedPassOrWithdrawn(com.bms.review.infrastructure.ReviewOpinionRecord opinion) {
+        return OpinionStatus.CONFIRMED_PASS.name().equals(opinion.getStatus())
+                || OpinionStatus.WITHDRAWN.name().equals(opinion.getStatus());
     }
 
     /** 流程推进前确认文件接口已完成当前阶段文件的上传和落库。 */

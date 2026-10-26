@@ -21,7 +21,7 @@ import java.time.LocalDate;
 /**
  * @author 王涛
  * @date 2026-09-14
- * @description 计算“我的任务”待办清单，只返回当前节点需要用户评审、答复、确认、分配或结束的任务，不混入用户创建或仅可查看的任务。
+ * @description 计算“我的任务”待办清单，只返回当前节点需要用户评审、提交流程、答复、确认、分配或结束的任务，不混入用户创建或仅可查看的任务。
  */
 @Service
 public class MyTaskApplicationService {
@@ -55,6 +55,7 @@ public class MyTaskApplicationService {
             if (pendingConfirmationTaskIds.contains(task.getId())) {
                 taskActions.add(MyTaskAction.CONFIRM_OPINION);
             }
+            addDesignerWorkflowSubmissionAction(task, operatorEmployeeNo, taskActions);
             addManagementAction(task, operatorEmployeeNo, operatorName, taskActions);
             if (!taskActions.isEmpty()) {
                 actions.put(task.getId(), taskActions);
@@ -90,6 +91,21 @@ public class MyTaskApplicationService {
         return MyTaskView.from(task,
                 reviewerWhitelistApplicationService.findDisplayNameOrDefault(task.getDesignerEmployeeNo(), task.getDesignerName()),
                 reviewerWhitelistApplicationService.findDisplayNameOrDefault(task.getExpertLeaderEmployeeNo(), task.getExpertLeaderName()), actions);
+    }
+
+    /** PCB、原理图的指定评审阶段均由设计者继续提交对应的流程动作。 */
+    private void addDesignerWorkflowSubmissionAction(ReviewTaskRecord task, String operatorEmployeeNo,
+                                                     EnumSet<MyTaskAction> actions) {
+        if (!operatorEmployeeNo.equals(task.getDesignerEmployeeNo())) {
+            return;
+        }
+        TaskStatus status = TaskStatus.valueOf(task.getStatus());
+        if ((ReviewType.SCHEMATIC.name().equals(task.getReviewType())
+                && (status == TaskStatus.MUTUAL_CHECK_REVIEWING || status == TaskStatus.SCHEMATIC_REVIEWING))
+                || (ReviewType.PCB.name().equals(task.getReviewType())
+                && (status == TaskStatus.PCB_EXPERT_REVIEWING || status == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING))) {
+            actions.add(MyTaskAction.SUBMIT_WORKFLOW);
+        }
     }
 
     private void addManagementAction(ReviewTaskRecord task, String operatorEmployeeNo, String operatorName, EnumSet<MyTaskAction> actions) {

@@ -7,6 +7,8 @@ package com.bms.task.domain;
  */
 public enum MyTaskAction {
     REVIEW,
+    /** 设计者在当前阶段需要提交流程。 */
+    SUBMIT_WORKFLOW,
     REPLY_OPINION,
     CONFIRM_OPINION,
     ASSIGN_REVIEWERS,

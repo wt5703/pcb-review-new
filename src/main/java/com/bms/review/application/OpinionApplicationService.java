@@ -495,6 +495,7 @@ public class OpinionApplicationService {
                                                               OpinionSourceType completedSource) {
         TaskStatus status = TaskStatus.valueOf(task.getStatus());
         ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
+        boolean hasReviewerAssignmentSnapshot = !TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments()).isEmpty();
         if (status == TaskStatus.MUTUAL_CHECK_REVIEWING) {
             // 原理图互检阶段以 SCHEMATIC_REVIEW 表示确认提交；PCB 仍按互检意见来源处理。
             if (reviewType == ReviewType.SCHEMATIC && completedSource == OpinionSourceType.SCHEMATIC_REVIEW) {
@@ -505,10 +506,17 @@ public class OpinionApplicationService {
                     ? List.of(completedSource) : List.of();
         }
         if (reviewType == ReviewType.PCB && status == TaskStatus.PCB_EXPERT_REVIEWING
-                && hasAssignedRole(task, reviewerEmployeeNo, ReviewRole.PCB_EXPERT, ReviewRole.EMC_EXPERT)) {
+                && (!hasReviewerAssignmentSnapshot
+                || hasAssignedRole(task, reviewerEmployeeNo, ReviewRole.PCB_EXPERT, ReviewRole.EMC_EXPERT))) {
             return List.of(OpinionSourceType.PCB_REVIEW);
         }
         if (reviewType == ReviewType.PCB && status == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING) {
+            // 旧任务没有角色—人员快照时，assigned_reviewer_employee_nos 就是当前节点的唯一授权依据。
+            // 此时本次已确认提交的来源即为该人员应完成的阶段，避免无意见提交后仍残留在待办中。
+            if (!hasReviewerAssignmentSnapshot) {
+                return isActiveOptionalReviewSource(task.getId(), completedSource)
+                        ? List.of(completedSource) : List.of();
+            }
             java.util.ArrayList<OpinionSourceType> sources = new java.util.ArrayList<>();
             if (hasStarted(task.getId(), WorkflowAction.START_PCB_PROCESS_REVIEW)
                     && hasAssignedRole(task, reviewerEmployeeNo, ReviewRole.PROCESS_EXPERT)) {
@@ -521,18 +529,23 @@ public class OpinionApplicationService {
             return List.copyOf(sources);
         }
         if (reviewType == ReviewType.SCHEMATIC && status == TaskStatus.SCHEMATIC_REVIEWING
-                && hasAssignedRole(task, reviewerEmployeeNo, ReviewRole.HARDWARE_EXPERT)) {
+                && (!hasReviewerAssignmentSnapshot
+                || hasAssignedRole(task, reviewerEmployeeNo, ReviewRole.HARDWARE_EXPERT))) {
             return List.of(OpinionSourceType.SCHEMATIC_REVIEW);
         }
         return List.of();
     }
 
+    private boolean isActiveOptionalReviewSource(long taskId, OpinionSourceType sourceType) {
+        return (sourceType == OpinionSourceType.PCB_PROCESS_REVIEW
+                && hasStarted(taskId, WorkflowAction.START_PCB_PROCESS_REVIEW))
+                || (sourceType == OpinionSourceType.PCB_STRUCTURE_REVIEW
+                && hasStarted(taskId, WorkflowAction.START_PCB_STRUCTURE_REVIEW));
+    }
+
     private boolean hasAssignedRole(ReviewTaskRecord task, String reviewerEmployeeNo, ReviewRole... roles) {
         java.util.Set<ReviewRole> requiredRoles = java.util.Set.of(roles);
         List<TaskReviewerAssignment> assignments = TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments());
-        if (assignments.isEmpty()) {
-            return task.getExpertLeaderEmployeeNo() != null && task.getExpertLeaderEmployeeNo().equals(reviewerEmployeeNo);
-        }
         return assignments.stream().anyMatch(assignment -> requiredRoles.contains(assignment.reviewRole())
                 && assignment.reviewerEmployeeNos().contains(reviewerEmployeeNo));
     }

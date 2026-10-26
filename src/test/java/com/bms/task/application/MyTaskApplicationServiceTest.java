@@ -45,6 +45,20 @@ class MyTaskApplicationServiceTest {
     }
 
     @Test
+    void shouldNotReturnTaskAfterReviewerCompletesCurrentStage() {
+        when(taskMapper.findAllUnfinished()).thenReturn(
+                List.of(task(1L, "BMS010", TaskStatus.PCB_EXPERT_REVIEWING)));
+        // 无意见确认提交会把该人员从 assigned_reviewer_employee_nos 移除，访问查询因此返回 false。
+        when(assignmentAccessMapper.isCurrentTaskProcessor(1L, "BMS020")).thenReturn(false);
+        when(opinionMapper.findPendingReplyTaskIdsForDesignerEmployeeNo("BMS020")).thenReturn(List.of());
+        when(opinionMapper.findPendingConfirmationTaskIdsForRaiserEmployeeNo("BMS020")).thenReturn(List.of());
+
+        List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS020", "张工");
+
+        assertThat(tasks).isEmpty();
+    }
+
+    @Test
     void shouldIncludeDesignerReplyAndLeaderFinishActions() {
         when(taskMapper.findAllUnfinished()).thenReturn(
                 List.of(task(1L, "BMS010", TaskStatus.MUTUAL_CHECK_REVIEWING), task(2L, "BMS099", TaskStatus.MUTUAL_CHECK_REVIEWING)),
@@ -57,6 +71,32 @@ class MyTaskApplicationServiceTest {
         List<MyTaskApplicationService.MyTaskView> leaderTasks = service.list("BMS001", "BMS001");
         assertThat(leaderTasks).extracting(MyTaskApplicationService.MyTaskView::id).containsExactly(2L);
         assertThat(leaderTasks.get(0).actions()).containsExactly(MyTaskAction.FINISH_TASK);
+    }
+
+    @Test
+    void shouldIncludeSchematicTasksForDesignerWhenWorkflowSubmissionIsRequired() {
+        ReviewTaskRecord mutualCheckTask = task(1L, "BMS010", TaskStatus.MUTUAL_CHECK_REVIEWING);
+        mutualCheckTask.setReviewType(ReviewType.SCHEMATIC.name());
+        ReviewTaskRecord schematicReviewTask = task(2L, "BMS010", TaskStatus.SCHEMATIC_REVIEWING);
+        schematicReviewTask.setReviewType(ReviewType.SCHEMATIC.name());
+        when(taskMapper.findAllUnfinished()).thenReturn(List.of(mutualCheckTask, schematicReviewTask));
+
+        List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS010", "设计者");
+
+        assertThat(tasks).extracting(MyTaskApplicationService.MyTaskView::id).containsExactly(1L, 2L);
+        assertThat(tasks).allSatisfy(task -> assertThat(task.actions()).containsExactly(MyTaskAction.SUBMIT_WORKFLOW));
+    }
+
+    @Test
+    void shouldIncludePcbTasksForDesignerWhenWorkflowSubmissionIsRequired() {
+        ReviewTaskRecord expertReviewTask = task(1L, "BMS010", TaskStatus.PCB_EXPERT_REVIEWING);
+        ReviewTaskRecord processStructureReviewTask = task(2L, "BMS010", TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
+        when(taskMapper.findAllUnfinished()).thenReturn(List.of(expertReviewTask, processStructureReviewTask));
+
+        List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS010", "设计者");
+
+        assertThat(tasks).extracting(MyTaskApplicationService.MyTaskView::id).containsExactly(1L, 2L);
+        assertThat(tasks).allSatisfy(task -> assertThat(task.actions()).containsExactly(MyTaskAction.SUBMIT_WORKFLOW));
     }
 
     @Test

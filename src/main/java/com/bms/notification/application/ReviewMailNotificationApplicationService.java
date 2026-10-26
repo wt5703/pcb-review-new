@@ -55,12 +55,12 @@ public class ReviewMailNotificationApplicationService {
         this.mailTemplateService = mailTemplateService;
     }
 
-    /** 任务提交后通知 PCB 的硬件/EMC 专家，或通知原理图任务的实际分配专家。 */
+    /** 任务提交后通知 PCB 首阶段实际分配的 PCB/EMC 专家，或通知原理图任务的实际分配专家。 */
     public void enqueueTaskCreated(ReviewTask task) {
         List<TaskReviewerAssignment> assignments = assignments(task.reviewerAssignments(), task.expertLeaderEmployeeNo(), task.reviewRoles());
         if (task.reviewType() == ReviewType.PCB) {
-            List<TaskReviewerAssignment> receivers = filter(assignments, assignment -> assignment.reviewRole() == ReviewRole.HARDWARE_EXPERT
-                    || assignment.reviewRole() == ReviewRole.EMC_EXPERT);
+            List<TaskReviewerAssignment> receivers = filter(assignments,
+                    assignment -> isPcbInitialReviewRole(assignment.reviewRole()));
             enqueue(task.id(), ReviewMailType.PCB_TASK_CREATED, task.projectName() + " PCB布局布线评审", receivers,
                     initialAttachments(task.initialFileIds(), FileCategory.PCB_REVIEW), Map.of("projectName", task.projectName()));
             return;
@@ -76,8 +76,8 @@ public class ReviewMailNotificationApplicationService {
         List<TaskReviewerAssignment> assignments = assignments(task);
         ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
         if (reviewType == ReviewType.PCB) {
-            List<TaskReviewerAssignment> receivers = filter(assignments, assignment -> assignment.reviewRole() == ReviewRole.HARDWARE_EXPERT
-                    || assignment.reviewRole() == ReviewRole.EMC_EXPERT);
+            List<TaskReviewerAssignment> receivers = filter(assignments,
+                    assignment -> isPcbInitialReviewRole(assignment.reviewRole()));
             enqueue(task.getId(), ReviewMailType.PCB_TASK_CREATED, task.getProjectName() + " PCB布局布线评审", receivers,
                     initialAttachments(parseInitialFileIds(task.getInitialFileIds()), FileCategory.PCB_REVIEW),
                     Map.of("projectName", task.getProjectName()));
@@ -109,7 +109,9 @@ public class ReviewMailNotificationApplicationService {
     public void enqueueTaskFinished(ReviewTaskRecord task) {
         ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
         if (reviewType == ReviewType.PCB) {
-            List<TaskReviewerAssignment> hardwareReceivers = filter(assignments(task), assignment -> assignment.reviewRole() == ReviewRole.HARDWARE_EXPERT);
+            List<TaskReviewerAssignment> hardwareReceivers = filter(assignments(task),
+                    assignment -> assignment.reviewRole() == ReviewRole.PCB_EXPERT
+                            || assignment.reviewRole() == ReviewRole.HARDWARE_EXPERT);
             enqueue(task.getId(), ReviewMailType.PCB_TASK_FINISHED, task.getProjectName() + "PCB终版图", hardwareReceivers,
                     latestAttachments(task.getId(), List.of(FileCategory.PCB_REVIEW, FileCategory.PCB_PROCESS_REVIEW,
                             FileCategory.PCB_STRUCTURE_REVIEW)), Map.of("projectName", task.getProjectName()));
@@ -139,7 +141,7 @@ public class ReviewMailNotificationApplicationService {
         }
     }
 
-    /** CC 为硬件开发人员，排除任何工艺/结构专家及已在 To 中的人员。 */
+    /** CC 为白名单中具备硬件、PCB 或 EMC 角色的人员，排除任何工艺/结构专家及已在 To 中的人员。 */
     private List<MailMessage.MailRecipient> carbonCopies(List<MailMessage.MailRecipient> recipients) {
         Set<String> toEmails = recipients.stream().map(MailMessage.MailRecipient::email).map(this::emailKey).collect(Collectors.toSet());
         Map<String, WhitelistPerson> people = new LinkedHashMap<>();
@@ -187,6 +189,11 @@ public class ReviewMailNotificationApplicationService {
 
     private List<TaskReviewerAssignment> filter(List<TaskReviewerAssignment> source, Predicate<TaskReviewerAssignment> predicate) {
         return source.stream().filter(predicate).toList();
+    }
+
+    /** PCB 现行首阶段使用 PCB、EMC 两类专家；HARDWARE_EXPERT 仅兼容历史任务。 */
+    private boolean isPcbInitialReviewRole(ReviewRole role) {
+        return role == ReviewRole.PCB_EXPERT || role == ReviewRole.EMC_EXPERT || role == ReviewRole.HARDWARE_EXPERT;
     }
 
     private List<Long> parseInitialFileIds(String initialFileIds) {
@@ -241,7 +248,10 @@ public class ReviewMailNotificationApplicationService {
 
         private WhitelistPerson(ReviewerWhitelistRecord record) { this.record = record; }
         private boolean isHardwareDeveloper() {
-            return record.getDepartmentName() != null && record.getDepartmentName().contains("硬件");
+            // 公司用户接口的部门字段可能为空，不能据此导致 CC 丢失；白名单评审角色才是稳定依据。
+            return roles.contains(ReviewRole.HARDWARE_EXPERT.name())
+                    || roles.contains(ReviewRole.PCB_EXPERT.name())
+                    || roles.contains(ReviewRole.EMC_EXPERT.name());
         }
         private boolean hasOptionalReviewRole() {
             return roles.contains(ReviewRole.PROCESS_EXPERT.name()) || roles.contains(ReviewRole.STRUCTURE_EXPERT.name());

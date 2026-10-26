@@ -72,7 +72,7 @@ public class TaskController {
     }
 
     @GetMapping
-    @Operation(summary = "分页查询评审任务", description = "使用 URL 查询参数筛选当前用户有权限查看的任务。taskName、projectName 支持模糊匹配；designerEmployeeNo 按设计者工号精确匹配；任务状态可多选。请求页码参数为 pageNum，响应分页字段为 pageNum、pageSize、total。")
+    @Operation(summary = "分页查询评审任务", description = "查询全部符合条件的任务，不按当前用户做数据隔离。taskName、projectName 支持模糊匹配；designerEmployeeNo 按设计者工号精确匹配；任务状态可多选。请求页码参数为 pageNum，响应分页字段为 pageNum、pageSize、total。")
     ApiResponse<TaskApplicationService.TaskPage> list(
             @RequestParam(required = false) @Parameter(description = "任务名称，支持模糊匹配") String taskName,
             @RequestParam(required = false) @Parameter(description = "项目名称，支持模糊匹配") String projectName,
@@ -81,10 +81,9 @@ public class TaskController {
             @RequestParam(required = false) @Parameter(description = "任务状态，可传多个同名参数；PENDING_FINISH 表示待结束，FINISHED 表示已结束") List<TaskStatus> statuses,
             @RequestParam(name = "pageNum", defaultValue = "1") @Parameter(description = "页码，从 1 开始") Integer pageNum,
             @RequestParam(defaultValue = "20") @Parameter(description = "每页条数，最大 100") Integer pageSize,
-            @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
+            HttpServletRequest servletRequest) {
         return ApiResponse.ok(taskService.listTasks(new TaskApplicationService.TaskQuery(taskName, projectName, designerEmployeeNo,
-                reviewType, statuses, pageNum, pageSize, null),
-                employeeNo, null), getTraceId(servletRequest));
+                reviewType, statuses, pageNum, pageSize, null)), getTraceId(servletRequest));
     }
 
     @GetMapping("/{taskId}")
@@ -94,7 +93,7 @@ public class TaskController {
     }
 
     @GetMapping("/my")
-    @Operation(summary = "查询我的待办任务", description = "返回当前流程节点需要当前用户评审、答复、确认、分配或结束的任务")
+    @Operation(summary = "查询我的待办任务", description = "返回当前流程节点需要当前用户评审、提交流程、答复、确认、分配或结束的任务；PCB 任务在专家评审、工艺/结构评审阶段，以及原理图任务在互检单评审、原理图评审阶段，均会返回给设计者。")
     ApiResponse<List<MyTaskApplicationService.MyTaskView>> myTasks(@NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         return ApiResponse.ok(myTaskApplicationService.list(employeeNo, null), getTraceId(servletRequest));
     }

@@ -87,6 +87,21 @@ class CheckItemTemplateImportApplicationServiceTest {
         verify(templateMapper).disableEnabledByReviewType(ReviewType.PCB.name());
     }
 
+    @Test
+    void shouldIgnorePlaceholderItemsAndRemoveDisplaySerialNumbers() throws Exception {
+        when(templateMapper.nextId()).thenReturn(10L, 11L, 12L);
+
+        CheckItemTemplateApplicationService.ImportResult result = service.importWorkbook(workbookBytes(
+                        "时钟", "8.时钟/数据走线是否等长、远离干扰，隔离带是否保持净空\n...\n…\n9、时钟线不要跨分割区域"),
+                ReviewType.PCB, "BMS001", "BMS001");
+
+        ArgumentCaptor<CheckItemTemplateRecord> records = ArgumentCaptor.forClass(CheckItemTemplateRecord.class);
+        verify(templateMapper, atLeastOnce()).insert(records.capture());
+        assertThat(result.totalRows()).isEqualTo(3);
+        assertThat(records.getAllValues()).extracting(CheckItemTemplateRecord::getItemName).containsExactly(
+                "时钟", "时钟/数据走线是否等长、远离干扰，隔离带是否保持净空", "时钟线不要跨分割区域");
+    }
+
     private byte[] workbookBytes(String category, String items) throws Exception {
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             var sheet = workbook.createSheet("检查项模板");

@@ -116,26 +116,23 @@ public class TaskApplicationService {
         return toTaskDetailView(task, taskRecord.getMutualCheckReviewerEmployeeNos(), flowRecords, taskRecord.getCreatedAt());
     }
 
-    /** 返回当前用户可见的全部任务，供不分页的内部调用使用。 */
-    public List<TaskView> listVisibleTasks(String operatorEmployeeNo, String operatorName) {
-        return listTasks(TaskQuery.defaultQuery(), operatorEmployeeNo, operatorName).items();
+    /** 返回全部符合筛选条件的任务；任务列表不按当前用户做数据隔离。 */
+    public List<TaskView> listVisibleTasks() {
+        return listTasks(TaskQuery.defaultQuery()).items();
     }
 
-    /** 根据筛选条件分页返回当前用户可见的任务。 */
-    public TaskPage listTasks(TaskQuery query, String operatorEmployeeNo, String operatorName) {
+    /** 根据筛选条件分页返回任务列表；该列表是公共查询，不依赖当前登录用户。 */
+    public TaskPage listTasks(TaskQuery query) {
         TaskQuery validQuery = (query == null ? TaskQuery.defaultQuery() : query).normalized();
-        // 暂不按角色授予全局访问权限，列表仍限定为本人相关的任务。
-        boolean canViewAll = false;
         List<String> statusNames = validQuery.statuses().stream().map(Enum::name).toList();
         String reviewTypeName = validQuery.reviewType() == null ? null : validQuery.reviewType().name();
         long total = taskMapper.countPage(validQuery.normalizedTaskName(), validQuery.normalizedProjectName(),
-                validQuery.normalizedDesignerEmployeeNo(), reviewTypeName, statusNames, validQuery.taskId(),
-                operatorEmployeeNo, canViewAll);
+                validQuery.normalizedDesignerEmployeeNo(), reviewTypeName, statusNames, validQuery.taskId());
         long offset = (long) (validQuery.pageNum() - 1) * validQuery.pageSize();
         List<ReviewTaskRecord> records = total == 0 ? List.of()
                 : taskMapper.findPage(validQuery.normalizedTaskName(), validQuery.normalizedProjectName(),
                 validQuery.normalizedDesignerEmployeeNo(), reviewTypeName, statusNames, validQuery.taskId(),
-                operatorEmployeeNo, canViewAll, offset, validQuery.pageSize());
+                offset, validQuery.pageSize());
         Map<String, String> mutualCheckReviewerNames = findMutualCheckReviewerNames(records);
         List<TaskView> items = records.stream()
                 .map(record -> toTaskListItem(record, mutualCheckReviewerNames))

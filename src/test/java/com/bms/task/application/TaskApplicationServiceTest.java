@@ -28,7 +28,6 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -136,7 +135,7 @@ class TaskApplicationServiceTest {
         mockTaskPage(2, List.of(record(1L, "BMS PCB评审", TaskStatus.DRAFT, 0L)));
 
         TaskApplicationService.TaskPage page = service.listTasks(new TaskApplicationService.TaskQuery(
-                "BMS", null, null, null, null, 1, 1, null), LEADER_NO, "组长");
+                "BMS", null, null, null, null, 1, 1, null));
 
         assertThat(page.total()).isEqualTo(2);
         assertThat(page.items()).extracting(TaskApplicationService.TaskView::id).containsExactly(1L);
@@ -145,16 +144,16 @@ class TaskApplicationServiceTest {
 
     @Test
     void shouldFilterByProjectNameAndDesignerEmployeeNo() {
-        when(taskMapper.countPage(any(), any(), any(), any(), any(), any(), any(), anyBoolean())).thenReturn(1L, 2L);
-        when(taskMapper.findPage(any(), any(), any(), any(), any(), any(), any(), anyBoolean(), anyLong(), anyInt()))
+        when(taskMapper.countPage(any(), any(), any(), any(), any(), any())).thenReturn(1L, 2L);
+        when(taskMapper.findPage(any(), any(), any(), any(), any(), any(), anyLong(), anyInt()))
                 .thenReturn(List.of(record(2L, "原理图任务", TaskStatus.DRAFT, 0L)), List.of(
                         record(1L, "PCB任务", TaskStatus.DRAFT, 0L),
                         record(2L, "原理图任务", TaskStatus.DRAFT, 0L)));
 
         TaskApplicationService.TaskPage projectPage = service.listTasks(new TaskApplicationService.TaskQuery(
-                null, "VCU", null, null, null, 1, 20, null), LEADER_NO, "组长");
+                null, "VCU", null, null, null, 1, 20, null));
         TaskApplicationService.TaskPage designerPage = service.listTasks(new TaskApplicationService.TaskQuery(
-                null, null, DESIGNER_NO, null, null, 1, 20, null), LEADER_NO, "组长");
+                null, null, DESIGNER_NO, null, null, 1, 20, null));
 
         assertThat(projectPage.items()).extracting(TaskApplicationService.TaskView::id).containsExactly(2L);
         assertThat(designerPage.items()).extracting(TaskApplicationService.TaskView::id).containsExactly(1L, 2L);
@@ -167,7 +166,7 @@ class TaskApplicationServiceTest {
                 record(3L, "BMS第二轮评审", TaskStatus.PCB_EXPERT_REVIEWING, 0L)));
 
         TaskApplicationService.TaskPage page = service.listTasks(new TaskApplicationService.TaskQuery(
-                null, null, null, null, List.of(TaskStatus.DRAFT, TaskStatus.PCB_EXPERT_REVIEWING), 1, 20, null), LEADER_NO, "组长");
+                null, null, null, null, List.of(TaskStatus.DRAFT, TaskStatus.PCB_EXPERT_REVIEWING), 1, 20, null));
 
         assertThat(page.total()).isEqualTo(2);
         assertThat(page.items()).extracting(TaskApplicationService.TaskView::id).containsExactly(1L, 3L);
@@ -180,7 +179,7 @@ class TaskApplicationServiceTest {
         task.setReviewerAssignments("HARDWARE_EXPERT:BMS101,BMS102;EMC_EXPERT:BMS103");
         mockTaskPage(1, List.of(task));
 
-        TaskApplicationService.TaskPage page = service.listTasks(null, LEADER_NO, "组长");
+        TaskApplicationService.TaskPage page = service.listTasks(null);
 
         assertThat(page.items()).singleElement().satisfies(item -> assertThat(item.reviewerAssignments()).containsExactly(
                 new TaskApplicationService.ReviewerAssignmentView(ReviewRole.HARDWARE_EXPERT, "硬件评审", List.of("BMS101", "BMS102")),
@@ -195,7 +194,7 @@ class TaskApplicationServiceTest {
         when(reviewerWhitelistApplicationService.findDisplayNamesByEmployeeNos(List.of("BMS201", "BMS202")))
                 .thenReturn(Map.of("BMS201", "互检员甲", "BMS202", "互检员乙"));
 
-        TaskApplicationService.TaskPage page = service.listTasks(null, LEADER_NO, "组长");
+        TaskApplicationService.TaskPage page = service.listTasks(null);
 
         assertThat(page.items()).singleElement().satisfies(item ->
                 assertThat(item.mutualCheckReviewers()).containsExactly(
@@ -230,7 +229,7 @@ class TaskApplicationServiceTest {
         task.setCreatedAt(LocalDateTime.of(2026, 10, 19, 15, 30));
         mockTaskPage(1, List.of(task));
 
-        TaskApplicationService.TaskPage page = service.listTasks(null, LEADER_NO, "组长");
+        TaskApplicationService.TaskPage page = service.listTasks(null);
 
         assertThat(page.items()).singleElement().satisfies(item ->
                 assertThat(item.createdDate()).isEqualTo(LocalDate.of(2026, 10, 19)));
@@ -239,12 +238,11 @@ class TaskApplicationServiceTest {
     }
 
     @Test
-    void shouldOnlyReturnAssignedTasksToProcessExpert() {
-        // 数据范围已由 mapper 的 designer/leader/当前待办人员条件限定，服务层不再逐条查询授权表。
+    void shouldReturnTaskListWithoutDataIsolation() {
+        // 任务列表不按设计者、组长或当前待办人员限制数据范围。
         mockTaskPage(1, List.of(record(2L, "VCU原理图评审", TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT, 0L)));
 
-        TaskApplicationService.TaskPage page = service.listTasks(null,
-                "BMS088", "工艺专家");
+        TaskApplicationService.TaskPage page = service.listTasks(null);
 
         assertThat(page.items()).extracting(TaskApplicationService.TaskView::id).containsExactly(2L);
     }
@@ -278,8 +276,8 @@ class TaskApplicationServiceTest {
     }
 
     private void mockTaskPage(long total, List<ReviewTaskRecord> records) {
-        when(taskMapper.countPage(any(), any(), any(), any(), any(), any(), any(), anyBoolean())).thenReturn(total);
-        when(taskMapper.findPage(any(), any(), any(), any(), any(), any(), any(), anyBoolean(), anyLong(), anyInt()))
+        when(taskMapper.countPage(any(), any(), any(), any(), any(), any())).thenReturn(total);
+        when(taskMapper.findPage(any(), any(), any(), any(), any(), any(), anyLong(), anyInt()))
                 .thenReturn(records);
     }
 

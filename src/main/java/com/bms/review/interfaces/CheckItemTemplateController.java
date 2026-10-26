@@ -53,7 +53,7 @@ public class CheckItemTemplateController {
     }
 
     @PostMapping(value = "/import", consumes = "multipart/form-data")
-    @Operation(summary = "Excel 批量导入互检检查项模板", description = "导入前先调用 existence 接口。存在旧模板时，只有 confirmed=true 才会逻辑停用旧模板并导入新模板；未确认会返回提示，不会改变旧模板。")
+    @Operation(summary = "Excel 批量导入互检检查项模板", description = "导入前先调用 existence 接口。存在旧模板时，只有 confirmed=true 才会逻辑停用旧模板并导入新模板；未确认会返回提示，不会改变旧模板。导入会跳过“...”等占位检查项，并自动移除行首展示序号，例如“8.检查内容”会保存为“检查内容”。")
     ApiResponse<CheckItemTemplateApplicationService.ImportResult> importWorkbook(@RequestPart("file") MultipartFile file,
                                                                                  @RequestParam("reviewType") @NotNull ReviewType reviewType,
                                                                                  @RequestParam(value = "confirmed", defaultValue = "false") boolean confirmed,

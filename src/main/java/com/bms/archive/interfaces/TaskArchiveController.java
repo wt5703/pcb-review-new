@@ -53,11 +53,10 @@ public class TaskArchiveController {
     }
 
     @GetMapping(value = "/export", produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    @Operation(summary = "导出归档评审意见 Excel", description = "仅支持已结束且已归档任务。PCB 按评审角色拆分工作表；原理图使用“评审问题记录”单工作表模板。一条意见存在多轮设计者答复时，每轮答复导出一行；不包含互检单意见。")
-    ResponseEntity<byte[]> exportOpinions(@PathVariable long taskId,
-                                          @NotBlank @RequestHeader("userId") String employeeNo) {
-        taskApplicationService.getTaskDetail(taskId, employeeNo, null);
-        taskArchiveApplicationService.get(taskId);
+    @Operation(summary = "导出归档评审意见 Excel", description = "仅支持已结束任务。返回标准 .xlsx 二进制文件；PCB 按评审角色拆分工作表，原理图使用“评审问题记录”单工作表模板。一条意见存在多轮设计者答复时，每轮答复导出一行；不包含互检单意见。")
+    ResponseEntity<byte[]> exportOpinions(@PathVariable long taskId) {
+        // 导出服务会校验任务存在且已结束，并直接生成 xlsx 字节；不要额外执行详情或归档查询，
+        // 否则其异常响应会被下载端当作文件保存，最终表现为乱码文本而不是 Excel。
         TaskArchiveOpinionExportApplicationService.ExportedExcel excel = taskArchiveOpinionExportApplicationService.export(taskId);
         return ResponseEntity.ok()
                 .contentType(EXCEL_MEDIA_TYPE)

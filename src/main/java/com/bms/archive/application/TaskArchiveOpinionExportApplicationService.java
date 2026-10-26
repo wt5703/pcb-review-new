@@ -110,7 +110,7 @@ public class TaskArchiveOpinionExportApplicationService {
     /** 原理图归档固定使用用户提供的“评审问题记录”单 Sheet 模板，只导出原理图专家意见。 */
     private List<SchematicExportRow> exportSchematicRows(ReviewTaskRecord task) {
         String reviewObject = task.getProjectName() + "项目_" + task.getDesignName();
-        String responsiblePerson = employeeName(task.getDesignerEmployeeNo());
+        String responsiblePerson = employeeName(task.getDesignerEmployeeNo(), task.getDesignerName());
         return opinionMapper.findByTaskId(task.getId()).stream()
                 .filter(opinion -> opinion.getSourceType() == OpinionSourceType.SCHEMATIC_REVIEW)
                 .filter(opinion -> !opinion.isNoOpinion())
@@ -291,9 +291,29 @@ public class TaskArchiveOpinionExportApplicationService {
     private String handlingName(OpinionReplyRecord reply) { String action = switch (reply.getReplyType()) { case "ACCEPT" -> "接受并修改"; case "ACCEPT_NO_CHANGE" -> "接受不修改"; case "REJECT" -> "不接受"; default -> reply.getReplyType(); }; return reply.getReason() == null || reply.getReason().isBlank() ? action : action + "：" + reply.getReason(); }
     private String confirmationName(OpinionConfirmationRecord confirmation) { if (confirmation == null) return "待专家确认"; String result = Boolean.TRUE.equals(confirmation.getPassed()) ? "确认通过" : "确认不通过"; return confirmation.getComment() == null || confirmation.getComment().isBlank() ? result : result + "：" + confirmation.getComment(); }
     private String raisedByName(ReviewOpinionRecord opinion) {
-        return employeeName(opinion.getRaisedByEmployeeNo());
+        return employeeName(opinion.getRaisedByEmployeeNo(), opinion.getRaisedByName());
     }
-    private String employeeName(String employeeNo) { return userProfileClient.getByEmployeeNo(employeeNo).displayName(); }
+    /**
+     * 导出使用业务表中持久化的姓名，避免用户中心暂时不可用时将错误 JSON 下载成“Excel”。
+     * 老数据没有姓名时才降级查询用户中心；仍无法获取时返回工号，保证工作簿始终可以生成。
+     */
+    private String employeeName(String employeeNo, String storedName) {
+        if (storedName != null && !storedName.isBlank()) {
+            return storedName;
+        }
+        if (employeeNo == null || employeeNo.isBlank()) {
+            return "";
+        }
+        try {
+            UserCenterUserProfileClient.UserProfile profile = userProfileClient.getByEmployeeNo(employeeNo);
+            if (profile != null && profile.displayName() != null && !profile.displayName().isBlank()) {
+                return profile.displayName();
+            }
+        } catch (RuntimeException ignored) {
+            // 用户中心不可用不应影响归档 Excel 导出。
+        }
+        return employeeNo;
+    }
     private String formatDate(LocalDateTime dateTime) { return dateTime == null ? "" : DATE_FORMATTER.format(dateTime); }
     private RichTextContent richTextContent(String richText) {
         if (richText == null || richText.isBlank()) {
@@ -328,7 +348,17 @@ public class TaskArchiveOpinionExportApplicationService {
     }
 
     private String richTextToPlainText(String richText) { if (richText == null || richText.isBlank()) return ""; return richText.replaceAll("(?i)<br\\s*/?>", "\\n").replaceAll("(?i)</(p|div|li|tr|h[1-6])>", "\\n").replaceAll("(?s)<img[^>]*>", "[图片]").replaceAll("(?s)<[^>]+>", "").replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&").replaceAll("\\n{3,}", "\\n\\n").trim(); }
-    private String fileName(ReviewTaskRecord task) { return (task.getProjectName() + "_" + task.getDesignName() + "_评审意见").replaceAll("[\\\\/:*?\"<>|]", "_") + ".xlsx"; }
+    /** 导出名称仅包含项目名称、评审类型和用途，不拼接设计名称或编码参数。 */
+    private String fileName(ReviewTaskRecord task) {
+        String projectName = safeFilePart(task.getProjectName(), "未命名项目");
+        String reviewTypeName = ReviewType.SCHEMATIC.name().equals(task.getReviewType()) ? "原理图评审" : "PCB评审";
+        return projectName + reviewTypeName + "检查表.xlsx";
+    }
+
+    private String safeFilePart(String value, String defaultValue) {
+        String safeValue = value == null ? "" : value.trim().replaceAll("[\\\\/:*?\"<>|]", "_");
+        return safeValue.isBlank() ? defaultValue : safeValue;
+    }
 
     public record ExportedExcel(String fileName, byte[] content) { }
     private record ExportRow(String phase, RichTextContent location, String description, String raisedByName, String severity, String handling, String confirmation) { }

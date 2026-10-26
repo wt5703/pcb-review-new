@@ -38,15 +38,15 @@ class ReviewMailNotificationApplicationServiceTest {
             fileMapper, whitelistMapper, objectMapper, new MailTemplateService());
 
     @Test
-    void shouldNotifyOnlyInitialPcbExpertsWhenTaskSubmitted() throws Exception {
+    void shouldNotifyOnlyPcbAndEmcExpertsWhenTaskSubmitted() throws Exception {
         when(whitelistMapper.findActiveByEmployeeNo("BMS001")).thenReturn(user(1L, "BMS001", "王鹏飞", "wang@bms.example.com"));
         when(whitelistMapper.findActiveByEmployeeNo("BMS002")).thenReturn(user(2L, "BMS002", "刘满红", "liu@bms.example.com"));
         when(whitelistMapper.findActiveByEmployeeNo("BMS003")).thenReturn(user(3L, "BMS003", "章俊", "zhang@bms.example.com"));
         when(fileMapper.findById(101L)).thenReturn(file(101L, "初版PCB.zip", "PCB_REVIEW"));
         ReviewTask task = ReviewTask.draft(10L, ReviewType.PCB, "任务", "BMS", "BMS009", "设计者", "P1", "BMU", LocalDate.now(),
-                "BMS009", "组长", List.of(ReviewRole.HARDWARE_EXPERT, ReviewRole.PCB_EXPERT, ReviewRole.PROCESS_EXPERT),
-                List.of(new TaskReviewerAssignment(ReviewRole.HARDWARE_EXPERT, List.of("BMS001")),
-                        new TaskReviewerAssignment(ReviewRole.PCB_EXPERT, List.of("BMS002")),
+                "BMS009", "组长", List.of(ReviewRole.PCB_EXPERT, ReviewRole.EMC_EXPERT, ReviewRole.PROCESS_EXPERT),
+                List.of(new TaskReviewerAssignment(ReviewRole.PCB_EXPERT, List.of("BMS001")),
+                        new TaskReviewerAssignment(ReviewRole.EMC_EXPERT, List.of("BMS002")),
                         new TaskReviewerAssignment(ReviewRole.PROCESS_EXPERT, List.of("BMS003"))), null);
         task.addInitialFile(101L);
 
@@ -55,9 +55,9 @@ class ReviewMailNotificationApplicationServiceTest {
         MailMessage message = payload();
         assertThat(message.notificationType()).isEqualTo("PCB_TASK_CREATED");
         assertThat(message.subject()).isEqualTo("BMS PCB布局布线评审");
-        assertThat(message.content()).contains("王鹏飞你们好", "附件是BMSPCB文件，请进行硬件评审与EMC评审。");
+        assertThat(message.content()).contains("王鹏飞、刘满红你们好", "附件是BMSPCB文件，请进行硬件评审与EMC评审。");
         assertThat(message.recipients()).extracting(MailMessage.MailRecipient::email)
-                .containsExactly("wang@bms.example.com");
+                .containsExactly("wang@bms.example.com", "liu@bms.example.com");
         assertThat(message.carbonCopies()).isEmpty();
         assertThat(message.attachments()).extracting(MailMessage.MailAttachment::fileName).containsExactly("初版PCB.zip");
     }
@@ -67,15 +67,34 @@ class ReviewMailNotificationApplicationServiceTest {
         when(whitelistMapper.findActiveByEmployeeNo("BMS001")).thenReturn(user(1L, "BMS001", "王鹏飞", "wang@bms.example.com"));
         when(whitelistMapper.findActiveByEmployeeNo("BMS002")).thenReturn(user(2L, "BMS002", "刘满红", "liu@bms.example.com"));
         when(fileMapper.findById(101L)).thenReturn(file(101L, "初版PCB.zip", "PCB_REVIEW"));
-        ReviewTaskRecord task = task(10L, "PCB", "BMS", "HARDWARE_EXPERT:BMS001;EMC_EXPERT:BMS002");
+        ReviewTaskRecord task = task(10L, "PCB", "BMS", "PCB_EXPERT:BMS001;EMC_EXPERT:BMS002");
         task.setInitialFileIds("101");
-        task.setReviewRoles("HARDWARE_EXPERT,EMC_EXPERT");
+        task.setReviewRoles("PCB_EXPERT,EMC_EXPERT");
 
         service.enqueueTaskCreated(task);
 
         MailMessage message = payload();
         assertThat(message.recipients()).extracting(MailMessage.MailRecipient::email)
                 .containsExactly("wang@bms.example.com", "liu@bms.example.com");
+    }
+
+    @Test
+    void shouldBuildCarbonCopiesFromWhitelistRolesWhenDepartmentIsEmpty() throws Exception {
+        when(whitelistMapper.findActiveByEmployeeNo("BMS001")).thenReturn(user(1L, "BMS001", "王鹏飞", "wang@bms.example.com"));
+        when(whitelistMapper.findActiveByEmployeeNo("BMS002")).thenReturn(user(2L, "BMS002", "刘满红", "liu@bms.example.com"));
+        when(whitelistMapper.findAll()).thenReturn(List.of(
+                userWithRole(1L, "BMS001", "王鹏飞", "wang@bms.example.com", ReviewRole.PCB_EXPERT),
+                userWithRole(2L, "BMS002", "刘满红", "liu@bms.example.com", ReviewRole.EMC_EXPERT),
+                userWithRole(3L, "BMS003", "张工", "zhang@bms.example.com", ReviewRole.HARDWARE_EXPERT),
+                userWithRole(4L, "BMS004", "工艺工", "process@bms.example.com", ReviewRole.PROCESS_EXPERT),
+                userWithRole(5L, "BMS005", "兼任工艺", "both@bms.example.com", ReviewRole.PCB_EXPERT),
+                userWithRole(5L, "BMS005", "兼任工艺", "both@bms.example.com", ReviewRole.PROCESS_EXPERT)));
+
+        service.enqueueTaskCreated(task(10L, "PCB", "BMS", "PCB_EXPERT:BMS001;EMC_EXPERT:BMS002"));
+
+        MailMessage message = payload();
+        assertThat(message.carbonCopies()).extracting(MailMessage.MailRecipient::email)
+                .containsExactly("zhang@bms.example.com");
     }
 
     @Test
@@ -137,6 +156,12 @@ class ReviewMailNotificationApplicationServiceTest {
     private ReviewerWhitelistRecord user(long id, String employeeNo, String name, String email) {
         ReviewerWhitelistRecord record = new ReviewerWhitelistRecord();
         record.setId(id); record.setEmployeeNo(employeeNo); record.setDisplayName(name); record.setEmail(email);
+        return record;
+    }
+
+    private ReviewerWhitelistRecord userWithRole(long id, String employeeNo, String name, String email, ReviewRole role) {
+        ReviewerWhitelistRecord record = user(id, employeeNo, name, email);
+        record.setReviewRole(role.name());
         return record;
     }
 

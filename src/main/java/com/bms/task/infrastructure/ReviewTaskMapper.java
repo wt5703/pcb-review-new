@@ -37,10 +37,7 @@ public interface ReviewTaskMapper {
             "status, initial_file_ids AS initialFileIds, version FROM review_task ORDER BY id")
     List<ReviewTaskRecord> findAll();
 
-    /**
-     * 任务列表筛选和数据范围均在数据库执行，避免分页前把全部任务加载到应用内存。
-     * 非“查看全部”用户仅能读取自己设计、担任组长或当前流程已分配给自己的任务。
-     */
+    /** 任务列表筛选和分页均在数据库执行；列表查询不按当前用户做数据隔离。 */
     @Select("<script>"
             + "SELECT COUNT(*) FROM review_task "
             + "<where>"
@@ -52,16 +49,11 @@ public interface ReviewTaskMapper {
             + "AND status IN <foreach collection='statuses' item='status' open='(' separator=',' close=')'>#{status}</foreach> "
             + "</if>"
             + "<if test='taskId != null'>AND id=#{taskId} </if>"
-            + "<if test='!canViewAll'>"
-            + "AND (designer_employee_no=#{employeeNo} OR expert_leader_employee_no=#{employeeNo} "
-            + "OR CONCAT(',', COALESCE(assigned_reviewer_employee_nos, ''), ',') LIKE CONCAT('%,', #{employeeNo}, ',%')) "
-            + "</if>"
             + "</where>"
             + "</script>")
     long countPage(@Param("taskName") String taskName, @Param("projectName") String projectName,
                    @Param("designerEmployeeNo") String designerEmployeeNo, @Param("reviewType") String reviewType,
-                   @Param("statuses") List<String> statuses, @Param("taskId") Long taskId,
-                   @Param("employeeNo") String employeeNo, @Param("canViewAll") boolean canViewAll);
+                   @Param("statuses") List<String> statuses, @Param("taskId") Long taskId);
 
     @Select("<script>"
             + "SELECT id, review_type AS reviewType, task_name AS taskName, project_name AS projectName, designer_employee_no AS designerEmployeeNo, "
@@ -78,17 +70,12 @@ public interface ReviewTaskMapper {
             + "AND status IN <foreach collection='statuses' item='status' open='(' separator=',' close=')'>#{status}</foreach> "
             + "</if>"
             + "<if test='taskId != null'>AND id=#{taskId} </if>"
-            + "<if test='!canViewAll'>"
-            + "AND (designer_employee_no=#{employeeNo} OR expert_leader_employee_no=#{employeeNo} "
-            + "OR CONCAT(',', COALESCE(assigned_reviewer_employee_nos, ''), ',') LIKE CONCAT('%,', #{employeeNo}, ',%')) "
-            + "</if>"
             + "</where>"
             + "ORDER BY id DESC LIMIT #{limit} OFFSET #{offset}"
             + "</script>")
     List<ReviewTaskRecord> findPage(@Param("taskName") String taskName, @Param("projectName") String projectName,
                                     @Param("designerEmployeeNo") String designerEmployeeNo, @Param("reviewType") String reviewType,
                                     @Param("statuses") List<String> statuses, @Param("taskId") Long taskId,
-                                    @Param("employeeNo") String employeeNo, @Param("canViewAll") boolean canViewAll,
                                     @Param("offset") long offset, @Param("limit") int limit);
 
     /** 我的待办只需要处理中任务，避免将已结束任务加载到应用层再过滤。 */

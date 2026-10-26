@@ -36,6 +36,9 @@ import java.util.Set;
  */
 @Service
 public class CheckItemTemplateApplicationService {
+    /** 行首检查项序号；小数值（如 1.5mm）不属于序号，不能删除。 */
+    private static final java.util.regex.Pattern ITEM_SERIAL_PATTERN = java.util.regex.Pattern.compile(
+            "(?m)^\\s*(?:(?:\\d{1,3}(?:\\.\\d{1,3})+(?!\\s*(?:mm|mil)\\b))|(?:\\d{1,3}\\s*(?:[.．、:：](?!\\d)|\\\\?\\)|）)))\\s*");
     private final CheckItemTemplateMapper templateMapper;
 
     public CheckItemTemplateApplicationService(CheckItemTemplateMapper templateMapper) {
@@ -60,7 +63,8 @@ public class CheckItemTemplateApplicationService {
 
     /**
      * 按评审类型导入互检单 Excel：PCB 读取“类别、检查项”，原理图读取“检查项类别、检查内容”。
-     * PCB 的检查项可按换行编号拆分，且会保留 .xlsx 检查项单元格内嵌的示例图片。
+     * 检查项可按换行编号拆分；导入时会跳过“...”这类占位内容，并移除展示用的行首序号。
+     * PCB 检查项同时会保留 .xlsx 单元格内嵌的示例图片。
      */
     @Transactional
     public ImportResult importWorkbook(byte[] workbookBytes, ReviewType reviewType, boolean confirmed, String operatorEmployeeNo, String operatorName) {
@@ -312,13 +316,19 @@ public class CheckItemTemplateApplicationService {
                     throw new BusinessException(ErrorCode.VALIDATION_ERROR, "第 " + (rowIndex + 1) + " 行检查项缺少类别；合并类别单元格仅可继承上一条非空类别");
                 }
                 String normalizedCategoryName = categoryName.trim();
+                List<String> itemNames = (columns.splitItemCell() ? splitEmbeddedItems(itemCell) : List.of(itemCell.trim())).stream()
+                        .map(this::normalizeImportedItemName)
+                        .filter(itemName -> !itemName.isBlank())
+                        .toList();
+                // “...”仅用于原始表格的后续内容占位，不属于可执行的检查项。
+                if (itemNames.isEmpty()) {
+                    continue;
+                }
                 ImportCategoryBuilder category = categories.computeIfAbsent(normalizedCategoryName,
                         ignored -> new ImportCategoryBuilder(reviewType, normalizedCategoryName, categories.size() + 1));
-                List<String> itemNames = columns.splitItemCell() ? splitEmbeddedItems(itemCell) : List.of(itemCell.trim());
                 List<String> images = imagesByRow.getOrDefault(rowIndex, List.of());
                 for (int index = 0; index < itemNames.size(); index++) {
                     String itemName = itemNames.get(index);
-                    if (itemName.isBlank()) continue;
                     String itemRichText = toItemRichText(itemName, index == itemNames.size() - 1 ? images : List.of());
                     category.add(itemName, itemRichText, rowIndex + 1);
                 }
@@ -398,9 +408,7 @@ public class CheckItemTemplateApplicationService {
     private List<String> splitEmbeddedItems(String itemCell) {
         String normalized = itemCell == null ? "" : itemCell.replace(' ', ' ').trim();
         if (normalized.isBlank()) return List.of();
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
-                "(?m)^\\s*(?:\\d{1,3}\\s*(?:\\\\?\\)|）)|\\d{1,3}(?:\\.\\d{1,3})+(?!\\s*(?:mm|mil)\\b))")
-                .matcher(normalized);
+        java.util.regex.Matcher matcher = ITEM_SERIAL_PATTERN.matcher(normalized);
         List<Integer> starts = new ArrayList<>();
         List<Integer> contents = new ArrayList<>();
         while (matcher.find()) {
@@ -414,6 +422,22 @@ public class CheckItemTemplateApplicationService {
             if (!item.isBlank()) items.add(item);
         }
         return List.copyOf(items);
+    }
+
+    private String normalizeImportedItemName(String itemName) {
+        String normalized = itemName == null ? "" : itemName.replace(' ', ' ').trim();
+        if (isPlaceholderItem(normalized)) {
+            return "";
+        }
+        String withoutPlaceholderLines = normalized.lines()
+                .filter(line -> !isPlaceholderItem(line))
+                .collect(java.util.stream.Collectors.joining("\n"))
+                .trim();
+        return ITEM_SERIAL_PATTERN.matcher(withoutPlaceholderLines).replaceFirst("").trim();
+    }
+
+    private boolean isPlaceholderItem(String itemName) {
+        return itemName != null && itemName.replaceAll("[\\s.。…]+", "").isBlank();
     }
 
     private int nextCategorySort(ReviewType reviewType) {

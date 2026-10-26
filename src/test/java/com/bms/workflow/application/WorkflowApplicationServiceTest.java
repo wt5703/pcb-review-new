@@ -287,6 +287,56 @@ class WorkflowApplicationServiceTest {
     }
 
     @Test
+    void shouldRejectNextPcbFlowWhenAssignedProcessExpertHasNotSubmitted() {
+        ReviewTaskRecord task = task(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
+        task.setReviewerAssignments("PROCESS_EXPERT:BMS020");
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
+        when(flowMapper.findByTaskId(1001L)).thenReturn(List.of(flow(WorkflowAction.START_PCB_PROCESS_REVIEW)));
+
+        assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.START_PCB_MATUAL_ASSIGNMENT, null,
+                "BMS010", "BMS010"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("仍有已分配工艺专家未提交评审意见或确认无意见，不能进入下一流程");
+    }
+
+    @Test
+    void shouldAllowNextPcbFlowAfterAssignedProcessExpertConfirmsNoOpinion() {
+        ReviewTaskRecord task = task(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
+        task.setReviewerAssignments("PROCESS_EXPERT:BMS020");
+        ReviewOpinionRecord noOpinion = new ReviewOpinionRecord();
+        noOpinion.setSourceType(OpinionSourceType.PCB_PROCESS_REVIEW);
+        noOpinion.setRaisedByEmployeeNo("BMS020");
+        noOpinion.setNoOpinion(true);
+        noOpinion.setStatus("CONFIRMED_PASS");
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(noOpinion));
+        when(flowMapper.findByTaskId(1001L)).thenReturn(List.of(flow(WorkflowAction.START_PCB_PROCESS_REVIEW)));
+        when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_PROCESS_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
+        when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_STRUCTURE_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
+        when(taskMapper.update(any())).thenReturn(1);
+        when(flowMapper.nextId()).thenReturn(4L);
+
+        WorkflowApplicationService.WorkflowView view = service.transition(1001L, WorkflowAction.START_PCB_MATUAL_ASSIGNMENT,
+                null, "BMS010", "BMS010");
+
+        assertThat(view.toStatus()).isEqualTo(TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT);
+    }
+
+    @Test
+    void shouldRejectSchematicFinishWhenAssignedExpertHasNotSubmitted() {
+        ReviewTaskRecord task = task(ReviewType.SCHEMATIC, TaskStatus.SCHEMATIC_REVIEWING);
+        task.setReviewerAssignments("HARDWARE_EXPERT:BMS020");
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.PENDING_FINISH, null,
+                "BMS010", "BMS010"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("仍有已分配原理图专家未提交评审意见或确认无意见，不能进入待结束");
+    }
+
+    @Test
     void shouldRequireLatestProcessAndStructureFilesBeforePcbMutualAssignment() {
         when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING));
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
@@ -328,5 +378,11 @@ class WorkflowApplicationServiceTest {
         task.setInitialFileIds("");
         task.setVersion(0L);
         return task;
+    }
+
+    private TaskFlowRecord flow(WorkflowAction action) {
+        TaskFlowRecord record = new TaskFlowRecord();
+        record.setAction(action.name());
+        return record;
     }
 }

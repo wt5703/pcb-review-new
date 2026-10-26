@@ -172,6 +172,29 @@ class OpinionApplicationServiceTest {
     }
 
     @Test
+    void shouldReleaseLegacyReviewerAfterNoOpinionSubmission() {
+        ReviewTaskRecord activeTask = task("BMS009");
+        activeTask.setStatus(TaskStatus.PCB_EXPERT_REVIEWING.name());
+        // 历史任务可能没有 reviewerAssignments 快照，但当前执行人快照仍表明该专家需要处理此节点。
+        activeTask.setReviewerAssignments("");
+        activeTask.setAssignedReviewerEmployeeNos("BMS020");
+        List<ReviewOpinionRecord> persistedOpinions = new ArrayList<>();
+        when(taskMapper.findById(1001L)).thenReturn(activeTask);
+        when(opinionMapper.findByTaskId(1001L)).thenAnswer(invocation -> persistedOpinions);
+        when(opinionMapper.nextOpinionId()).thenReturn(31L);
+        when(opinionMapper.insert(any())).thenAnswer(invocation -> {
+            persistedOpinions.add(invocation.getArgument(0));
+            return 1;
+        });
+        when(taskMapper.updateAssignedReviewerEmployeeNos(any())).thenReturn(1);
+
+        service.submitNoOpinion(1001L, OpinionSourceType.PCB_REVIEW, "BMS020", "张工");
+
+        assertThat(activeTask.getAssignedReviewerEmployeeNos()).isEmpty();
+        verify(taskMapper).updateAssignedReviewerEmployeeNos(activeTask);
+    }
+
+    @Test
     void shouldSummarizeOpinionsByLifecycleStatus() {
         when(assignmentAccessMapper.isAssignedToTask(1001L, "BMS020")).thenReturn(true);
         when(taskMapper.findById(1001L)).thenReturn(task("BMS009"));

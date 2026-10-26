@@ -17,8 +17,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
-import static org.mockito.ArgumentMatchers.any;
 
 /**
  * @author 王涛
@@ -33,10 +33,6 @@ class TaskArchiveOpinionExportApplicationServiceTest {
 
     @Test
     void shouldExportOneSheetPerRoleAndOneRowPerReply() throws Exception {
-        when(userProfileClient.getByEmployeeNo(any())).thenAnswer(invocation -> {
-            String employeeNo = invocation.getArgument(0);
-            return new UserCenterUserProfileClient.UserProfile(employeeNo, employeeNo, null, null, null);
-        });
         ReviewTaskRecord task = new ReviewTaskRecord();
         task.setId(101L); task.setProjectName("BMS"); task.setDesignName("控制板"); task.setStatus("FINISHED");
         task.setReviewerAssignments("EMC_EXPERT:BMS010;STRUCTURE_EXPERT:BMS011");
@@ -54,7 +50,7 @@ class TaskArchiveOpinionExportApplicationServiceTest {
 
         TaskArchiveOpinionExportApplicationService.ExportedExcel exported = service.export(101L);
 
-        assertThat(exported.fileName()).isEqualTo("BMS_控制板_评审意见.xlsx");
+        assertThat(exported.fileName()).isEqualTo("BMSPCB评审检查表.xlsx");
         try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(exported.content()))) {
             assertThat(workbook.getNumberOfSheets()).isEqualTo(2);
             var emc = workbook.getSheet("EMC评审"); var structure = workbook.getSheet("结构评审");
@@ -69,6 +65,27 @@ class TaskArchiveOpinionExportApplicationServiceTest {
             assertThat(structure.getRow(4).getCell(1).getStringCellValue()).isEqualTo("结构评审");
             assertThat(structure.getRow(4).getCell(6).getStringCellValue()).isEqualTo("待设计者答复");
         }
+        verifyNoInteractions(userProfileClient);
+    }
+
+    @Test
+    void shouldUseProjectNameAndSchematicReviewTypeForExportFileName() {
+        ReviewTaskRecord task = new ReviewTaskRecord();
+        task.setId(102L);
+        task.setProjectName("某某某项目");
+        task.setDesignName("主控原理图");
+        task.setDesignerEmployeeNo("BMS001");
+        task.setDesignerName("设计者");
+        task.setReviewType("SCHEMATIC");
+        task.setStatus("FINISHED");
+        when(taskMapper.findById(102L)).thenReturn(task);
+        when(opinionMapper.findByTaskId(102L)).thenReturn(List.of());
+
+        TaskArchiveOpinionExportApplicationService.ExportedExcel exported = service.export(102L);
+
+        assertThat(exported.fileName()).isEqualTo("某某某项目原理图评审检查表.xlsx");
+        assertThat(exported.content()[0]).isEqualTo((byte) 'P');
+        assertThat(exported.content()[1]).isEqualTo((byte) 'K');
     }
 
     private ReviewOpinionRecord opinion(long id, OpinionSourceType sourceType, String raisedByEmployeeNo, String raisedByName,
