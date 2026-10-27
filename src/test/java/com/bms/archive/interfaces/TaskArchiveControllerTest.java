@@ -22,7 +22,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** 验证 Excel 下载响应使用二进制媒体类型，并为中文文件名提供标准的 RFC 5987 编码。 */
+/** 验证 Excel 下载响应使用二进制媒体类型，并兼容不同下载端解析中文文件名。 */
 class TaskArchiveControllerTest {
 
     @Test
@@ -41,9 +41,10 @@ class TaskArchiveControllerTest {
         assertThat(response.getHeaders().getContentType().toString())
                 .isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         assertThat(response.getHeaders().getContentLength()).isEqualTo(3L);
-        String prefix = "attachment; filename*=UTF-8''";
-        assertThat(disposition).startsWith(prefix).doesNotContain("review-opinions.xlsx", "=?UTF-8?Q?", "?=");
-        assertThat(UriUtils.decode(disposition.substring(prefix.length()), StandardCharsets.UTF_8))
+        String encodedFileName = UriUtils.encode("BMS项目PCB评审检查表.xlsx", StandardCharsets.UTF_8);
+        assertThat(disposition).isEqualTo("attachment; filename=\"" + encodedFileName
+                + "\"; filename*=UTF-8''" + encodedFileName);
+        assertThat(UriUtils.decode(encodedFileName, StandardCharsets.UTF_8))
                 .isEqualTo("BMS项目PCB评审检查表.xlsx");
         verifyNoInteractions(taskApplicationService, taskArchiveApplicationService);
     }
@@ -66,5 +67,7 @@ class TaskArchiveControllerTest {
         assertThat(result.getResponse().getContentAsByteArray()).isEqualTo(xlsxBytes);
         assertThat(result.getResponse().getContentType()).isEqualTo(MediaType.parseMediaType(
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").toString());
+        assertThat(result.getResponse().getHeader(HttpHeaders.CONTENT_DISPOSITION))
+                .contains("filename=\"", ".xlsx\"", "filename*=UTF-8''");
     }
 }

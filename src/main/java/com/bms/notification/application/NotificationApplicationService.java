@@ -101,7 +101,8 @@ public class NotificationApplicationService {
         String carbonCopies = message == null ? "" : message.carbonCopies().stream().map(MailMessage.MailRecipient::email)
                 .filter(email -> email != null && !email.isBlank()).collect(Collectors.joining(","));
         String attachments = message == null ? "" : message.attachments().stream()
-                .map(attachment -> attachment.fileCategory() + ":" + attachment.fileId() + ":" + attachment.fileName())
+                .map(MailMessage.MailAttachment::fileName)
+                .filter(fileName -> fileName != null && !fileName.isBlank())
                 .collect(Collectors.joining(","));
         String subject = message == null ? "" : message.subject();
         sendRecordMapper.insert(new NotificationSendRecord(event.getId(), event.getAggregateId(), eventType, recipient,

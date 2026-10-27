@@ -61,14 +61,16 @@ public class TaskArchiveController {
         return ResponseEntity.ok()
                 .contentType(EXCEL_MEDIA_TYPE)
                 .contentLength(excel.content().length)
-                // 仅保留实际导出名称的 RFC 5987 参数，避免下载组件将多个 filename 参数拼入文件名。
+                // 同时提供普通 filename 和 RFC 5987 filename*：部分下载端不识别 filename*，
+                // 只读取 filename 时也能拿到带 .xlsx 后缀的正确文件名。
                 .header(HttpHeaders.CONTENT_DISPOSITION, attachmentFileName(excel.fileName()))
                 .header("X-Content-Type-Options", "nosniff")
                 .body(excel.content());
     }
 
     private String attachmentFileName(String fileName) {
-        return "attachment; filename*=UTF-8''" + UriUtils.encode(fileName, StandardCharsets.UTF_8);
+        String encodedFileName = UriUtils.encode(fileName, StandardCharsets.UTF_8);
+        return "attachment; filename=\"" + encodedFileName + "\"; filename*=UTF-8''" + encodedFileName;
     }
 
     private String traceId(HttpServletRequest request) { return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString(); }

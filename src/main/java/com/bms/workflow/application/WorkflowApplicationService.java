@@ -542,7 +542,7 @@ public class WorkflowApplicationService {
         record.setAction(action.name());
         record.setActionName(action.actionName());
         record.setOperateEmployeeNo(operateEmployeeNo);
-        record.setComment(comment);
+        record.setComment(comment == null || comment.isBlank() ? action.name() : comment);
         flowMapper.insert(record);
     }
 

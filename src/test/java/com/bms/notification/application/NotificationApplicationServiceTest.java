@@ -7,6 +7,7 @@ import com.bms.notification.infrastructure.OutboxEventMapper;
 import com.bms.notification.domain.MailMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 
@@ -40,7 +41,9 @@ class NotificationApplicationServiceTest {
         assertThat(result.successCount()).isEqualTo(1);
         assertThat(result.failedCount()).isZero();
         verify(outboxEventMapper).markPublished(11L);
-        verify(sendRecordMapper).insert(any(NotificationSendRecord.class));
+        ArgumentCaptor<NotificationSendRecord> recordCaptor = ArgumentCaptor.forClass(NotificationSendRecord.class);
+        verify(sendRecordMapper).insert(recordCaptor.capture());
+        assertThat(recordCaptor.getValue().attachments()).isEqualTo("PCB评审文件.zip");
     }
 
     @Test
@@ -71,7 +74,8 @@ class NotificationApplicationServiceTest {
     private String mailPayload(String notificationType, String content) {
         try {
             return new ObjectMapper().writeValueAsString(new MailMessage(notificationType, "测试标题", content,
-                    List.of(new MailMessage.MailRecipient("王工", "wang@bms.example.com")), List.of(), List.of()));
+                    List.of(new MailMessage.MailRecipient("王工", "wang@bms.example.com")), List.of(),
+                    List.of(new MailMessage.MailAttachment("file-001", "PCB评审文件.zip", "PCB_REVIEW", "/files/file-001"))));
         } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
             throw new AssertionError(exception);
         }
