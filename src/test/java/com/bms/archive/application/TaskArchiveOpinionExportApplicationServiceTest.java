@@ -79,7 +79,8 @@ class TaskArchiveOpinionExportApplicationServiceTest {
         task.setReviewType("SCHEMATIC");
         task.setStatus("FINISHED");
         when(taskMapper.findById(102L)).thenReturn(task);
-        when(opinionMapper.findByTaskId(102L)).thenReturn(List.of());
+        // 即使底层实现异常地返回 null，也应生成可打开的空检查表，而不是返回错误文本。
+        when(opinionMapper.findByTaskId(102L)).thenReturn(null);
 
         TaskArchiveOpinionExportApplicationService.ExportedExcel exported = service.export(102L);
 

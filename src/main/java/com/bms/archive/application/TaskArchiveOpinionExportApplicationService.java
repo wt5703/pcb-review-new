@@ -97,7 +97,7 @@ public class TaskArchiveOpinionExportApplicationService {
 
     private Map<String, List<ExportRow>> exportRows(ReviewTaskRecord task) {
         Map<String, List<ExportRow>> result = new LinkedHashMap<>();
-        opinionMapper.findByTaskId(task.getId()).stream().filter(this::isExpertOpinion)
+        taskOpinions(task.getId()).stream().filter(this::isExpertOpinion)
                 .filter(opinion -> !opinion.isNoOpinion())
                 .sorted(Comparator.comparing(ReviewOpinionRecord::getId)).forEach(opinion ->
                         result.computeIfAbsent(rolesForOpinion(opinion).name(), ignored -> new ArrayList<>()).addAll(rowsForOpinion(opinion)));
@@ -111,7 +111,7 @@ public class TaskArchiveOpinionExportApplicationService {
     private List<SchematicExportRow> exportSchematicRows(ReviewTaskRecord task) {
         String reviewObject = task.getProjectName() + "项目_" + task.getDesignName();
         String responsiblePerson = employeeName(task.getDesignerEmployeeNo(), task.getDesignerName());
-        return opinionMapper.findByTaskId(task.getId()).stream()
+        return taskOpinions(task.getId()).stream()
                 .filter(opinion -> opinion.getSourceType() == OpinionSourceType.SCHEMATIC_REVIEW)
                 .filter(opinion -> !opinion.isNoOpinion())
                 .sorted(Comparator.comparing(ReviewOpinionRecord::getId))
@@ -138,6 +138,12 @@ public class TaskArchiveOpinionExportApplicationService {
 
     private boolean isExpertOpinion(ReviewOpinionRecord opinion) {
         return EXPERT_OPINION_SOURCE_TYPES.contains(opinion.getSourceType());
+    }
+
+    /** MyBatis 正常返回空集合；这里额外兼容测试桩或历史实现返回 null 的情况。 */
+    private List<ReviewOpinionRecord> taskOpinions(long taskId) {
+        List<ReviewOpinionRecord> opinions = opinionMapper.findByTaskId(taskId);
+        return opinions == null ? List.of() : opinions;
     }
 
     private ReviewRole rolesForOpinion(ReviewOpinionRecord opinion) {
