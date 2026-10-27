@@ -62,8 +62,8 @@ public class WorkflowController {
             3. 分配互检人员并开启互检：传 START_PCB_MATUAL_REVIEW + reviewerEmployeeNos。<br/>
             4. 分配互检人员并开启互检：传 START_SCHEMATIC_MATUAL_REVIEW + reviewerEmployeeNos。<br/>
             5. 设计者在互检意见闭环后开启原理图评审：传 START_SCHEMATIC_EXPERT_REVIEW；评审人员取创建任务时的角色分配。<br/>
-            6. 设计者进入下一流程前，当前已分配专家必须全部完成：已提出意见须全部确认通过；无意见须调用“确认提交评审结果”接口。<br/>
-            7. 相关评审完成后，设计者重新上传终版文件并传 PENDING_FINISH，任务进入待结束；组长传 FINISH 结束任务。<br/>
+            6. 设计者推进流程时只校验指定来源意见：开启 PCB 工艺/结构评审校验 PCB_REVIEW；开启 PCB 互检单分配校验 PCB_PROCESS_REVIEW、PCB_STRUCTURE_REVIEW；PCB 进入待结束校验互检意见；原理图开启专家评审校验互检意见，进入待结束校验 SCHEMATIC_REVIEW。<br/>
+            7. 相关意见闭环后，设计者重新上传终版文件并传 PENDING_FINISH，任务进入待结束；组长传 FINISH 结束任务。<br/>
             
             关于文件：开启工艺/结构评审及进入待结束时支持随流程上传；也可先通过文件接口上传终版。
             """)
