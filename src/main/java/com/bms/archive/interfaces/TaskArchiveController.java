@@ -19,6 +19,9 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.validation.annotation.Validated;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.util.UriUtils;
+
+import java.nio.charset.StandardCharsets;
 
 /**
  * @author 王涛
@@ -60,15 +63,14 @@ public class TaskArchiveController {
                 .contentType(EXCEL_MEDIA_TYPE)
                 .contentLength(excel.content().length)
                 .header(HttpHeaders.CONTENT_DISPOSITION, attachmentFileName(excel.fileName()))
+                .header(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, HttpHeaders.CONTENT_DISPOSITION)
                 .header("X-Content-Type-Options", "nosniff")
                 .body(excel.content());
     }
 
     private String attachmentFileName(String fileName) {
-        return ContentDisposition.attachment()
-                .filename(fileName)
-                .build()
-                .toString();
+        String encodedFileName = UriUtils.encode(fileName, StandardCharsets.UTF_8);
+        return ContentDisposition.attachment().filename(encodedFileName).build().toString();
     }
 
     private String traceId(HttpServletRequest request) { return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString(); }

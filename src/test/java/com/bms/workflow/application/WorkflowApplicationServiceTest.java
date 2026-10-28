@@ -217,7 +217,7 @@ class WorkflowApplicationServiceTest {
         verify(flowMapper).insert(record.capture());
         assertThat(record.getValue().getAction()).isEqualTo("PENDING_FINISH");
         assertThat(record.getValue().getActionName()).isEqualTo("进入待结束");
-        assertThat(record.getValue().getComment()).isEqualTo("PENDING_FINISH");
+        assertThat(record.getValue().getComment()).isEqualTo("进入待结束");
     }
 
     @Test
