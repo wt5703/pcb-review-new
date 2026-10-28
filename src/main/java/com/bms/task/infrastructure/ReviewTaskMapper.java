@@ -82,7 +82,7 @@ public interface ReviewTaskMapper {
     @Select("SELECT id, review_type AS reviewType, task_name AS taskName, project_name AS projectName, designer_employee_no AS designerEmployeeNo, "
             + "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, "
             + "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, mutual_check_reviewer_employee_nos AS mutualCheckReviewerEmployeeNos, review_description AS reviewDescription, "
-            + "status, initial_file_ids AS initialFileIds, version FROM review_task WHERE status <> 'FINISHED' ORDER BY id DESC")
+            + "status, initial_file_ids AS initialFileIds, version, created_at AS createdAt FROM review_task WHERE status <> 'FINISHED' ORDER BY id DESC")
     List<ReviewTaskRecord> findAllUnfinished();
 
     /** 工作台“本月已结束”仅统计当前设计者创建，并在指定自然月内结束的任务。 */

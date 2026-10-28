@@ -9,6 +9,8 @@ import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import com.bms.review.domain.ReviewRole;
+import com.fasterxml.jackson.annotation.JsonFormat;
+import io.swagger.v3.oas.annotations.media.Schema;
 import org.springframework.stereotype.Service;
 
 import java.util.EnumSet;
@@ -17,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /**
  * @author 王涛
@@ -124,14 +127,16 @@ public class MyTaskApplicationService {
 
     public record MyTaskView(Long id, ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo, String designerName,
                              String designName, String pcbType, LocalDate expectedCompletedDate, String expertLeaderEmployeeNo, String expertLeaderName,
-                             List<ReviewRole> reviewRoles, String reviewDescription, TaskStatus status, List<MyTaskAction> actions) {
+                             List<ReviewRole> reviewRoles, String reviewDescription, TaskStatus status, List<MyTaskAction> actions,
+                             @Schema(description = "任务创建时间，格式 yyyy-MM-dd HH:mm:ss", example = "2026-10-19 15:30:00")
+                             @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime createdTime) {
         static MyTaskView from(ReviewTaskRecord record, String designerName, String expertLeaderName, EnumSet<MyTaskAction> actions) {
             List<ReviewRole> reviewRoles = record.getReviewRoles() == null || record.getReviewRoles().isBlank() ? List.of()
                     : java.util.Arrays.stream(record.getReviewRoles().split(",")).map(ReviewRole::valueOf).toList();
             return new MyTaskView(record.getId(), ReviewType.valueOf(record.getReviewType()), record.getTaskName(), record.getProjectName(),
                     record.getDesignerEmployeeNo(), designerName, record.getDesignName(), record.getPcbType(), record.getExpectedCompletedDate(),
                     record.getExpertLeaderEmployeeNo(), expertLeaderName, reviewRoles, record.getReviewDescription(),
-                    TaskStatus.valueOf(record.getStatus()), List.copyOf(actions));
+                    TaskStatus.valueOf(record.getStatus()), List.copyOf(actions), record.getCreatedAt());
         }
     }
 

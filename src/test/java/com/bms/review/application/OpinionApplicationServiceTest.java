@@ -147,6 +147,43 @@ class OpinionApplicationServiceTest {
     }
 
     @Test
+    void shouldRejectMutualCheckSubmissionWhenExtraOpinionIsNotConfirmedPass() {
+        ReviewTaskRecord activeTask = task("BMS009");
+        activeTask.setAssignedReviewerEmployeeNos("BMS020");
+        ReviewOpinionRecord checkItemOpinion = opinion(31L, 1001L, "BMS020", OpinionStatus.CONFIRMED_PASS);
+        checkItemOpinion.setSourceType(OpinionSourceType.MUTUAL_CHECK_ITEM);
+        ReviewOpinionRecord extraOpinion = opinion(32L, 1001L, "BMS020", OpinionStatus.PENDING_CONFIRMATION);
+        extraOpinion.setSourceType(OpinionSourceType.MUTUAL_EXTRA);
+        when(taskMapper.findById(1001L)).thenReturn(activeTask);
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(checkItemOpinion, extraOpinion));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.submitNoOpinion(1001L,
+                        OpinionSourceType.MUTUAL_CHECK_ITEM, "BMS020", "BMS020"))
+                .isInstanceOf(com.bms.common.BusinessException.class)
+                .hasMessage("仍存在未答复、未确认或未确认通过的评审意见，不能确认提交");
+    }
+
+    @Test
+    void shouldAllowMutualCheckSubmissionWhenCheckItemAndExtraOpinionsAreConfirmedPass() {
+        ReviewTaskRecord activeTask = task("BMS009");
+        activeTask.setAssignedReviewerEmployeeNos("BMS020");
+        ReviewOpinionRecord checkItemOpinion = opinion(31L, 1001L, "BMS020", OpinionStatus.CONFIRMED_PASS);
+        checkItemOpinion.setSourceType(OpinionSourceType.MUTUAL_CHECK_ITEM);
+        ReviewOpinionRecord extraOpinion = opinion(32L, 1001L, "BMS020", OpinionStatus.CONFIRMED_PASS);
+        extraOpinion.setSourceType(OpinionSourceType.MUTUAL_EXTRA);
+        when(taskMapper.findById(1001L)).thenReturn(activeTask);
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(checkItemOpinion, extraOpinion));
+        when(taskMapper.updateAssignedReviewerEmployeeNos(any())).thenReturn(1);
+
+        OpinionApplicationService.OpinionView view = service.submitNoOpinion(1001L,
+                OpinionSourceType.MUTUAL_CHECK_ITEM, "BMS020", "BMS020");
+
+        assertThat(view.sourceType()).isEqualTo(OpinionSourceType.MUTUAL_EXTRA);
+        assertThat(activeTask.getAssignedReviewerEmployeeNos()).isEmpty();
+        verify(taskMapper).updateAssignedReviewerEmployeeNos(activeTask);
+    }
+
+    @Test
     void shouldAllowSchematicReviewerToSubmitNoOpinionDuringMutualCheck() {
         ReviewTaskRecord activeTask = task("BMS009");
         activeTask.setReviewType(ReviewType.SCHEMATIC.name());

@@ -33,7 +33,10 @@ class MyTaskApplicationServiceTest {
 
     @Test
     void shouldOnlyReturnTaskRequiringCurrentReviewerAction() {
-        when(taskMapper.findAllUnfinished()).thenReturn(List.of(task(1L, "BMS010", TaskStatus.PCB_EXPERT_REVIEWING), task(2L, "BMS010", TaskStatus.MUTUAL_CHECK_REVIEWING)));
+        ReviewTaskRecord completedTask = task(1L, "BMS010", TaskStatus.PCB_EXPERT_REVIEWING);
+        ReviewTaskRecord myTask = task(2L, "BMS010", TaskStatus.MUTUAL_CHECK_REVIEWING);
+        myTask.setCreatedAt(LocalDateTime.of(2026, 10, 19, 15, 30));
+        when(taskMapper.findAllUnfinished()).thenReturn(List.of(completedTask, myTask));
         when(assignmentAccessMapper.isCurrentTaskProcessor(1L, "BMS088")).thenReturn(false);
         when(assignmentAccessMapper.isCurrentTaskProcessor(2L, "BMS088")).thenReturn(true);
 
@@ -42,6 +45,7 @@ class MyTaskApplicationServiceTest {
         assertThat(tasks).hasSize(1);
         assertThat(tasks.get(0).id()).isEqualTo(2L);
         assertThat(tasks.get(0).actions()).containsExactly(MyTaskAction.REVIEW);
+        assertThat(tasks.get(0).createdTime()).isEqualTo(LocalDateTime.of(2026, 10, 19, 15, 30));
     }
 
     @Test

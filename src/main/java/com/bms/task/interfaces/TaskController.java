@@ -77,17 +77,17 @@ public class TaskController {
     }
 
     @GetMapping
-    @Operation(summary = "分页查询评审任务", description = "查询全部符合条件的任务，不按当前用户做数据隔离。taskName、projectName 支持模糊匹配；designerEmployeeNo 按设计者工号精确匹配；任务状态可多选。请求页码参数为 pageNum，响应分页字段为 pageNum、pageSize、total。")
+    @Operation(summary = "分页查询评审任务", description = "查询全部符合条件的任务，不按当前用户做数据隔离。taskName、projectName 支持模糊匹配；designerId 按设计者工号精确匹配；任务状态可多选。请求页码参数为 pageNum，响应分页字段为 pageNum、pageSize、total。")
     ApiResponse<TaskApplicationService.TaskPage> list(
             @RequestParam(required = false) @Parameter(description = "任务名称，支持模糊匹配") String taskName,
             @RequestParam(required = false) @Parameter(description = "项目名称，支持模糊匹配") String projectName,
-            @RequestParam(required = false) @Parameter(description = "设计者工号，精确匹配；字段名与创建任务接口一致") String designerEmployeeNo,
+            @RequestParam(name = "designerId", required = false) @Parameter(description = "设计者工号，精确匹配") String designerId,
             @RequestParam(required = false) @Parameter(description = "评审类型：PCB 或 SCHEMATIC") ReviewType reviewType,
             @RequestParam(required = false) @Parameter(description = "任务状态，可传多个同名参数；PENDING_FINISH 表示待结束，FINISHED 表示已结束") List<TaskStatus> statuses,
             @RequestParam(name = "pageNum", defaultValue = "1") @Parameter(description = "页码，从 1 开始") Integer pageNum,
             @RequestParam(defaultValue = "20") @Parameter(description = "每页条数，最大 100") Integer pageSize,
             HttpServletRequest servletRequest) {
-        return ApiResponse.ok(taskService.listTasks(new TaskApplicationService.TaskQuery(taskName, projectName, designerEmployeeNo,
+        return ApiResponse.ok(taskService.listTasks(new TaskApplicationService.TaskQuery(taskName, projectName, designerId,
                 reviewType, statuses, pageNum, pageSize, null)), getTraceId(servletRequest));
     }
 

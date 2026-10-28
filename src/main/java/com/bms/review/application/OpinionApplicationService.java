@@ -325,6 +325,7 @@ public class OpinionApplicationService {
                     && (status == TaskStatus.SCHEMATIC_REVIEWING || status == TaskStatus.MUTUAL_CHECK_REVIEWING);
             case PCB_PROCESS_REVIEW, PCB_STRUCTURE_REVIEW -> reviewType == ReviewType.PCB
                     && status == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING;
+            case MUTUAL_CHECK_ITEM, MUTUAL_EXTRA -> status == TaskStatus.MUTUAL_CHECK_REVIEWING;
             default -> false;
         };
     }
@@ -333,8 +334,16 @@ public class OpinionApplicationService {
                                                                  String reviewerEmployeeNo) {
         List<ReviewOpinionRecord> opinions = opinionMapper.findByTaskId(taskId);
         return (opinions == null ? List.<ReviewOpinionRecord>of() : opinions).stream()
-                .filter(item -> reviewerEmployeeNo.equals(item.getRaisedByEmployeeNo()) && sourceType == item.getSourceType())
+                .filter(item -> reviewerEmployeeNo.equals(item.getRaisedByEmployeeNo())
+                        && matchesSubmissionSource(sourceType, item.getSourceType()))
                 .toList();
+    }
+
+    /** 互检单以 MUTUAL_CHECK_ITEM 提交时，固定检查项与额外意见属于同一阶段，必须同时闭环。 */
+    private boolean matchesSubmissionSource(OpinionSourceType submittedSource, OpinionSourceType opinionSource) {
+        return submittedSource == OpinionSourceType.MUTUAL_CHECK_ITEM
+                ? opinionSource == OpinionSourceType.MUTUAL_CHECK_ITEM || opinionSource == OpinionSourceType.MUTUAL_EXTRA
+                : submittedSource == opinionSource;
     }
 
     private boolean reviewerRoleMatchesCurrentSummary(ReviewTaskRecord task, List<OpinionSourceType> sourceTypes, String reviewRole) {

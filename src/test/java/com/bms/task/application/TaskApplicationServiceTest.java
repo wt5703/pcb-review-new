@@ -233,8 +233,10 @@ class TaskApplicationServiceTest {
 
         assertThat(page.items()).singleElement().satisfies(item ->
                 assertThat(item.createdDate()).isEqualTo(LocalDate.of(2026, 10, 19)));
+        assertThat(page.items()).singleElement().satisfies(item ->
+                assertThat(item.createdTime()).isEqualTo(LocalDateTime.of(2026, 10, 19, 15, 30)));
         String json = new ObjectMapper().registerModule(new JavaTimeModule()).writeValueAsString(page);
-        assertThat(json).contains("\"createdDate\":\"2026-10-19\"");
+        assertThat(json).contains("\"createdDate\":\"2026-10-19\"", "\"createdTime\":\"2026-10-19 15:30:00\"");
     }
 
     @Test

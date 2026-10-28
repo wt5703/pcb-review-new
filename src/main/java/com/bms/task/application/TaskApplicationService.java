@@ -223,7 +223,7 @@ public class TaskApplicationService {
     private TaskView toTaskListItem(ReviewTaskRecord record, Map<String, String> mutualCheckReviewerNames) {
         ReviewTask task = restoreTask(record);
         LocalDate createdDate = record.getCreatedAt() == null ? null : record.getCreatedAt().toLocalDate();
-        return TaskView.from(task, task.designerName(), task.expertLeaderName(), List.of(), createdDate, Map.of(),
+        return TaskView.from(task, task.designerName(), task.expertLeaderName(), List.of(), createdDate, record.getCreatedAt(), Map.of(),
                 toReviewerViews(record.getMutualCheckReviewerEmployeeNos(), mutualCheckReviewerNames));
     }
 
@@ -377,7 +377,7 @@ public class TaskApplicationService {
                            List<TaskFlowRecordView> flowRecords,
                            @Schema(description = "任务创建日期，格式 yyyy-MM-dd", example = "2026-10-19")
                            @JsonInclude(JsonInclude.Include.NON_NULL) @JsonFormat(pattern = "yyyy-MM-dd") LocalDate createdDate,
-                           @Schema(description = "任务创建时间，任务详情返回，格式 yyyy-MM-dd HH:mm:ss", example = "2026-10-19 15:30:00")
+                           @Schema(description = "任务创建时间，任务详情和任务列表返回，格式 yyyy-MM-dd HH:mm:ss", example = "2026-10-19 15:30:00")
                            @JsonInclude(JsonInclude.Include.NON_NULL) @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss") java.time.LocalDateTime createdTime) {
         static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords) {
             return from(task, designerName, expertLeaderName, flowRecords, (LocalDate) null);
