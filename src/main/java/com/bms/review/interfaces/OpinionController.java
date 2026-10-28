@@ -28,7 +28,10 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RequestHeader;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+
+import static java.net.URLDecoder.decode;
 
 /**
  * @author 王涛
@@ -49,6 +52,7 @@ public class OpinionController {
     @Operation(summary = "提出评审意见", description = "在当前任务节点提交一条具体意见。comment 保存问题描述；richText 富文本信息")
     ApiResponse<OpinionApplicationService.OpinionView> raise(@PathVariable long taskId, @Valid @RequestBody RaiseOpinionRequest request,
                                                                @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
+        userName = decode(userName, StandardCharsets.UTF_8);
         return ApiResponse.ok(opinionApplicationService.raise(new OpinionApplicationService.RaiseOpinionCommand(taskId, request.sourceType(),
                 request.sourceItemId(), request.comment(), request.richText(), request.severity()), employeeNo, userName), traceId(servletRequest));
     }
@@ -58,6 +62,7 @@ public class OpinionController {
     ApiResponse<OpinionApplicationService.OpinionView> submitNoOpinion(@PathVariable long taskId,
                                                                          @Valid @RequestBody SubmitNoOpinionRequest request,
                                                                          @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
+        userName = decode(userName, StandardCharsets.UTF_8);
         return ApiResponse.ok(opinionApplicationService.submitNoOpinion(taskId, request.sourceType(), employeeNo, userName), traceId(servletRequest));
     }
 

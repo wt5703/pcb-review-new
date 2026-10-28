@@ -12,7 +12,10 @@ import org.springframework.validation.annotation.Validated;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.web.bind.annotation.RequestHeader;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+
+import static java.net.URLDecoder.decode;
 
 /** 为兼容已有接口，直接返回请求头中的人员工号与姓名。 */
 @RestController
@@ -24,6 +27,7 @@ public class CurrentUserController {
     @Operation(summary = "获取当前登录用户详情", description = "从请求头 userId 和 userName 读取工号和姓名，不调用用户中心。")
     ApiResponse<CurrentUserView> currentUser(@NotBlank @RequestHeader("userId") String employeeNo,
                                             @NotBlank @RequestHeader("userName") String userName, HttpServletRequest request) {
+        userName = decode(userName, StandardCharsets.UTF_8);
         return ApiResponse.ok(new CurrentUserView(employeeNo, userName, null, null, null, List.of()),
                 request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString());
     }

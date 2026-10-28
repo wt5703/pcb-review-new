@@ -30,7 +30,10 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RequestHeader;
 
 import java.util.List;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+
+import static java.net.URLDecoder.decode;
 
 /**
  * @author 王涛
@@ -60,6 +63,7 @@ public class TaskController {
     ApiResponse<TaskApplicationService.TaskView> saveTaskDraft(@RequestParam(required = false) @Parameter(description = "编辑已有草稿时传任务 ID；新建草稿不传") Long taskId,
                                                                 @Valid @RequestBody CreateTaskRequest request,
                                                                 @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
+        userName = decode(userName, StandardCharsets.UTF_8);
         return ApiResponse.ok(saveTaskForm(taskId, request, false, employeeNo, userName), getTraceId(servletRequest));
     }
 
@@ -68,6 +72,7 @@ public class TaskController {
     ApiResponse<TaskApplicationService.TaskView> submitTask(@RequestParam(required = false) @Parameter(description = "提交已有草稿时传任务 ID；直接新建提交不传") Long taskId,
                                                              @Valid @RequestBody CreateTaskRequest request,
                                                              @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
+        userName = decode(userName, StandardCharsets.UTF_8);
         return ApiResponse.ok(saveTaskForm(taskId, request, true, employeeNo, userName), getTraceId(servletRequest));
     }
 

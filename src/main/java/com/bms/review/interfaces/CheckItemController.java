@@ -21,7 +21,10 @@ import org.springframework.validation.annotation.Validated;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.web.bind.annotation.RequestHeader;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+
+import static java.net.URLDecoder.decode;
 
 /**
  * @author 王涛
@@ -51,6 +54,7 @@ public class CheckItemController {
     ApiResponse<TaskCheckItemApplicationService.CheckItemView> submit(@PathVariable long taskId, @PathVariable long itemId,
                                                                         @Valid @RequestBody SubmitCheckItemRequest request,
                                                                         @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
+        userName = decode(userName, StandardCharsets.UTF_8);
         return ApiResponse.ok(taskCheckItemApplicationService.submit(taskId, itemId,
                 new TaskCheckItemApplicationService.SubmitCheckItemCommand(request.result(), request.comment(), request.richText()),
                 employeeNo, userName), traceId(servletRequest));
@@ -61,6 +65,7 @@ public class CheckItemController {
     ApiResponse<List<TaskCheckItemApplicationService.CheckItemView>> submitBatch(@PathVariable long taskId,
                                                                                    @Valid @RequestBody SubmitCheckItemsRequest request,
                                                                                    @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
+        userName = decode(userName, StandardCharsets.UTF_8);
         return ApiResponse.ok(taskCheckItemApplicationService.submitBatch(taskId, request.items().stream()
                 .map(item -> new TaskCheckItemApplicationService.SubmitBatchItemCommand(item.itemId(), item.result(), item.comment(), item.richText())).toList(),
                 employeeNo, userName), traceId(servletRequest));

@@ -8,6 +8,7 @@ import com.bms.task.application.TaskApplicationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -18,7 +19,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.validation.annotation.Validated;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.util.UriUtils;
 
 import java.nio.charset.StandardCharsets;
 
@@ -61,16 +61,16 @@ public class TaskArchiveController {
         return ResponseEntity.ok()
                 .contentType(EXCEL_MEDIA_TYPE)
                 .contentLength(excel.content().length)
-                // 同时提供普通 filename 和 RFC 5987 filename*：部分下载端不识别 filename*，
-                // 只读取 filename 时也能拿到带 .xlsx 后缀的正确文件名。
                 .header(HttpHeaders.CONTENT_DISPOSITION, attachmentFileName(excel.fileName()))
                 .header("X-Content-Type-Options", "nosniff")
                 .body(excel.content());
     }
 
     private String attachmentFileName(String fileName) {
-        String encodedFileName = UriUtils.encode(fileName, StandardCharsets.UTF_8);
-        return "attachment; filename=\"" + encodedFileName + "\"; filename*=UTF-8''" + encodedFileName;
+        return ContentDisposition.attachment()
+                .filename(fileName, StandardCharsets.UTF_8)
+                .build()
+                .toString();
     }
 
     private String traceId(HttpServletRequest request) { return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString(); }

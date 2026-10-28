@@ -4,14 +4,13 @@ import com.bms.archive.application.TaskArchiveApplicationService;
 import com.bms.archive.application.TaskArchiveOpinionExportApplicationService;
 import com.bms.task.application.TaskApplicationService;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.web.util.UriUtils;
-
 import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,11 +40,11 @@ class TaskArchiveControllerTest {
         assertThat(response.getHeaders().getContentType().toString())
                 .isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         assertThat(response.getHeaders().getContentLength()).isEqualTo(3L);
-        String encodedFileName = UriUtils.encode("BMS项目PCB评审检查表.xlsx", StandardCharsets.UTF_8);
-        assertThat(disposition).isEqualTo("attachment; filename=\"" + encodedFileName
-                + "\"; filename*=UTF-8''" + encodedFileName);
-        assertThat(UriUtils.decode(encodedFileName, StandardCharsets.UTF_8))
-                .isEqualTo("BMS项目PCB评审检查表.xlsx");
+        assertThat(disposition).isEqualTo(ContentDisposition.attachment()
+                .filename("BMS项目PCB评审检查表.xlsx", StandardCharsets.UTF_8)
+                .build()
+                .toString());
+        assertThat(ContentDisposition.parse(disposition).getFilename()).isEqualTo("BMS项目PCB评审检查表.xlsx");
         verifyNoInteractions(taskApplicationService, taskArchiveApplicationService);
     }
 
@@ -68,6 +67,9 @@ class TaskArchiveControllerTest {
         assertThat(result.getResponse().getContentType()).isEqualTo(MediaType.parseMediaType(
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").toString());
         assertThat(result.getResponse().getHeader(HttpHeaders.CONTENT_DISPOSITION))
-                .contains("filename=\"", ".xlsx\"", "filename*=UTF-8''");
+                .isEqualTo(ContentDisposition.attachment()
+                        .filename("BMS项目PCB评审检查表.xlsx", StandardCharsets.UTF_8)
+                        .build()
+                        .toString());
     }
 }

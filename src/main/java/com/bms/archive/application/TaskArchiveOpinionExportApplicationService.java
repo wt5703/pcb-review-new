@@ -182,16 +182,26 @@ public class TaskArchiveOpinionExportApplicationService {
         CellStyle titleStyle = titleStyle(workbook), headerStyle = headerStyle(workbook), bodyStyle = bodyStyle(workbook);
         var titleRow = sheet.createRow(0); titleRow.setHeightInPoints(28); Cell title = titleRow.createCell(0);
         title.setCellValue(task.getProjectName() + "设计评审记录表--" + sheetName); title.setCellStyle(titleStyle); sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, HEADERS.length - 1));
-        var reviewerRow = sheet.createRow(1); reviewerRow.createCell(0).setCellValue(sheetName + "人"); styleRow(reviewerRow, headerStyle);
-        var headerRow = sheet.createRow(3); for (int index = 0; index < HEADERS.length; index++) write(headerRow, index, HEADERS[index], headerStyle);
+        var reviewerRow = sheet.createRow(1);
+        write(reviewerRow, 0, sheetName + "人", headerStyle);
+        write(reviewerRow, 1, reviewerNames(rows), headerStyle);
+        styleRow(reviewerRow, headerStyle);
+        sheet.addMergedRegion(new CellRangeAddress(1, 1, 1, HEADERS.length - 1));
+        var headerRow = sheet.createRow(2); for (int index = 0; index < HEADERS.length; index++) write(headerRow, index, HEADERS[index], headerStyle);
         for (int index = 0; index < rows.size(); index++) {
-            ExportRow row = rows.get(index); var excelRow = sheet.createRow(index + 4); excelRow.setHeightInPoints(48);
+            ExportRow row = rows.get(index); var excelRow = sheet.createRow(index + 3); excelRow.setHeightInPoints(48);
             write(excelRow, 0, index + 1, bodyStyle); write(excelRow, 1, row.phase(), bodyStyle);
             writeRichTextLocation(workbook, sheet, excelRow, row.location(), bodyStyle);
             write(excelRow, 3, row.description(), bodyStyle);
             write(excelRow, 4, row.raisedByName(), bodyStyle); write(excelRow, 5, row.severity(), bodyStyle); write(excelRow, 6, row.handling(), bodyStyle); write(excelRow, 7, row.confirmation(), bodyStyle);
         }
-        sheet.setAutoFilter(new CellRangeAddress(3, Math.max(4, rows.size() + 3), 0, HEADERS.length - 1)); sheet.createFreezePane(0, 4);
+        sheet.setAutoFilter(new CellRangeAddress(2, Math.max(3, rows.size() + 2), 0, HEADERS.length - 1)); sheet.createFreezePane(0, 3);
+    }
+
+    private String reviewerNames(List<ExportRow> rows) {
+        return rows.stream().map(ExportRow::raisedByName)
+                .filter(name -> name != null && !name.isBlank())
+                .distinct().collect(Collectors.joining("、"));
     }
 
     private void createSchematicSheet(XSSFWorkbook workbook, ReviewTaskRecord task, List<SchematicExportRow> rows) {
@@ -253,10 +263,11 @@ public class TaskArchiveOpinionExportApplicationService {
     private void writeRichTextLocation(XSSFWorkbook workbook, XSSFSheet sheet, org.apache.poi.ss.usermodel.Row row,
                                        RichTextContent richText, CellStyle style) {
         write(row, LOCATION_COLUMN, richText.plainText(), style);
+        float textHeight = textHeight(richText.plainText(), sheet.getColumnWidth(LOCATION_COLUMN) / 256F);
         if (richText.images().isEmpty()) {
+            row.setHeightInPoints(Math.min(MAX_LOCATION_ROW_HEIGHT_POINTS, Math.max(row.getHeightInPoints(), textHeight + 8F)));
             return;
         }
-        float textHeight = textHeight(richText.plainText());
         float imageHeight = Math.min(DEFAULT_IMAGE_HEIGHT_POINTS,
                 Math.max(32F, (MAX_LOCATION_ROW_HEIGHT_POINTS - textHeight - 8F) / richText.images().size()));
         row.setHeightInPoints(Math.min(MAX_LOCATION_ROW_HEIGHT_POINTS,
@@ -276,12 +287,19 @@ public class TaskArchiveOpinionExportApplicationService {
         }
     }
 
-    private float textHeight(String text) {
+    private float textHeight(String text, float columnWidth) {
         if (text == null || text.isBlank()) {
             return 20F;
         }
-        int lines = Math.max(1, text.split("\\R", -1).length);
-        return Math.min(140F, Math.max(20F, lines * 16F));
+        int lines = 0;
+        for (String line : text.split("\\R", -1)) {
+            lines += Math.max(1, (int) Math.ceil(displayWidth(line) / Math.max(1F, columnWidth)));
+        }
+        return Math.min(MAX_LOCATION_ROW_HEIGHT_POINTS - 8F, Math.max(20F, lines * 16F));
+    }
+
+    private int displayWidth(String text) {
+        return text.codePoints().map(codePoint -> codePoint <= 0x7F ? 1 : 2).sum();
     }
 
     private ReviewTaskRecord requireFinishedTask(long taskId) {
