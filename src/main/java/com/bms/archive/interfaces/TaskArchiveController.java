@@ -19,9 +19,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.validation.annotation.Validated;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.util.UriUtils;
-
-import java.nio.charset.StandardCharsets;
 
 /**
  * @author 王涛
@@ -69,8 +66,7 @@ public class TaskArchiveController {
     }
 
     private String attachmentFileName(String fileName) {
-        String encodedFileName = UriUtils.encode(fileName, StandardCharsets.UTF_8);
-        return ContentDisposition.attachment().filename(encodedFileName).build().toString();
+        return ContentDisposition.attachment().filename(fileName).build().toString();
     }
 
     private String traceId(HttpServletRequest request) { return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString(); }

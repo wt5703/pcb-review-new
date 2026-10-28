@@ -5,12 +5,16 @@ import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.task.domain.MyTaskAction;
 import com.bms.task.domain.ReviewType;
+import com.bms.task.domain.TaskReviewerAssignment;
+import com.bms.task.domain.TaskReviewerAssignmentCodec;
 import com.bms.task.domain.TaskStatus;
+import com.bms.review.domain.ReviewRole;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.time.LocalDateTime;
 
@@ -36,9 +40,13 @@ class MyTaskApplicationServiceTest {
         ReviewTaskRecord completedTask = task(1L, "BMS010", TaskStatus.PCB_EXPERT_REVIEWING);
         ReviewTaskRecord myTask = task(2L, "BMS010", TaskStatus.MUTUAL_CHECK_REVIEWING);
         myTask.setCreatedAt(LocalDateTime.of(2026, 10, 19, 15, 30));
+        myTask.setReviewerAssignments(TaskReviewerAssignmentCodec.encode(List.of(
+                new TaskReviewerAssignment(ReviewRole.PCB_EXPERT, List.of("BMS099")))));
         when(taskMapper.findAllUnfinished()).thenReturn(List.of(completedTask, myTask));
         when(assignmentAccessMapper.isCurrentTaskProcessor(1L, "BMS088")).thenReturn(false);
         when(assignmentAccessMapper.isCurrentTaskProcessor(2L, "BMS088")).thenReturn(true);
+        when(reviewerWhitelistApplicationService.findDisplayNamesByEmployeeNos(List.of("BMS099")))
+                .thenReturn(Map.of("BMS099", "评审工程师"));
 
         List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS088", "BMS088");
 
@@ -46,6 +54,15 @@ class MyTaskApplicationServiceTest {
         assertThat(tasks.get(0).id()).isEqualTo(2L);
         assertThat(tasks.get(0).actions()).containsExactly(MyTaskAction.REVIEW);
         assertThat(tasks.get(0).createdTime()).isEqualTo(LocalDateTime.of(2026, 10, 19, 15, 30));
+        assertThat(tasks.get(0).reviewerAssignments()).singleElement().satisfies(assignment -> {
+            assertThat(assignment.reviewRole()).isEqualTo(ReviewRole.PCB_EXPERT);
+            assertThat(assignment.reviewRoleName()).isEqualTo("PCB评审");
+            assertThat(assignment.reviewerEmployeeNos()).containsExactly("BMS099");
+            assertThat(assignment.reviewers()).singleElement().satisfies(reviewer -> {
+                assertThat(reviewer.employeeNo()).isEqualTo("BMS099");
+                assertThat(reviewer.reviewerName()).isEqualTo("评审工程师");
+            });
+        });
     }
 
     @Test

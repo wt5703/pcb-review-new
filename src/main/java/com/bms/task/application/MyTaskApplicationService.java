@@ -5,6 +5,7 @@ import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.task.domain.MyTaskAction;
 import com.bms.task.domain.ReviewType;
+import com.bms.task.domain.TaskReviewerAssignmentCodec;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
@@ -47,6 +48,12 @@ public class MyTaskApplicationService {
         Set<Long> pendingConfirmationTaskIds = Set.copyOf(opinionMapper.findPendingConfirmationTaskIdsForRaiserEmployeeNo(operatorEmployeeNo));
         Map<Long, EnumSet<MyTaskAction>> actions = new HashMap<>();
         List<ReviewTaskRecord> unfinishedTasks = taskMapper.findAllUnfinished();
+        Map<String, String> reviewerNames = reviewerWhitelistApplicationService.findDisplayNamesByEmployeeNos(
+                unfinishedTasks.stream()
+                        .flatMap(task -> TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments()).stream())
+                        .flatMap(assignment -> assignment.reviewerEmployeeNos().stream())
+                        .distinct()
+                        .toList());
         for (ReviewTaskRecord task : unfinishedTasks) {
             EnumSet<MyTaskAction> taskActions = EnumSet.noneOf(MyTaskAction.class);
             if (assignmentAccessMapper.isCurrentTaskProcessor(task.getId(), operatorEmployeeNo)) {
@@ -65,7 +72,7 @@ public class MyTaskApplicationService {
             }
         }
         return unfinishedTasks.stream().filter(task -> actions.containsKey(task.getId()))
-                .map(task -> toView(task, actions.get(task.getId()))).toList();
+                .map(task -> toView(task, actions.get(task.getId()), reviewerNames)).toList();
     }
 
     /**
@@ -90,10 +97,13 @@ public class MyTaskApplicationService {
                 pendingConfirmationTaskCount, finishedThisMonthCount);
     }
 
-    private MyTaskView toView(ReviewTaskRecord task, EnumSet<MyTaskAction> actions) {
+    private MyTaskView toView(ReviewTaskRecord task, EnumSet<MyTaskAction> actions, Map<String, String> reviewerNames) {
         return MyTaskView.from(task,
                 reviewerWhitelistApplicationService.findDisplayNameOrDefault(task.getDesignerEmployeeNo(), task.getDesignerName()),
-                reviewerWhitelistApplicationService.findDisplayNameOrDefault(task.getExpertLeaderEmployeeNo(), task.getExpertLeaderName()), actions);
+                reviewerWhitelistApplicationService.findDisplayNameOrDefault(task.getExpertLeaderEmployeeNo(), task.getExpertLeaderName()),
+                TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments()).stream()
+                        .map(assignment -> TaskApplicationService.ReviewerAssignmentView.from(assignment, reviewerNames))
+                        .toList(), actions);
     }
 
     /** PCB、原理图的指定评审阶段均由设计者继续提交对应的流程动作。 */
@@ -127,15 +137,18 @@ public class MyTaskApplicationService {
 
     public record MyTaskView(Long id, ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo, String designerName,
                              String designName, String pcbType, LocalDate expectedCompletedDate, String expertLeaderEmployeeNo, String expertLeaderName,
-                             List<ReviewRole> reviewRoles, String reviewDescription, TaskStatus status, List<MyTaskAction> actions,
+                             List<ReviewRole> reviewRoles, List<TaskApplicationService.ReviewerAssignmentView> reviewerAssignments,
+                             String reviewDescription, TaskStatus status, List<MyTaskAction> actions,
                              @Schema(description = "任务创建时间，格式 yyyy-MM-dd HH:mm:ss", example = "2026-10-19 15:30:00")
                              @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime createdTime) {
-        static MyTaskView from(ReviewTaskRecord record, String designerName, String expertLeaderName, EnumSet<MyTaskAction> actions) {
+        static MyTaskView from(ReviewTaskRecord record, String designerName, String expertLeaderName,
+                               List<TaskApplicationService.ReviewerAssignmentView> reviewerAssignments,
+                               EnumSet<MyTaskAction> actions) {
             List<ReviewRole> reviewRoles = record.getReviewRoles() == null || record.getReviewRoles().isBlank() ? List.of()
                     : java.util.Arrays.stream(record.getReviewRoles().split(",")).map(ReviewRole::valueOf).toList();
             return new MyTaskView(record.getId(), ReviewType.valueOf(record.getReviewType()), record.getTaskName(), record.getProjectName(),
                     record.getDesignerEmployeeNo(), designerName, record.getDesignName(), record.getPcbType(), record.getExpectedCompletedDate(),
-                    record.getExpertLeaderEmployeeNo(), expertLeaderName, reviewRoles, record.getReviewDescription(),
+                    record.getExpertLeaderEmployeeNo(), expertLeaderName, reviewRoles, List.copyOf(reviewerAssignments), record.getReviewDescription(),
                     TaskStatus.valueOf(record.getStatus()), List.copyOf(actions), record.getCreatedAt());
         }
     }
