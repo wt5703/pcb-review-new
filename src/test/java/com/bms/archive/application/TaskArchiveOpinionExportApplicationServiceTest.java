@@ -10,6 +10,7 @@ import com.bms.review.domain.OpinionSourceType;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
 import org.apache.poi.ss.util.CellRangeAddress;
+import org.apache.poi.xssf.usermodel.XSSFPicture;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 
@@ -65,6 +66,11 @@ class TaskArchiveOpinionExportApplicationServiceTest {
             assertThat(emc.getRow(3).getCell(2).getStringCellValue()).contains("CANH", "[图片]");
             assertThat(emc.getRow(3).getHeightInPoints()).isGreaterThan(48F);
             assertThat(workbook.getAllPictures()).hasSize(2);
+            XSSFPicture firstPicture = (XSSFPicture) emc.getDrawingPatriarch().getShapes().get(0);
+            assertThat(firstPicture.getClientAnchor().getCol1()).isEqualTo(2);
+            assertThat(firstPicture.getClientAnchor().getCol2()).isEqualTo(2);
+            assertThat(firstPicture.getClientAnchor().getRow1()).isEqualTo(3);
+            assertThat(firstPicture.getClientAnchor().getRow2()).isEqualTo(3);
             assertThat(emc.getRow(3).getCell(6).getStringCellValue()).isEqualTo("接受并修改：已调整");
             assertThat(emc.getRow(3).getCell(7).getStringCellValue()).isEqualTo("确认通过：确认通过");
             assertThat(emc.getRow(4).getCell(6).getStringCellValue()).isEqualTo("不接受：保留原设计");

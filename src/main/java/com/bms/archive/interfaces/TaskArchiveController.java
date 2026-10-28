@@ -20,8 +20,6 @@ import org.springframework.validation.annotation.Validated;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.web.bind.annotation.RequestHeader;
 
-import java.nio.charset.StandardCharsets;
-
 /**
  * @author 王涛
  * @date 2026-09-18
@@ -68,7 +66,7 @@ public class TaskArchiveController {
 
     private String attachmentFileName(String fileName) {
         return ContentDisposition.attachment()
-                .filename(fileName, StandardCharsets.UTF_8)
+                .filename(fileName)
                 .build()
                 .toString();
     }

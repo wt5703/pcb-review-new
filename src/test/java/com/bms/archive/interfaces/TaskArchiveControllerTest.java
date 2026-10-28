@@ -11,7 +11,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -41,9 +40,10 @@ class TaskArchiveControllerTest {
                 .isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         assertThat(response.getHeaders().getContentLength()).isEqualTo(3L);
         assertThat(disposition).isEqualTo(ContentDisposition.attachment()
-                .filename("BMS项目PCB评审检查表.xlsx", StandardCharsets.UTF_8)
+                .filename("BMS项目PCB评审检查表.xlsx")
                 .build()
                 .toString());
+        assertThat(disposition).doesNotContain("filename*", "=?UTF-8?Q?");
         assertThat(ContentDisposition.parse(disposition).getFilename()).isEqualTo("BMS项目PCB评审检查表.xlsx");
         verifyNoInteractions(taskApplicationService, taskArchiveApplicationService);
     }
@@ -68,7 +68,7 @@ class TaskArchiveControllerTest {
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").toString());
         assertThat(result.getResponse().getHeader(HttpHeaders.CONTENT_DISPOSITION))
                 .isEqualTo(ContentDisposition.attachment()
-                        .filename("BMS项目PCB评审检查表.xlsx", StandardCharsets.UTF_8)
+                        .filename("BMS项目PCB评审检查表.xlsx")
                         .build()
                         .toString());
     }

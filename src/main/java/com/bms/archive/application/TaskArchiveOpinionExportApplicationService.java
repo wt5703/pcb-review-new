@@ -257,8 +257,8 @@ public class TaskArchiveOpinionExportApplicationService {
     private void write(org.apache.poi.ss.usermodel.Row row, int column, Object value, CellStyle style) { Cell cell = row.createCell(column); cell.setCellValue(value == null ? "" : String.valueOf(value)); cell.setCellStyle(style); }
 
     /**
-     * 富文本中的普通文字写入“位置”单元格；前端粘贴图片产生的 data URL 则解码并嵌入该单元格。
-     * Excel 不支持在单个单元格内混排 HTML，因此图片以跟随单元格移动和缩放的绘图对象呈现。
+     * 富文本中的普通文字写入“位置”单元格；前端粘贴图片产生的 data URL 则解码后锚定在同一单元格内。
+     * Excel 不支持在单个单元格内混排 HTML，因此图片使用跟随单元格移动和缩放的绘图对象，但锚点不会跨出当前行或列。
      */
     private void writeRichTextLocation(XSSFWorkbook workbook, XSSFSheet sheet, org.apache.poi.ss.usermodel.Row row,
                                        RichTextContent richText, CellStyle style) {
@@ -273,14 +273,17 @@ public class TaskArchiveOpinionExportApplicationService {
         row.setHeightInPoints(Math.min(MAX_LOCATION_ROW_HEIGHT_POINTS,
                 textHeight + imageHeight * richText.images().size() + 8F));
         Drawing<?> drawing = sheet.createDrawingPatriarch();
+        float columnWidth = sheet.getColumnWidthInPixels(LOCATION_COLUMN) * 72F / 96F;
         for (int index = 0; index < richText.images().size(); index++) {
             EmbeddedImage image = richText.images().get(index);
             ClientAnchor anchor = workbook.getCreationHelper().createClientAnchor();
             anchor.setAnchorType(ClientAnchor.AnchorType.MOVE_AND_RESIZE);
             anchor.setCol1(LOCATION_COLUMN);
-            anchor.setCol2(LOCATION_COLUMN + 1);
+            anchor.setCol2(LOCATION_COLUMN);
             anchor.setRow1(row.getRowNum());
-            anchor.setRow2(row.getRowNum() + 1);
+            anchor.setRow2(row.getRowNum());
+            anchor.setDx1(org.apache.poi.util.Units.toEMU(2));
+            anchor.setDx2(org.apache.poi.util.Units.toEMU((int) Math.max(4F, columnWidth - 2F)));
             anchor.setDy1(org.apache.poi.util.Units.toEMU((int) (textHeight + imageHeight * index)));
             anchor.setDy2(org.apache.poi.util.Units.toEMU((int) (textHeight + imageHeight * (index + 1) - 4F)));
             drawing.createPicture(anchor, workbook.addPicture(image.content(), image.pictureType()));
