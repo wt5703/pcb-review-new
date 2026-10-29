@@ -10,7 +10,10 @@ import com.bms.review.infrastructure.OpinionConfirmationRecord;
 import com.bms.review.infrastructure.OpinionReplyRecord;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.infrastructure.ReviewOpinionRecord;
+import com.bms.review.infrastructure.ReviewerWhitelistMapper;
+import com.bms.review.infrastructure.ReviewerWhitelistRecord;
 import com.bms.task.domain.ReviewType;
+import com.bms.task.domain.TaskReviewerAssignmentCodec;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
@@ -47,18 +50,19 @@ import java.util.regex.Pattern;
 /**
  * @author 王涛
  * @date 2026-09-28
- * @description 导出已归档任务的专家评审意见。PCB 按评审角色拆分工作表；原理图使用“评审问题记录”模板；每个设计者答复占一行，便于线下评审记录留档。
+ * @description 导出已归档任务的专家评审意见。按创建任务时勾选的评审角色拆分工作表，未提出意见的角色也保留空工作表；每个设计者答复占一行，便于线下评审记录留档。
  */
 @Service
 public class TaskArchiveOpinionExportApplicationService {
-    private static final List<String> SHEET_ROLE_ORDER = List.of(
-            ReviewRole.HARDWARE_EXPERT.name(), ReviewRole.EMC_EXPERT.name(), ReviewRole.PCB_EXPERT.name(),
-            ReviewRole.PROCESS_EXPERT.name(), ReviewRole.STRUCTURE_EXPERT.name());
     private static final Set<OpinionSourceType> EXPERT_OPINION_SOURCE_TYPES = EnumSet.of(
             OpinionSourceType.PCB_REVIEW,
             OpinionSourceType.SCHEMATIC_REVIEW,
             OpinionSourceType.PCB_PROCESS_REVIEW,
             OpinionSourceType.PCB_STRUCTURE_REVIEW);
+    private static final List<ReviewRole> PCB_REVIEW_ROLE_PRIORITY = List.of(
+            ReviewRole.PCB_EXPERT, ReviewRole.EMC_EXPERT, ReviewRole.HARDWARE_EXPERT);
+    private static final List<ReviewRole> SCHEMATIC_REVIEW_ROLE_PRIORITY = List.of(
+            ReviewRole.EMC_EXPERT, ReviewRole.HARDWARE_EXPERT);
     private static final String[] HEADERS = {"序号", "评审阶段", "位置", "问题描述", "提出人", "严重等级", "处理情况", "提出人确认"};
     private static final String[] SCHEMATIC_HEADERS = {"评审问题序号", "评审问题提出时间", "评审对象", "问题描述", "问题等级", "原因分析",
             "处理措施", "计划解决时间", "实际解决时间", "责任人", "状态", "备注"};
@@ -69,24 +73,28 @@ public class TaskArchiveOpinionExportApplicationService {
     private static final float DEFAULT_IMAGE_HEIGHT_POINTS = 160F;
     private final ReviewTaskMapper taskMapper;
     private final ReviewOpinionMapper opinionMapper;
+    private final ReviewerWhitelistMapper whitelistMapper;
     private final UserCenterUserProfileClient userProfileClient;
 
     public TaskArchiveOpinionExportApplicationService(ReviewTaskMapper taskMapper, ReviewOpinionMapper opinionMapper,
+                                                       ReviewerWhitelistMapper whitelistMapper,
                                                        UserCenterUserProfileClient userProfileClient) {
         this.taskMapper = taskMapper;
         this.opinionMapper = opinionMapper;
+        this.whitelistMapper = whitelistMapper;
         this.userProfileClient = userProfileClient;
     }
 
     public ExportedExcel export(long taskId) {
         ReviewTaskRecord task = requireFinishedTask(taskId);
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            List<ReviewRole> configuredRoles = configuredReviewRoles(task);
             if (ReviewType.SCHEMATIC.name().equals(task.getReviewType())) {
-                createSchematicSheet(workbook, task, exportSchematicRows(task));
+                exportSchematicRows(task, configuredRoles).forEach((role, rows) ->
+                        createSchematicSheet(workbook, sheetName(role), task, rows));
             } else {
-                Map<String, List<ExportRow>> rowsByRole = exportRows(task);
-                if (rowsByRole.isEmpty()) createSheet(workbook, "专家评审", task, List.of());
-                else rowsByRole.forEach((role, rows) -> createSheet(workbook, sheetName(role), task, rows));
+                exportRows(task, configuredRoles).forEach((role, rows) ->
+                        createSheet(workbook, sheetName(role), task, rows));
             }
             workbook.write(output);
             return new ExportedExcel(fileName(task), output.toByteArray());
@@ -95,32 +103,51 @@ public class TaskArchiveOpinionExportApplicationService {
         }
     }
 
-    private Map<String, List<ExportRow>> exportRows(ReviewTaskRecord task) {
-        Map<String, List<ExportRow>> result = new LinkedHashMap<>();
-        taskOpinions(task.getId()).stream().filter(this::isExpertOpinion)
-                .filter(opinion -> !opinion.isNoOpinion())
+    private Map<ReviewRole, List<ExportRow>> exportRows(ReviewTaskRecord task, List<ReviewRole> configuredRoles) {
+        Map<ReviewRole, List<ExportRow>> result = emptyRowsByConfiguredRole(configuredRoles);
+        taskOpinions(task.getId()).stream().filter(opinion -> !opinion.isDraft()).filter(this::isExpertOpinion)
                 .sorted(Comparator.comparing(ReviewOpinionRecord::getId)).forEach(opinion ->
-                        result.computeIfAbsent(rolesForOpinion(opinion).name(), ignored -> new ArrayList<>()).addAll(rowsForOpinion(opinion)));
-        Map<String, List<ExportRow>> ordered = new LinkedHashMap<>();
-        SHEET_ROLE_ORDER.stream().filter(result::containsKey).forEach(role -> ordered.put(role, result.get(role)));
-        result.forEach((role, rows) -> ordered.putIfAbsent(role, rows));
-        return ordered;
+                        addRows(result, configuredRoles, rolesForOpinion(opinion, configuredRoles), rowsForOpinion(opinion)));
+        return result.isEmpty() ? Map.of(ReviewRole.HARDWARE_EXPERT, List.of()) : result;
     }
 
-    /** 原理图归档固定使用用户提供的“评审问题记录”单 Sheet 模板，只导出原理图专家意见。 */
-    private List<SchematicExportRow> exportSchematicRows(ReviewTaskRecord task) {
+    /** 原理图同样按创建任务时勾选的角色拆分，每个工作表使用“评审问题记录”模板。 */
+    private Map<ReviewRole, List<SchematicExportRow>> exportSchematicRows(ReviewTaskRecord task,
+                                                                            List<ReviewRole> configuredRoles) {
         String reviewObject = task.getProjectName() + "项目_" + task.getDesignName();
         String responsiblePerson = employeeName(task.getDesignerEmployeeNo(), task.getDesignerName());
-        return taskOpinions(task.getId()).stream()
+        Map<ReviewRole, List<SchematicExportRow>> result = emptyRowsByConfiguredRole(configuredRoles);
+        taskOpinions(task.getId()).stream()
+                .filter(opinion -> !opinion.isDraft())
                 .filter(opinion -> opinion.getSourceType() == OpinionSourceType.SCHEMATIC_REVIEW)
-                .filter(opinion -> !opinion.isNoOpinion())
                 .sorted(Comparator.comparing(ReviewOpinionRecord::getId))
-                .flatMap(opinion -> schematicRowsForOpinion(opinion, reviewObject, responsiblePerson).stream())
-                .toList();
+                .forEach(opinion -> addRows(result, configuredRoles, rolesForOpinion(opinion, configuredRoles),
+                        schematicRowsForOpinion(opinion, reviewObject, responsiblePerson)));
+        return result.isEmpty() ? Map.of(ReviewRole.HARDWARE_EXPERT, List.of()) : result;
+    }
+
+    private <T> Map<ReviewRole, List<T>> emptyRowsByConfiguredRole(List<ReviewRole> configuredRoles) {
+        Map<ReviewRole, List<T>> result = new LinkedHashMap<>();
+        configuredRoles.forEach(role -> result.putIfAbsent(role, new ArrayList<>()));
+        return result;
+    }
+
+    private <T> void addRows(Map<ReviewRole, List<T>> rowsByRole, List<ReviewRole> configuredRoles,
+                             ReviewRole role, List<T> rows) {
+        if (!configuredRoles.isEmpty() && !rowsByRole.containsKey(role)) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR,
+                    "意见归属角色" + role.name() + "不在任务创建时勾选的评审角色中");
+        }
+        rowsByRole.computeIfAbsent(role, ignored -> new ArrayList<>()).addAll(rows);
     }
 
     private List<SchematicExportRow> schematicRowsForOpinion(ReviewOpinionRecord opinion, String reviewObject,
                                                               String responsiblePerson) {
+        if (opinion.isNoOpinion()) {
+            return List.of(new SchematicExportRow(opinion.getCreatedAt(), reviewObject, opinion.getComment(),
+                    severityName(opinion.getSeverity()), "", "无意见提交", opinion.getCreatedAt(), responsiblePerson,
+                    "Close", "确认通过"));
+        }
         List<OpinionReplyRecord> replies = opinionMapper.findRepliesByOpinionId(opinion.getId());
         Map<Long, OpinionConfirmationRecord> confirmations = confirmationsByReply(opinion.getId());
         if (replies == null || replies.isEmpty()) {
@@ -146,17 +173,75 @@ public class TaskArchiveOpinionExportApplicationService {
         return opinions == null ? List.of() : opinions;
     }
 
-    private ReviewRole rolesForOpinion(ReviewOpinionRecord opinion) {
+    private ReviewRole rolesForOpinion(ReviewOpinionRecord opinion, List<ReviewRole> configuredRoles) {
         return switch (opinion.getSourceType()) {
-            case PCB_REVIEW -> ReviewRole.EMC_EXPERT;
-            case SCHEMATIC_REVIEW -> ReviewRole.HARDWARE_EXPERT;
+            case PCB_REVIEW -> whitelistReviewRole(opinion, availableRoles(PCB_REVIEW_ROLE_PRIORITY, configuredRoles));
+            case SCHEMATIC_REVIEW -> whitelistReviewRole(opinion, availableRoles(SCHEMATIC_REVIEW_ROLE_PRIORITY, configuredRoles));
             case PCB_PROCESS_REVIEW -> ReviewRole.PROCESS_EXPERT;
             case PCB_STRUCTURE_REVIEW -> ReviewRole.STRUCTURE_EXPERT;
             case MUTUAL_CHECK_ITEM, MUTUAL_EXTRA -> throw new BusinessException(ErrorCode.VALIDATION_ERROR, "互检意见不支持归档专家意见导出");
         };
     }
 
+    private List<ReviewRole> availableRoles(List<ReviewRole> rolePriority, List<ReviewRole> configuredRoles) {
+        return configuredRoles.isEmpty() ? rolePriority : rolePriority.stream()
+                .filter(configuredRoles::contains)
+                .toList();
+    }
+
+    /**
+     * PCB、原理图评审共用同一意见来源时，按提出人的白名单角色决定导出工作表。
+     * 一人具有多个可用角色时，按调用方给出的业务优先级归类，保证一条意见只导出一次。
+     */
+    private ReviewRole whitelistReviewRole(ReviewOpinionRecord opinion, List<ReviewRole> rolePriority) {
+        String employeeNo = opinion.getRaisedByEmployeeNo();
+        if (employeeNo == null || employeeNo.isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "评审意见缺少提出人工号，无法确定导出角色");
+        }
+        List<ReviewerWhitelistRecord> roleRecords = whitelistMapper.findRolesByEmployeeNos(List.of(employeeNo));
+        Set<String> whitelistRoles = (roleRecords == null ? List.<ReviewerWhitelistRecord>of() : roleRecords).stream()
+                .map(ReviewerWhitelistRecord::getReviewRole)
+                .filter(role -> role != null && !role.isBlank())
+                .collect(Collectors.toSet());
+        return rolePriority.stream()
+                .filter(role -> whitelistRoles.contains(role.name()))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_ERROR,
+                        "提出人" + employeeNo + "未配置可用于" + opinion.getSourceType() + "的白名单角色"));
+    }
+
+    private List<ReviewRole> configuredReviewRoles(ReviewTaskRecord task) {
+        List<ReviewRole> reviewRoles = parseReviewRoles(task.getReviewRoles());
+        if (!reviewRoles.isEmpty()) {
+            return reviewRoles;
+        }
+        return TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments()).stream()
+                .map(assignment -> assignment.reviewRole())
+                .distinct()
+                .toList();
+    }
+
+    private List<ReviewRole> parseReviewRoles(String reviewRoles) {
+        if (reviewRoles == null || reviewRoles.isBlank()) {
+            return List.of();
+        }
+        List<ReviewRole> result = new ArrayList<>();
+        for (String value : reviewRoles.split(",")) {
+            try {
+                if (value != null && !value.isBlank()) {
+                    result.add(ReviewRole.valueOf(value.trim()));
+                }
+            } catch (IllegalArgumentException ignored) {
+                // 兼容历史任务中无效的角色值，不阻塞归档导出。
+            }
+        }
+        return result.stream().distinct().toList();
+    }
+
     private List<ExportRow> rowsForOpinion(ReviewOpinionRecord opinion) {
+        if (opinion.isNoOpinion()) {
+            return List.of(row(opinion, "无意见提交", "确认通过"));
+        }
         List<OpinionReplyRecord> replies = opinionMapper.findRepliesByOpinionId(opinion.getId());
         Map<Long, OpinionConfirmationRecord> confirmations = confirmationsByReply(opinion.getId());
         if (replies == null || replies.isEmpty()) return List.of(row(opinion, "待设计者答复", "待专家确认"));
@@ -204,8 +289,9 @@ public class TaskArchiveOpinionExportApplicationService {
                 .distinct().collect(Collectors.joining("、"));
     }
 
-    private void createSchematicSheet(XSSFWorkbook workbook, ReviewTaskRecord task, List<SchematicExportRow> rows) {
-        var sheet = workbook.createSheet("评审问题记录");
+    private void createSchematicSheet(XSSFWorkbook workbook, String sheetName, ReviewTaskRecord task,
+                                      List<SchematicExportRow> rows) {
+        var sheet = workbook.createSheet(sheetName);
         sheet.setDisplayGridlines(false);
         int[] widths = {17, 18, 30, 42, 14, 32, 32, 18, 18, 16, 12, 28};
         for (int index = 0; index < widths.length; index++) sheet.setColumnWidth(index, widths[index] * 256);
@@ -309,10 +395,7 @@ public class TaskArchiveOpinionExportApplicationService {
         ReviewTaskRecord task = taskMapper.findById(taskId); if (task == null) throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "评审任务不存在");
         if (!TaskStatus.FINISHED.name().equals(task.getStatus())) throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "任务尚未结束，不能导出归档意见"); return task;
     }
-    private String sheetName(String role) {
-        return java.util.Arrays.stream(ReviewRole.values()).filter(value -> value.name().equals(role)).findFirst()
-                .map(ReviewRole::displayName).orElse("专家评审");
-    }
+    private String sheetName(ReviewRole role) { return role.displayName(); }
     private String phaseName(OpinionSourceType sourceType) { return switch (sourceType) { case PCB_PROCESS_REVIEW -> "工艺评审"; case PCB_STRUCTURE_REVIEW -> "结构评审"; default -> "专家评审"; }; }
     private String severityName(OpinionSeverity severity) { return severity == null ? OpinionSeverity.GENERAL.displayName() : severity.displayName(); }
     private String handlingName(OpinionReplyRecord reply) { String action = switch (reply.getReplyType()) { case "ACCEPT" -> "接受并修改"; case "ACCEPT_NO_CHANGE" -> "接受不修改"; case "REJECT" -> "不接受"; default -> reply.getReplyType(); }; return reply.getReason() == null || reply.getReason().isBlank() ? action : action + "：" + reply.getReason(); }

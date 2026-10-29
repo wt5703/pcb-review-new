@@ -126,11 +126,11 @@ public class TaskApplicationService {
         TaskQuery validQuery = (query == null ? TaskQuery.defaultQuery() : query).normalized();
         List<String> statusNames = validQuery.statuses().stream().map(Enum::name).toList();
         String reviewTypeName = validQuery.reviewType() == null ? null : validQuery.reviewType().name();
-        long total = taskMapper.countPage(validQuery.normalizedTaskName(), validQuery.normalizedProjectName(),
+        long total = taskMapper.countPage(validQuery.normalizedTaskName(), validQuery.normalizedProjectNo(), validQuery.normalizedProjectName(),
                 validQuery.normalizedDesignerEmployeeNo(), reviewTypeName, statusNames, validQuery.taskId());
         long offset = (long) (validQuery.pageNum() - 1) * validQuery.pageSize();
         List<ReviewTaskRecord> records = total == 0 ? List.of()
-                : taskMapper.findPage(validQuery.normalizedTaskName(), validQuery.normalizedProjectName(),
+                : taskMapper.findPage(validQuery.normalizedTaskName(), validQuery.normalizedProjectNo(), validQuery.normalizedProjectName(),
                 validQuery.normalizedDesignerEmployeeNo(), reviewTypeName, statusNames, validQuery.taskId(),
                 offset, validQuery.pageSize());
         Map<String, String> mutualCheckReviewerNames = findMutualCheckReviewerNames(records);
@@ -145,7 +145,7 @@ public class TaskApplicationService {
         requireDesignerPermission(command.designerEmployeeNo(), operatorEmployeeNo, operatorName, "创建");
         validateReviewerAssignments(command);
         long id = nextTaskId();
-        ReviewTask task = ReviewTask.draft(id, command.reviewType(), command.taskName(), command.projectName(),
+        ReviewTask task = ReviewTask.draft(id, command.reviewType(), command.taskName(), command.projectNo(), command.projectName(),
                 command.designerEmployeeNo(), command.designerName(), command.designName(), command.pcbType(), command.expectedCompletedDate(),
                 command.expertLeaderEmployeeNo(), command.expertLeaderName(), command.reviewRoles(), command.reviewerAssignments(), command.reviewDescription());
         taskMapper.insert(toTaskRecord(task));
@@ -163,7 +163,7 @@ public class TaskApplicationService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "编辑任务时不允许变更设计者");
         }
         validateReviewerAssignments(command);
-        ReviewTask updated = ReviewTask.draft(taskId, command.reviewType(), command.taskName(), command.projectName(),
+        ReviewTask updated = ReviewTask.draft(taskId, command.reviewType(), command.taskName(), command.projectNo(), command.projectName(),
                 command.designerEmployeeNo(), command.designerName(), command.designName(), command.pcbType(), command.expectedCompletedDate(),
                 command.expertLeaderEmployeeNo(), command.expertLeaderName(), command.reviewRoles(), command.reviewerAssignments(), command.reviewDescription());
         copyDraftTaskDetails(updated, existing);
@@ -318,7 +318,7 @@ public class TaskApplicationService {
         Set<ReviewRole> allowedRoles = command.reviewType() == ReviewType.PCB
                 ? EnumSet.of(ReviewRole.HARDWARE_EXPERT, ReviewRole.EMC_EXPERT, ReviewRole.PCB_EXPERT,
                 ReviewRole.PROCESS_EXPERT, ReviewRole.STRUCTURE_EXPERT)
-                : EnumSet.of(ReviewRole.HARDWARE_EXPERT, ReviewRole.EMC_EXPERT, ReviewRole.PCB_EXPERT);
+                : EnumSet.of(ReviewRole.HARDWARE_EXPERT, ReviewRole.EMC_EXPERT);
         List<ReviewRole> roles = command.reviewRoles() == null ? List.of() : command.reviewRoles();
         if (roles.isEmpty() || roles.stream().anyMatch(role -> !allowedRoles.contains(role))) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, command.reviewType() == ReviewType.PCB
@@ -350,7 +350,7 @@ public class TaskApplicationService {
         }
     }
 
-    public record CreateTaskCommand(ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo, String designerName,
+    public record CreateTaskCommand(ReviewType reviewType, String taskName, String projectNo, String projectName, String designerEmployeeNo, String designerName,
                                     String designName, String pcbType, LocalDate expectedCompletedDate, String expertLeaderEmployeeNo,
                                     String expertLeaderName, List<ReviewRole> reviewRoles,
                                     List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription) {
@@ -361,16 +361,23 @@ public class TaskApplicationService {
         public CreateTaskCommand(ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo, String designerName,
                                  String designName, String pcbType, LocalDate expectedCompletedDate, String expertLeaderEmployeeNo,
                                  String expertLeaderName, List<ReviewRole> reviewRoles, String reviewDescription) {
-            this(reviewType, taskName, projectName, designerEmployeeNo, designerName, designName, pcbType, expectedCompletedDate,
+            this(reviewType, taskName, "", projectName, designerEmployeeNo, designerName, designName, pcbType, expectedCompletedDate,
                     expertLeaderEmployeeNo, expertLeaderName, reviewRoles, List.of(), reviewDescription);
         }
+        public CreateTaskCommand(ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo, String designerName,
+                                 String designName, String pcbType, LocalDate expectedCompletedDate, String expertLeaderEmployeeNo,
+                                 String expertLeaderName, List<ReviewRole> reviewRoles,
+                                 List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription) {
+            this(reviewType, taskName, "", projectName, designerEmployeeNo, designerName, designName, pcbType, expectedCompletedDate,
+                    expertLeaderEmployeeNo, expertLeaderName, reviewRoles, reviewerAssignments, reviewDescription);
+        }
         public CreateTaskCommand(ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo, String designName, String pcbType) {
-            this(reviewType, taskName, projectName, designerEmployeeNo, designerEmployeeNo, designName, pcbType, LocalDate.now(),
+            this(reviewType, taskName, "", projectName, designerEmployeeNo, designerEmployeeNo, designName, pcbType, LocalDate.now(),
                     designerEmployeeNo, designerEmployeeNo, List.of(ReviewRole.PCB_EXPERT), List.of(), null);
         }
     }
 
-    public record TaskView(Long id, ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo, String designerName,
+    public record TaskView(Long id, ReviewType reviewType, String taskName, String projectNo, String projectName, String designerEmployeeNo, String designerName,
                            String designName, String pcbType, LocalDate expectedCompletedDate, String expertLeaderEmployeeNo, String expertLeaderName,
                            List<ReviewRole> reviewRoles, List<ReviewerAssignmentView> reviewerAssignments, String reviewDescription, String status,
                            @Schema(description = "互检单实际分配人员，包含工号和姓名；任务完成后仍保留用于追溯") List<ReviewerView> mutualCheckReviewers,
@@ -407,7 +414,7 @@ public class TaskApplicationService {
         private static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords,
                                      LocalDate createdDate, java.time.LocalDateTime createdTime, Map<String, String> reviewerNames,
                                      List<ReviewerView> mutualCheckReviewers) {
-            return new TaskView(task.id(), task.reviewType(), task.taskName(), task.projectName(), task.designerEmployeeNo(), designerName,
+            return new TaskView(task.id(), task.reviewType(), task.taskName(), task.projectNo(), task.projectName(), task.designerEmployeeNo(), designerName,
                     task.designName(), task.pcbType(), task.expectedCompletedDate(), task.expertLeaderEmployeeNo(), expertLeaderName,
                     task.reviewRoles(), task.reviewerAssignments().stream()
                     .map(assignment -> ReviewerAssignmentView.from(assignment, reviewerNames)).toList(),
@@ -454,10 +461,15 @@ public class TaskApplicationService {
         }
     }
 
-    public record TaskQuery(String taskName, String projectName, String designerEmployeeNo, ReviewType reviewType,
+    public record TaskQuery(String taskName, String projectNo, String projectName, String designerEmployeeNo, ReviewType reviewType,
                             List<TaskStatus> statuses, Integer pageNum, Integer pageSize, Long taskId) {
+        public TaskQuery(String taskName, String projectName, String designerEmployeeNo, ReviewType reviewType,
+                         List<TaskStatus> statuses, Integer pageNum, Integer pageSize, Long taskId) {
+            this(taskName, null, projectName, designerEmployeeNo, reviewType, statuses, pageNum, pageSize, taskId);
+        }
+
         static TaskQuery defaultQuery() {
-            return new TaskQuery(null, null, null, null, null, 1, 20, null);
+            return new TaskQuery(null, null, null, null, null, null, 1, 20, null);
         }
 
         TaskQuery normalized() {
@@ -470,7 +482,7 @@ public class TaskApplicationService {
                     .filter(java.util.Objects::nonNull)
                     .distinct()
                     .toList();
-            return new TaskQuery(normalizedTaskName(), normalizedProjectName(), normalizedDesignerEmployeeNo(), reviewType,
+            return new TaskQuery(normalizedTaskName(), normalizedProjectNo(), normalizedProjectName(), normalizedDesignerEmployeeNo(), reviewType,
                     normalizedStatuses, normalizedPageNum, normalizedPageSize, taskId);
         }
 
@@ -482,12 +494,17 @@ public class TaskApplicationService {
             return normalizeText(projectName);
         }
 
+        String normalizedProjectNo() {
+            return normalizeText(projectNo);
+        }
+
         String normalizedDesignerEmployeeNo() {
             return normalizeText(designerEmployeeNo);
         }
 
         boolean matches(ReviewTask task) {
             return contains(task.taskName(), taskName)
+                    && contains(task.projectNo(), projectNo)
                     && contains(task.projectName(), projectName)
                     && (designerEmployeeNo == null || designerEmployeeNo.isBlank()
                     || designerEmployeeNo.trim().equals(task.designerEmployeeNo()))
@@ -511,6 +528,7 @@ public class TaskApplicationService {
         record.setId(task.id());
         record.setReviewType(task.reviewType().name());
         record.setTaskName(task.taskName());
+        record.setProjectNo(task.projectNo());
         record.setProjectName(task.projectName());
         record.setDesignerEmployeeNo(task.designerEmployeeNo());
         record.setDesignerName(task.designerName());
@@ -537,7 +555,7 @@ public class TaskApplicationService {
         List<ReviewRole> roles = record.getReviewRoles() == null || record.getReviewRoles().isBlank() ? List.of(ReviewRole.PCB_EXPERT)
                 : java.util.Arrays.stream(record.getReviewRoles().split(",")).map(ReviewRole::valueOf).toList();
         List<TaskReviewerAssignment> reviewerAssignments = TaskReviewerAssignmentCodec.decode(record.getReviewerAssignments());
-        return ReviewTask.restore(record.getId(), ReviewType.valueOf(record.getReviewType()), record.getTaskName(), record.getProjectName(), record.getDesignerEmployeeNo(),
+        return ReviewTask.restore(record.getId(), ReviewType.valueOf(record.getReviewType()), record.getTaskName(), record.getProjectNo(), record.getProjectName(), record.getDesignerEmployeeNo(),
                 record.getDesignerName() == null || record.getDesignerName().isBlank() ? record.getDesignerEmployeeNo() : record.getDesignerName(),
                 record.getDesignName(), record.getPcbType(), record.getExpectedCompletedDate() == null ? LocalDate.now() : record.getExpectedCompletedDate(),
                 record.getExpertLeaderEmployeeNo() == null ? record.getDesignerEmployeeNo() : record.getExpertLeaderEmployeeNo(),
@@ -587,6 +605,7 @@ public class TaskApplicationService {
     private void copyDraftTaskDetails(ReviewTask task, ReviewTaskRecord target) {
         target.setReviewType(task.reviewType().name());
         target.setTaskName(task.taskName());
+        target.setProjectNo(task.projectNo());
         target.setProjectName(task.projectName());
         target.setDesignerName(task.designerName());
         target.setDesignName(task.designName());

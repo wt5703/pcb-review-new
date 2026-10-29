@@ -17,6 +17,8 @@ public class ReviewOpinionRecord {
     private Long sourceItemId;
     private OpinionSeverity severity;
     private boolean noOpinion;
+    /** 互检单保存产生的草稿意见，仅互检人可继续编辑，不能进入设计者答复与流程统计。 */
+    private boolean draft;
     private String comment;
     private String richText;
     private String raisedByEmployeeNo;
@@ -37,6 +39,8 @@ public class ReviewOpinionRecord {
     public void setSeverity(OpinionSeverity severity) { this.severity = severity; }
     public boolean isNoOpinion() { return noOpinion; }
     public void setNoOpinion(boolean noOpinion) { this.noOpinion = noOpinion; }
+    public boolean isDraft() { return draft; }
+    public void setDraft(boolean draft) { this.draft = draft; }
     public String getComment() { return comment; }
     public void setComment(String comment) { this.comment = comment; }
     public String getRichText() { return richText; }

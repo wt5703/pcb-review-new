@@ -17,6 +17,7 @@ import com.bms.review.domain.ReviewRole;
 import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.task.domain.ReviewType;
+import com.bms.task.domain.TaskReviewerAssignment;
 import com.bms.task.domain.TaskStatus;
 import com.bms.task.domain.TaskReviewerAssignmentCodec;
 import com.bms.task.infrastructure.ReviewTaskMapper;
@@ -426,20 +427,21 @@ public class WorkflowApplicationService {
     private void validateActionPrerequisites(ReviewTaskRecord task, WorkflowAction action) {
         switch (action) {
             case START_PCB_STRUCTURE_REVIEW, START_PCB_PROCESS_REVIEW -> {
-                requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.PCB_REVIEW), "专家评审意见尚未全部确认通过，不能开启工艺或结构评审");
+                requireStageCompleted(task, List.of(OpinionSourceType.PCB_REVIEW), pcbReviewSubmissionRequirements(task),
+                        "专家评审意见尚未全部确认通过，不能开启工艺或结构评审");
             }
-            case START_PCB_MATUAL_ASSIGNMENT -> requireOpinionsPassed(task.getId(),
+            case START_PCB_MATUAL_ASSIGNMENT -> requireStageCompleted(task,
                     List.of(OpinionSourceType.PCB_PROCESS_REVIEW, OpinionSourceType.PCB_STRUCTURE_REVIEW),
-                    "工艺或结构评审意见尚未全部确认通过，不能开启互检单分配");
+                    pcbOptionalReviewSubmissionRequirements(task), "工艺或结构评审意见尚未全部确认通过，不能开启互检单分配");
             case START_SCHEMATIC_EXPERT_REVIEW ->
-                    requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.MUTUAL_CHECK_ITEM, OpinionSourceType.MUTUAL_EXTRA),
-                            "互检单意见尚未全部确认通过，不能开启原理图评审");
+                    requireStageCompleted(task, List.of(OpinionSourceType.MUTUAL_CHECK_ITEM, OpinionSourceType.MUTUAL_EXTRA),
+                            mutualCheckSubmissionRequirements(task), "互检单意见尚未全部确认通过，不能开启原理图评审");
             case PENDING_FINISH -> {
                 if (ReviewType.PCB.name().equals(task.getReviewType())) {
-                    requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.MUTUAL_CHECK_ITEM, OpinionSourceType.MUTUAL_EXTRA),
-                            "互检单意见尚未全部确认通过，不能进入待结束");
+                    requireStageCompleted(task, List.of(OpinionSourceType.MUTUAL_CHECK_ITEM, OpinionSourceType.MUTUAL_EXTRA),
+                            mutualCheckSubmissionRequirements(task), "互检单意见尚未全部确认通过，不能进入待结束");
                 } else {
-                    requireOpinionsPassed(task.getId(), List.of(OpinionSourceType.SCHEMATIC_REVIEW),
+                    requireStageCompleted(task, List.of(OpinionSourceType.SCHEMATIC_REVIEW), schematicReviewSubmissionRequirements(task),
                             "原理图专家评审意见尚未全部确认通过，不能进入待结束");
                 }
             }
@@ -510,6 +512,97 @@ public class WorkflowApplicationService {
         };
     }
 
+    /** 指定阶段必须同时满足：该阶段的全部意见（含未提交草稿）均已闭环，且已分配的每位评审人均已确认提交。 */
+    private void requireStageCompleted(ReviewTaskRecord task, List<OpinionSourceType> sources,
+                                       List<ReviewerSubmissionRequirement> requirements, String message) {
+        requireOpinionsPassed(task.getId(), sources, message);
+        requireReviewersSubmitted(task.getId(), requirements, message);
+    }
+
+    private void requireReviewersSubmitted(long taskId, List<ReviewerSubmissionRequirement> requirements, String message) {
+        if (requirements.isEmpty()) {
+            return;
+        }
+        List<com.bms.review.infrastructure.ReviewOpinionRecord> opinions = opinionMapper.findByTaskId(taskId);
+        List<String> unsubmittedEmployeeNos = requirements.stream()
+                .filter(requirement -> (opinions == null ? List.<com.bms.review.infrastructure.ReviewOpinionRecord>of() : opinions).stream()
+                        .noneMatch(opinion -> !opinion.isDraft()
+                                && requirement.employeeNo().equals(opinion.getRaisedByEmployeeNo())
+                                && requirement.sources().contains(opinion.getSourceType())))
+                .map(ReviewerSubmissionRequirement::employeeNo)
+                .distinct()
+                .toList();
+        if (!unsubmittedEmployeeNos.isEmpty()) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT,
+                    message + "；以下评审人尚未确认提交：" + String.join("、", unsubmittedEmployeeNos));
+        }
+    }
+
+    private List<ReviewerSubmissionRequirement> pcbReviewSubmissionRequirements(ReviewTaskRecord task) {
+        return reviewerSubmissionRequirements(task, List.of(
+                new RoleSource(ReviewRole.PCB_EXPERT, List.of(OpinionSourceType.PCB_REVIEW)),
+                new RoleSource(ReviewRole.EMC_EXPERT, List.of(OpinionSourceType.PCB_REVIEW)),
+                new RoleSource(ReviewRole.HARDWARE_EXPERT, List.of(OpinionSourceType.PCB_REVIEW))));
+    }
+
+    private List<ReviewerSubmissionRequirement> pcbOptionalReviewSubmissionRequirements(ReviewTaskRecord task) {
+        return reviewerSubmissionRequirements(task, List.of(
+                new RoleSource(ReviewRole.PROCESS_EXPERT, List.of(OpinionSourceType.PCB_PROCESS_REVIEW)),
+                new RoleSource(ReviewRole.STRUCTURE_EXPERT, List.of(OpinionSourceType.PCB_STRUCTURE_REVIEW))));
+    }
+
+    private List<ReviewerSubmissionRequirement> schematicReviewSubmissionRequirements(ReviewTaskRecord task) {
+        return reviewerSubmissionRequirements(task, List.of(
+                new RoleSource(ReviewRole.HARDWARE_EXPERT, List.of(OpinionSourceType.SCHEMATIC_REVIEW)),
+                new RoleSource(ReviewRole.EMC_EXPERT, List.of(OpinionSourceType.SCHEMATIC_REVIEW)),
+                new RoleSource(ReviewRole.PCB_EXPERT, List.of(OpinionSourceType.SCHEMATIC_REVIEW))));
+    }
+
+    private List<ReviewerSubmissionRequirement> mutualCheckSubmissionRequirements(ReviewTaskRecord task) {
+        return TaskReviewerAssignmentCodec.decodeReviewerEmployeeNos(task.getMutualCheckReviewerEmployeeNos()).stream()
+                .map(employeeNo -> new ReviewerSubmissionRequirement(employeeNo,
+                        List.of(OpinionSourceType.MUTUAL_CHECK_ITEM, OpinionSourceType.MUTUAL_EXTRA)))
+                .toList();
+    }
+
+    private List<ReviewerSubmissionRequirement> reviewerSubmissionRequirements(ReviewTaskRecord task,
+                                                                                  List<RoleSource> roleSources) {
+        List<TaskReviewerAssignment> assignments = TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments());
+        if (!assignments.isEmpty()) {
+            return roleSources.stream().flatMap(roleSource -> assignments.stream()
+                    .filter(assignment -> assignment.reviewRole() == roleSource.role())
+                    .flatMap(assignment -> assignment.reviewerEmployeeNos().stream())
+                    .map(employeeNo -> new ReviewerSubmissionRequirement(employeeNo, roleSource.sources())))
+                    .distinct()
+                    .toList();
+        }
+        Set<ReviewRole> configuredRoles = parseReviewRoles(task.getReviewRoles());
+        if (task.getExpertLeaderEmployeeNo() == null || task.getExpertLeaderEmployeeNo().isBlank()) {
+            return List.of();
+        }
+        return roleSources.stream().filter(roleSource -> configuredRoles.contains(roleSource.role()))
+                .map(roleSource -> new ReviewerSubmissionRequirement(task.getExpertLeaderEmployeeNo(), roleSource.sources()))
+                .distinct()
+                .toList();
+    }
+
+    private Set<ReviewRole> parseReviewRoles(String reviewRoles) {
+        if (reviewRoles == null || reviewRoles.isBlank()) {
+            return Set.of();
+        }
+        Set<ReviewRole> result = new LinkedHashSet<>();
+        for (String value : reviewRoles.split(",")) {
+            try {
+                if (value != null && !value.isBlank()) {
+                    result.add(ReviewRole.valueOf(value.trim()));
+                }
+            } catch (IllegalArgumentException ignored) {
+                // 兼容历史任务中的无效角色值。
+            }
+        }
+        return Set.copyOf(result);
+    }
+
     /** sources 为空时表示该任务全部意见都必须闭环。 */
     private void requireOpinionsPassed(long taskId, List<OpinionSourceType> sources, String message) {
         List<com.bms.review.infrastructure.ReviewOpinionRecord> opinions = opinionMapper.findByTaskId(taskId);
@@ -575,6 +668,11 @@ public class WorkflowApplicationService {
             assignedReviewerEmployeeNos = List.copyOf(assignedReviewerEmployeeNos);
         }
     }
+
+    /** 某位评审人必须针对 sources 中任一来源完成正式提交；互检固定项和额外意见属于同一提交阶段。 */
+    private record ReviewerSubmissionRequirement(String employeeNo, List<OpinionSourceType> sources) { }
+
+    private record RoleSource(ReviewRole role, List<OpinionSourceType> sources) { }
 
     /** 当前动作的状态变更计划；finishing 为 true 时才会执行结束任务的快照、归档和邮件。 */
     private record TransitionPlan(TaskStatus targetStatus, boolean finishing) { }

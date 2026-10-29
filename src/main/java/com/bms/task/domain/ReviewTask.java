@@ -17,6 +17,7 @@ public final class ReviewTask {
     private final Long id;
     private final ReviewType reviewType;
     private final String taskName;
+    private final String projectNo;
     private final String projectName;
     private final String designerEmployeeNo;
     private final String designerName;
@@ -31,13 +32,14 @@ public final class ReviewTask {
     private final List<Long> initialFileIds = new ArrayList<>();
     private TaskStatus status = TaskStatus.DRAFT;
 
-    private ReviewTask(Long id, ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo,
+    private ReviewTask(Long id, ReviewType reviewType, String taskName, String projectNo, String projectName, String designerEmployeeNo,
                        String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
                        String expertLeaderEmployeeNo, String expertLeaderName, List<ReviewRole> reviewRoles,
                        List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription) {
         this.id = Objects.requireNonNull(id);
         this.reviewType = Objects.requireNonNull(reviewType);
         this.taskName = requireText(taskName, "任务名称不能为空");
+        this.projectNo = projectNo == null ? "" : projectNo.trim();
         this.projectName = requireText(projectName, "项目名称不能为空");
         this.designerEmployeeNo = requireText(designerEmployeeNo, "设计者工号不能为空");
         this.designerName = requireText(designerName, "设计者姓名不能为空");
@@ -55,7 +57,7 @@ public final class ReviewTask {
     public static ReviewTask draft(Long id, ReviewType reviewType, String taskName, String projectName,
                                    String designerEmployeeNo, String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
                                    String expertLeaderEmployeeNo, String expertLeaderName, List<ReviewRole> reviewRoles, String reviewDescription) {
-        return draft(id, reviewType, taskName, projectName, designerEmployeeNo, designerName, designName, pcbType,
+        return draft(id, reviewType, taskName, "", projectName, designerEmployeeNo, designerName, designName, pcbType,
                 expectedCompletedDate, expertLeaderEmployeeNo, expertLeaderName, reviewRoles, List.of(), reviewDescription);
     }
 
@@ -63,7 +65,15 @@ public final class ReviewTask {
                                    String designerEmployeeNo, String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
                                    String expertLeaderEmployeeNo, String expertLeaderName, List<ReviewRole> reviewRoles,
                                    List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription) {
-        return new ReviewTask(id, reviewType, taskName, projectName, designerEmployeeNo, designerName, designName, pcbType,
+        return draft(id, reviewType, taskName, "", projectName, designerEmployeeNo, designerName, designName, pcbType,
+                expectedCompletedDate, expertLeaderEmployeeNo, expertLeaderName, reviewRoles, reviewerAssignments, reviewDescription);
+    }
+
+    public static ReviewTask draft(Long id, ReviewType reviewType, String taskName, String projectNo, String projectName,
+                                   String designerEmployeeNo, String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
+                                   String expertLeaderEmployeeNo, String expertLeaderName, List<ReviewRole> reviewRoles,
+                                   List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription) {
+        return new ReviewTask(id, reviewType, taskName, projectNo, projectName, designerEmployeeNo, designerName, designName, pcbType,
                 expectedCompletedDate, expertLeaderEmployeeNo, expertLeaderName, reviewRoles, reviewerAssignments, reviewDescription);
     }
 
@@ -82,7 +92,7 @@ public final class ReviewTask {
                                      String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
                                      String expertLeaderEmployeeNo, String expertLeaderName, List<ReviewRole> reviewRoles, String reviewDescription,
                                      TaskStatus status, List<Long> initialFileIds) {
-        return restore(id, reviewType, taskName, projectName, designerEmployeeNo, designerName, designName, pcbType,
+        return restore(id, reviewType, taskName, "", projectName, designerEmployeeNo, designerName, designName, pcbType,
                 expectedCompletedDate, expertLeaderEmployeeNo, expertLeaderName, reviewRoles, List.of(), reviewDescription, status, initialFileIds);
     }
 
@@ -91,7 +101,16 @@ public final class ReviewTask {
                                      String expertLeaderEmployeeNo, String expertLeaderName, List<ReviewRole> reviewRoles,
                                      List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription,
                                      TaskStatus status, List<Long> initialFileIds) {
-        ReviewTask task = new ReviewTask(id, reviewType, taskName, projectName, designerEmployeeNo, designerName, designName, pcbType,
+        return restore(id, reviewType, taskName, "", projectName, designerEmployeeNo, designerName, designName, pcbType,
+                expectedCompletedDate, expertLeaderEmployeeNo, expertLeaderName, reviewRoles, reviewerAssignments, reviewDescription, status, initialFileIds);
+    }
+
+    public static ReviewTask restore(Long id, ReviewType reviewType, String taskName, String projectNo, String projectName, String designerEmployeeNo,
+                                     String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
+                                     String expertLeaderEmployeeNo, String expertLeaderName, List<ReviewRole> reviewRoles,
+                                     List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription,
+                                     TaskStatus status, List<Long> initialFileIds) {
+        ReviewTask task = new ReviewTask(id, reviewType, taskName, projectNo, projectName, designerEmployeeNo, designerName, designName, pcbType,
                 expectedCompletedDate, expertLeaderEmployeeNo, expertLeaderName, reviewRoles, reviewerAssignments, reviewDescription);
         task.initialFileIds.addAll(initialFileIds);
         task.status = status;
@@ -159,6 +178,7 @@ public final class ReviewTask {
     public Long id() { return id; }
     public ReviewType reviewType() { return reviewType; }
     public String taskName() { return taskName; }
+    public String projectNo() { return projectNo; }
     public String projectName() { return projectName; }
     public String designerEmployeeNo() { return designerEmployeeNo; }
     public String designerName() { return designerName; }

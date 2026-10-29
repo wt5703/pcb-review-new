@@ -77,12 +77,15 @@ class TaskApplicationServiceTest {
                 .thenReturn(List.of(assignableReviewer(DESIGNER_NO, "设计者", ReviewerWhitelistRole.PCB_EXPERT)));
 
         TaskApplicationService.TaskView result = service.saveNewTask(new TaskApplicationService.CreateTaskCommand(
-                ReviewType.PCB, "BMS PCB评审", "BMS", DESIGNER_NO, "设计者", "BMS-P1", "BMU", LocalDate.now(),
+                ReviewType.PCB, "BMS PCB评审", "PRJ-001", "BMS", DESIGNER_NO, "设计者", "BMS-P1", "BMU", LocalDate.now(),
                 LEADER_NO, "组长", List.of(ReviewRole.PCB_EXPERT),
                 List.of(new TaskReviewerAssignment(ReviewRole.PCB_EXPERT, List.of(DESIGNER_NO))), null), List.of(), false, DESIGNER_NO, "设计者");
 
         assertThat(result.id()).isEqualTo(101L);
-        verify(taskMapper).insert(any(ReviewTaskRecord.class));
+        assertThat(result.projectNo()).isEqualTo("PRJ-001");
+        ArgumentCaptor<ReviewTaskRecord> recordCaptor = ArgumentCaptor.forClass(ReviewTaskRecord.class);
+        verify(taskMapper).insert(recordCaptor.capture());
+        assertThat(recordCaptor.getValue().getProjectNo()).isEqualTo("PRJ-001");
     }
 
     @Test
@@ -144,8 +147,8 @@ class TaskApplicationServiceTest {
 
     @Test
     void shouldFilterByProjectNameAndDesignerEmployeeNo() {
-        when(taskMapper.countPage(any(), any(), any(), any(), any(), any())).thenReturn(1L, 2L);
-        when(taskMapper.findPage(any(), any(), any(), any(), any(), any(), anyLong(), anyInt()))
+        when(taskMapper.countPage(any(), any(), any(), any(), any(), any(), any())).thenReturn(1L, 2L);
+        when(taskMapper.findPage(any(), any(), any(), any(), any(), any(), any(), anyLong(), anyInt()))
                 .thenReturn(List.of(record(2L, "原理图任务", TaskStatus.DRAFT, 0L)), List.of(
                         record(1L, "PCB任务", TaskStatus.DRAFT, 0L),
                         record(2L, "原理图任务", TaskStatus.DRAFT, 0L)));
@@ -170,6 +173,19 @@ class TaskApplicationServiceTest {
 
         assertThat(page.total()).isEqualTo(2);
         assertThat(page.items()).extracting(TaskApplicationService.TaskView::id).containsExactly(1L, 3L);
+    }
+
+    @Test
+    void shouldFilterByProjectNo() {
+        ReviewTaskRecord task = record(1L, "BMS PCB评审", TaskStatus.DRAFT, 0L);
+        task.setProjectNo("PRJ-2026-22");
+        mockTaskPage(1, List.of(task));
+
+        TaskApplicationService.TaskPage page = service.listTasks(new TaskApplicationService.TaskQuery(
+                null, "2026-22", null, null, null, null, 1, 20, null));
+
+        assertThat(page.items()).singleElement().satisfies(item ->
+                assertThat(item.projectNo()).isEqualTo("PRJ-2026-22"));
     }
 
     @Test
@@ -278,8 +294,8 @@ class TaskApplicationServiceTest {
     }
 
     private void mockTaskPage(long total, List<ReviewTaskRecord> records) {
-        when(taskMapper.countPage(any(), any(), any(), any(), any(), any())).thenReturn(total);
-        when(taskMapper.findPage(any(), any(), any(), any(), any(), any(), anyLong(), anyInt()))
+        when(taskMapper.countPage(any(), any(), any(), any(), any(), any(), any())).thenReturn(total);
+        when(taskMapper.findPage(any(), any(), any(), any(), any(), any(), any(), anyLong(), anyInt()))
                 .thenReturn(records);
     }
 
@@ -294,6 +310,7 @@ class TaskApplicationServiceTest {
         record.setId(id);
         record.setReviewType(id == 2L ? ReviewType.SCHEMATIC.name() : ReviewType.PCB.name());
         record.setTaskName(name);
+        record.setProjectNo(id == 2L ? "PRJ-VCU" : "PRJ-BMS");
         record.setProjectName(id == 2L ? "VCU" : "BMS");
         record.setDesignerEmployeeNo(DESIGNER_NO);
         record.setDesignerName("设计者");

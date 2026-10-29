@@ -103,7 +103,7 @@ class TaskControllerIntegrationTest {
     @Test
     void shouldCreateSubmitAndQueryTaskThroughRestApi() throws Exception {
         String taskRequest = """
-                {"reviewType":"PCB","taskName":"REST-BMS PCB评审","projectName":"BMS","designName":"BMS-P1","pcbType":"BMU"}
+                {"reviewType":"PCB","taskName":"REST-BMS PCB评审","projectNo":"PRJ-REST-001","projectName":"BMS","designName":"BMS-P1","pcbType":"BMU"}
                 """;
         String createResponse = mockMvc.perform(post("/tasks/save").contentType(MediaType.APPLICATION_JSON).content(taskRequest)
                         .header("userId", "BMS010")
@@ -114,7 +114,7 @@ class TaskControllerIntegrationTest {
         long taskId = ((Number) com.jayway.jsonpath.JsonPath.read(createResponse, "$.data.id")).longValue();
 
         String updateTaskRequest = """
-                {"reviewType":"PCB","taskName":"REST-BMS PCB评审（已编辑）","projectName":"BMS","designName":"BMS-P1","pcbType":"BMU"}
+                {"reviewType":"PCB","taskName":"REST-BMS PCB评审（已编辑）","projectNo":"PRJ-REST-002","projectName":"BMS","designName":"BMS-P1","pcbType":"BMU"}
                 """;
         mockMvc.perform(post("/tasks/save").contentType(MediaType.APPLICATION_JSON).content(updateTaskRequest)
                         .param("taskId", String.valueOf(taskId))
@@ -122,10 +122,11 @@ class TaskControllerIntegrationTest {
                         .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(taskId))
-                .andExpect(jsonPath("$.data.taskName").value("REST-BMS PCB评审（已编辑）"));
+                .andExpect(jsonPath("$.data.taskName").value("REST-BMS PCB评审（已编辑）"))
+                .andExpect(jsonPath("$.data.projectNo").value("PRJ-REST-002"));
 
         String submitTaskRequest = """
-                {"reviewType":"PCB","taskName":"REST-BMS PCB评审（已编辑）","projectName":"BMS","designName":"BMS-P1","pcbType":"BMU","files":["c778c14e-6f1a-4f4f-9f11-100000000003"]}
+                {"reviewType":"PCB","taskName":"REST-BMS PCB评审（已编辑）","projectNo":"PRJ-REST-002","projectName":"BMS","designName":"BMS-P1","pcbType":"BMU","files":["c778c14e-6f1a-4f4f-9f11-100000000003"]}
                 """;
         reviewFileMapper.insert(pending("c778c14e-6f1a-4f4f-9f11-100000000003", "BMS-P1.pcb", 8L, "company-p1"));
         mockMvc.perform(post("/tasks/submit").contentType(MediaType.APPLICATION_JSON).content(submitTaskRequest)
@@ -135,12 +136,13 @@ class TaskControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PCB_EXPERT_REVIEWING"));
 
-        mockMvc.perform(get("/tasks").param("taskName", "REST-BMS").param("pageNum", "1").param("pageSize", "10")
+        mockMvc.perform(get("/tasks").param("taskName", "REST-BMS").param("projectNo", "REST-002").param("pageNum", "1").param("pageSize", "10")
                         .header("userId", "BMS010")
                         .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
-                .andExpect(jsonPath("$.data.items[0].id").value(taskId));
+                .andExpect(jsonPath("$.data.items[0].id").value(taskId))
+                .andExpect(jsonPath("$.data.items[0].projectNo").value("PRJ-REST-002"));
 
         mockMvc.perform(get("/tasks").param("taskName", "REST-BMS").param("pageNum", "2").param("pageSize", "1")
                         .header("userId", "BMS010")
@@ -156,6 +158,7 @@ class TaskControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(taskId))
                 .andExpect(jsonPath("$.data.taskName").value("REST-BMS PCB评审（已编辑）"))
+                .andExpect(jsonPath("$.data.projectNo").value("PRJ-REST-002"))
                 .andExpect(jsonPath("$.data.createdDate").isNotEmpty())
                 .andExpect(jsonPath("$.data.createdTime").isNotEmpty());
     }

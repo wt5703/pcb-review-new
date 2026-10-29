@@ -100,9 +100,9 @@ public class TaskCheckItemApplicationService {
 
         // 3. 不合格创建/更新同源意见；专家改判为合格即确认该意见通过。
         ReviewOpinionRecord opinion = command.result() == CheckResult.FAIL
-                ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), operatorEmployeeNo, operatorName) : null;
+                ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), operatorEmployeeNo, operatorName, false) : null;
         if (command.result() == CheckResult.PASS) {
-            confirmMutualOpinionWhenCheckPass(taskId, record);
+            confirmMutualOpinionWhenCheckPass(taskId, record, false);
         }
 
         // 4. 将结论、文字和富文本原样写入任务快照，再返回最新结果。
@@ -123,6 +123,20 @@ public class TaskCheckItemApplicationService {
      */
     @Transactional
     public List<CheckItemView> submitBatch(long taskId, List<SubmitBatchItemCommand> commands, String operatorEmployeeNo, String operatorName) {
+        return writeBatch(taskId, commands, operatorEmployeeNo, operatorName, false);
+    }
+
+    /**
+     * 保存互检单草稿。FAIL 产生的意见带 isDraft 标记，不进入设计者答复、意见统计和设计者待办；
+     * 草稿仍会阻止专家确认提交及设计者推进流程，后续调用 submitBatch 后才会发布为正式意见。
+     */
+    @Transactional
+    public List<CheckItemView> saveBatch(long taskId, List<SubmitBatchItemCommand> commands, String operatorEmployeeNo, String operatorName) {
+        return writeBatch(taskId, commands, operatorEmployeeNo, operatorName, true);
+    }
+
+    private List<CheckItemView> writeBatch(long taskId, List<SubmitBatchItemCommand> commands,
+                                           String operatorEmployeeNo, String operatorName, boolean draft) {
         // 1. 批量提交同样只处理既有任务快照，不在保存过程中读取或同步模板。
         ReviewTaskRecord task = requireTaskExists(taskId);
         if (isFinished(task)) { throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许修改检查项"); }
@@ -139,15 +153,16 @@ public class TaskCheckItemApplicationService {
             requireLeafCheckItem(record);
             validateBatchCommand(command);
 
-            // 3. 结论与同源意见保持一致：FAIL 创建/更新，PASS 确认关联意见通过。
-            ReviewOpinionRecord opinion = command.result() == CheckResult.FAIL ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), operatorEmployeeNo, operatorName) : null;
+            // 3. 结论与同源意见保持一致：保存时 FAIL 仅写草稿，提交时才发布为设计者可答复的意见。
+            ReviewOpinionRecord opinion = command.result() == CheckResult.FAIL
+                    ? createOrUpdateMutualOpinion(taskId, record, command.comment(), command.richText(), operatorEmployeeNo, operatorName, draft) : null;
             if (command.result() == CheckResult.PASS) {
-                confirmMutualOpinionWhenCheckPass(taskId, record);
+                confirmMutualOpinionWhenCheckPass(taskId, record, draft);
             }
 
             // 4. 持久化当前任务检查项的结论和说明，不影响同任务的其他子项。
             record.setCheckResult(command.result().name()); record.setComment(command.comment()); record.setRichText(command.richText());
-            record.setStatus(CheckItemStatus.COMPLETED.name());
+            record.setStatus(draft ? CheckItemStatus.SAVED.name() : CheckItemStatus.COMPLETED.name());
             if (taskCheckItemMapper.submit(record) != 1) { throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务"); }
             views.add(toCheckItemView(record, opinion, itemNameOf(record)));
         }
@@ -259,7 +274,8 @@ public class TaskCheckItemApplicationService {
         }
     }
 
-    private ReviewOpinionRecord createOrUpdateMutualOpinion(long taskId, TaskCheckItemRecord item, String comment, String richText, String operatorEmployeeNo, String operatorName) {
+    private ReviewOpinionRecord createOrUpdateMutualOpinion(long taskId, TaskCheckItemRecord item, String comment, String richText,
+                                                            String operatorEmployeeNo, String operatorName, boolean draft) {
         // comment 是问题描述，必须保留前端传入的纯文本；richText 仅保存富文本内容。
         // 未传富文本时才以 comment 作为富文本回显的兜底值，不能反向覆盖 comment。
         String opinionComment = comment.trim();
@@ -269,10 +285,14 @@ public class TaskCheckItemApplicationService {
             opinion = new ReviewOpinionRecord(); opinion.setId(opinionMapper.nextOpinionId()); opinion.setTaskId(taskId);
             opinion.setSourceType(OpinionSourceType.MUTUAL_CHECK_ITEM); opinion.setSourceItemId(item.getId()); opinion.setSeverity(OpinionSeverity.GENERAL);
             opinion.setComment(opinionComment); opinion.setRichText(opinionRichText); opinion.setRaisedByEmployeeNo(operatorEmployeeNo); opinion.setRaisedByName(operatorName);
-            opinion.setStatus("PENDING_REPLY"); opinionMapper.insert(opinion);
+            opinion.setDraft(draft);
+            opinion.setStatus(OpinionStatus.PENDING_REPLY.name()); opinionMapper.insert(opinion);
         } else {
+            if (draft && !opinion.isDraft() && !isClosedOpinion(opinion)) {
+                throw new BusinessException(ErrorCode.OPINION_STATUS_CONFLICT, "已提交的互检意见不能保存为草稿");
+            }
             String originalStatus = opinion.getStatus();
-            opinion.setComment(opinionComment); opinion.setRichText(opinionRichText);
+            opinion.setComment(opinionComment); opinion.setRichText(opinionRichText); opinion.setDraft(draft);
             if (opinionMapper.updateOpinion(opinion) != 1) { throw new BusinessException(ErrorCode.VERSION_CONFLICT, "关联互检意见已被其他操作更新，请刷新后重试"); }
             // 已确认通过的检查项再次被判定为不合格时，重新进入待设计者答复状态。
             if (!OpinionStatus.PENDING_REPLY.name().equals(originalStatus)) {
@@ -287,15 +307,32 @@ public class TaskCheckItemApplicationService {
      * 专家将检查项由不合格改回合格，等同于确认该项意见已经通过。
      * 此处直接更新关联互检意见，意见总览会将其纳入 confirmedPass 统计。
      */
-    private void confirmMutualOpinionWhenCheckPass(long taskId, TaskCheckItemRecord item) {
+    private void confirmMutualOpinionWhenCheckPass(long taskId, TaskCheckItemRecord item, boolean draft) {
         ReviewOpinionRecord opinion = opinionMapper.findActiveMutualCheckItemOpinion(taskId, item.getId(), OpinionSourceType.MUTUAL_CHECK_ITEM);
-        if (opinion == null || OpinionStatus.CONFIRMED_PASS.name().equals(opinion.getStatus())) {
+        if (opinion == null) {
+            return;
+        }
+        if (draft && !opinion.isDraft() && !isClosedOpinion(opinion)) {
+            throw new BusinessException(ErrorCode.OPINION_STATUS_CONFLICT, "已提交的互检意见不能保存为草稿");
+        }
+        if (opinion.isDraft() != draft) {
+            opinion.setDraft(draft);
+            if (opinionMapper.updateOpinion(opinion) != 1) {
+                throw new BusinessException(ErrorCode.VERSION_CONFLICT, "关联互检意见草稿状态更新失败，请刷新后重试");
+            }
+        }
+        if (OpinionStatus.CONFIRMED_PASS.name().equals(opinion.getStatus())) {
             return;
         }
         opinion.setStatus(OpinionStatus.CONFIRMED_PASS.name());
         if (opinionMapper.updateStatus(opinion) != 1) {
             throw new BusinessException(ErrorCode.VERSION_CONFLICT, "关联互检意见状态更新失败，请刷新后重试");
         }
+    }
+
+    private boolean isClosedOpinion(ReviewOpinionRecord opinion) {
+        return OpinionStatus.CONFIRMED_PASS.name().equals(opinion.getStatus())
+                || OpinionStatus.WITHDRAWN.name().equals(opinion.getStatus());
     }
 
     private Map<Long, CheckItemTemplateRecord> templatesByItemId(List<TaskCheckItemRecord> records,

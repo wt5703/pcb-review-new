@@ -26,15 +26,15 @@ public interface ReviewOpinionMapper {
     @Select("SELECT COALESCE(MAX(id), 0) + 1 FROM opinion_confirmation")
     long nextConfirmationId();
 
-    @Insert("INSERT INTO review_opinion (id, task_id, source_type, source_item_id, severity, is_no_opinion, comment, rich_text_content, raised_by_employee_no, raised_by_name, status) "
-            + "VALUES (#{id}, #{taskId}, #{sourceType}, #{sourceItemId}, #{severity}, #{noOpinion}, #{comment}, #{richText}, #{raisedByEmployeeNo}, #{raisedByName}, #{status})")
+    @Insert("INSERT INTO review_opinion (id, task_id, source_type, source_item_id, severity, is_no_opinion, is_draft, comment, rich_text_content, raised_by_employee_no, raised_by_name, status) "
+            + "VALUES (#{id}, #{taskId}, #{sourceType}, #{sourceItemId}, #{severity}, #{noOpinion}, #{draft}, #{comment}, #{richText}, #{raisedByEmployeeNo}, #{raisedByName}, #{status})")
     int insert(ReviewOpinionRecord record);
 
-    @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, is_no_opinion AS noOpinion, comment, rich_text_content AS richText, raised_by_employee_no AS raisedByEmployeeNo, raised_by_name AS raisedByName, "
+    @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, is_no_opinion AS noOpinion, is_draft AS draft, comment, rich_text_content AS richText, raised_by_employee_no AS raisedByEmployeeNo, raised_by_name AS raisedByName, "
             + "status, created_at AS createdAt FROM review_opinion WHERE id=#{id}")
     ReviewOpinionRecord findById(long id);
 
-    @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, is_no_opinion AS noOpinion, comment, rich_text_content AS richText, raised_by_employee_no AS raisedByEmployeeNo, raised_by_name AS raisedByName, "
+    @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, is_no_opinion AS noOpinion, is_draft AS draft, comment, rich_text_content AS richText, raised_by_employee_no AS raisedByEmployeeNo, raised_by_name AS raisedByName, "
             + "status, created_at AS createdAt, updated_at AS updatedAt FROM review_opinion WHERE task_id=#{taskId} ORDER BY id")
     List<ReviewOpinionRecord> findByTaskId(long taskId);
 
@@ -45,7 +45,7 @@ public interface ReviewOpinionMapper {
     @Select("<script>"
             + "SELECT COUNT(*) FROM review_opinion "
             + "<where>"
-            + "task_id=#{taskId} AND is_no_opinion=FALSE "
+            + "task_id=#{taskId} AND is_no_opinion=FALSE AND is_draft=FALSE "
             + "<if test='severity != null'>AND severity=#{severity} </if>"
             + "<if test='status != null and status != \"\"'>AND status=#{status} </if>"
             + "<choose>"
@@ -63,10 +63,10 @@ public interface ReviewOpinionMapper {
                    @Param("raisedByEmployeeNo") String raisedByEmployeeNo);
 
     @Select("<script>"
-            + "SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, is_no_opinion AS noOpinion, comment, rich_text_content AS richText, raised_by_employee_no AS raisedByEmployeeNo, raised_by_name AS raisedByName, "
+            + "SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, is_no_opinion AS noOpinion, is_draft AS draft, comment, rich_text_content AS richText, raised_by_employee_no AS raisedByEmployeeNo, raised_by_name AS raisedByName, "
             + "status, created_at AS createdAt FROM review_opinion "
             + "<where>"
-            + "task_id=#{taskId} AND is_no_opinion=FALSE "
+            + "task_id=#{taskId} AND is_no_opinion=FALSE AND is_draft=FALSE "
             + "<if test='severity != null'>AND severity=#{severity} </if>"
             + "<if test='status != null and status != \"\"'>AND status=#{status} </if>"
             + "<choose>"
@@ -86,7 +86,7 @@ public interface ReviewOpinionMapper {
                                        @Param("raisedByEmployeeNo") String raisedByEmployeeNo,
                                        @Param("offset") long offset, @Param("limit") int limit);
 
-    @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, is_no_opinion AS noOpinion, comment, rich_text_content AS richText, raised_by_employee_no AS raisedByEmployeeNo, raised_by_name AS raisedByName, " +
+    @Select("SELECT id, task_id AS taskId, source_type AS sourceType, source_item_id AS sourceItemId, severity, is_no_opinion AS noOpinion, is_draft AS draft, comment, rich_text_content AS richText, raised_by_employee_no AS raisedByEmployeeNo, raised_by_name AS raisedByName, " +
             "status, created_at AS createdAt FROM review_opinion " +
             "WHERE task_id=#{taskId} AND source_type=#{sourceType} AND source_item_id=#{sourceItemId} AND status <> 'WITHDRAWN' ORDER BY id DESC LIMIT 1")
     ReviewOpinionRecord findActiveMutualCheckItemOpinion(long taskId, long sourceItemId, OpinionSourceType sourceType);
@@ -94,11 +94,11 @@ public interface ReviewOpinionMapper {
     @Select("SELECT status FROM review_opinion WHERE task_id=#{taskId} AND raised_by_employee_no=#{raisedByEmployeeNo} ORDER BY id")
     List<String> findStatusesByTaskAndRaisedByEmployeeNo(long taskId, String raisedByEmployeeNo);
 
-    @Select("SELECT DISTINCT task_id FROM review_opinion WHERE status='PENDING_REPLY' AND task_id IN "
+    @Select("SELECT DISTINCT task_id FROM review_opinion WHERE status='PENDING_REPLY' AND is_draft=FALSE AND task_id IN "
             + "(SELECT id FROM review_task WHERE designer_employee_no=#{designerEmployeeNo})")
     List<Long> findPendingReplyTaskIdsForDesignerEmployeeNo(String designerEmployeeNo);
 
-    @Select("SELECT DISTINCT task_id FROM review_opinion WHERE status='PENDING_CONFIRMATION' AND raised_by_employee_no=#{raisedByEmployeeNo}")
+    @Select("SELECT DISTINCT task_id FROM review_opinion WHERE status='PENDING_CONFIRMATION' AND is_draft=FALSE AND raised_by_employee_no=#{raisedByEmployeeNo}")
     List<Long> findPendingConfirmationTaskIdsForRaiserEmployeeNo(String raisedByEmployeeNo);
 
     @Update("UPDATE review_opinion SET status=#{status}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
@@ -115,7 +115,7 @@ public interface ReviewOpinionMapper {
     int updateUnrepliedOpinion(ReviewOpinionRecord record);
 
     /** 互检固定项维护同源意见时使用；其状态控制由互检业务本身负责。 */
-    @Update("UPDATE review_opinion SET severity=#{severity}, comment=#{comment}, rich_text_content=#{richText}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
+    @Update("UPDATE review_opinion SET severity=#{severity}, comment=#{comment}, rich_text_content=#{richText}, is_draft=#{draft}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
     int updateOpinion(ReviewOpinionRecord record);
 
     @Delete("DELETE FROM review_opinion WHERE id=#{id} AND status='PENDING_REPLY'")

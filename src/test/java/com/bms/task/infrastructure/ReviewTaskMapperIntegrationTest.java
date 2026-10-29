@@ -25,6 +25,7 @@ class ReviewTaskMapperIntegrationTest {
         task.setId(9001L);
         task.setReviewType(ReviewType.PCB.name());
         task.setTaskName("BMS PCB评审");
+        task.setProjectNo("PRJ-BMS-001");
         task.setProjectName("BMS");
         task.setDesignerEmployeeNo("BMS010");
         task.setDesignName("BMS-P1");
@@ -35,6 +36,9 @@ class ReviewTaskMapperIntegrationTest {
 
         mapper.insert(task);
 
-        assertThat(mapper.findById(9001L)).extracting(ReviewTaskRecord::getTaskName).isEqualTo("BMS PCB评审");
+        assertThat(mapper.findById(9001L)).satisfies(saved -> {
+            assertThat(saved.getTaskName()).isEqualTo("BMS PCB评审");
+            assertThat(saved.getProjectNo()).isEqualTo("PRJ-BMS-001");
+        });
     }
 }

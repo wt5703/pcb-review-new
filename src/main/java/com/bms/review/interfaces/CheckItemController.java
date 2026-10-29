@@ -71,6 +71,17 @@ public class CheckItemController {
                 employeeNo, userName), traceId(servletRequest));
     }
 
+    @PutMapping("/batch/save")
+    @Operation(summary = "保存互检单", description = "暂存当前填写的检查项。FAIL（不合格）会保存为草稿意见，仅互检人可见，不会进入设计者答复页面；正式调用批量提交接口后才发布意见。")
+    ApiResponse<List<TaskCheckItemApplicationService.CheckItemView>> saveBatch(@PathVariable long taskId,
+                                                                                 @Valid @RequestBody SubmitCheckItemsRequest request,
+                                                                                 @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
+        userName = decode(userName, StandardCharsets.UTF_8);
+        return ApiResponse.ok(taskCheckItemApplicationService.saveBatch(taskId, request.items().stream()
+                .map(item -> new TaskCheckItemApplicationService.SubmitBatchItemCommand(item.itemId(), item.result(), item.comment(), item.richText())).toList(),
+                employeeNo, userName), traceId(servletRequest));
+    }
+
     private String traceId(HttpServletRequest request) {
         return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString();
     }

@@ -12,6 +12,7 @@ public class ReviewTaskRecord {
     private Long id;
     private String reviewType;
     private String taskName;
+    private String projectNo;
     private String projectName;
     private String designerEmployeeNo;
     private String designerName;
@@ -37,6 +38,8 @@ public class ReviewTaskRecord {
     public void setReviewType(String reviewType) { this.reviewType = reviewType; }
     public String getTaskName() { return taskName; }
     public void setTaskName(String taskName) { this.taskName = taskName; }
+    public String getProjectNo() { return projectNo; }
+    public void setProjectNo(String projectNo) { this.projectNo = projectNo; }
     public String getProjectName() { return projectName; }
     public void setProjectName(String projectName) { this.projectName = projectName; }
     public String getDesignerEmployeeNo() { return designerEmployeeNo; }

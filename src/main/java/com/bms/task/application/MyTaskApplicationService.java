@@ -135,7 +135,7 @@ public class MyTaskApplicationService {
         }
     }
 
-    public record MyTaskView(Long id, ReviewType reviewType, String taskName, String projectName, String designerEmployeeNo, String designerName,
+    public record MyTaskView(Long id, ReviewType reviewType, String taskName, String projectNo, String projectName, String designerEmployeeNo, String designerName,
                              String designName, String pcbType, LocalDate expectedCompletedDate, String expertLeaderEmployeeNo, String expertLeaderName,
                              List<ReviewRole> reviewRoles, List<TaskApplicationService.ReviewerAssignmentView> reviewerAssignments,
                              String reviewDescription, TaskStatus status, List<MyTaskAction> actions,
@@ -146,7 +146,7 @@ public class MyTaskApplicationService {
                                EnumSet<MyTaskAction> actions) {
             List<ReviewRole> reviewRoles = record.getReviewRoles() == null || record.getReviewRoles().isBlank() ? List.of()
                     : java.util.Arrays.stream(record.getReviewRoles().split(",")).map(ReviewRole::valueOf).toList();
-            return new MyTaskView(record.getId(), ReviewType.valueOf(record.getReviewType()), record.getTaskName(), record.getProjectName(),
+            return new MyTaskView(record.getId(), ReviewType.valueOf(record.getReviewType()), record.getTaskName(), record.getProjectNo(), record.getProjectName(),
                     record.getDesignerEmployeeNo(), designerName, record.getDesignName(), record.getPcbType(), record.getExpectedCompletedDate(),
                     record.getExpertLeaderEmployeeNo(), expertLeaderName, reviewRoles, List.copyOf(reviewerAssignments), record.getReviewDescription(),
                     TaskStatus.valueOf(record.getStatus()), List.copyOf(actions), record.getCreatedAt());

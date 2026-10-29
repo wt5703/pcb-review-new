@@ -5,6 +5,7 @@ CREATE TABLE review_task (
     id BIGINT PRIMARY KEY,
     review_type VARCHAR(32) NOT NULL,
     task_name VARCHAR(200) NOT NULL,
+    project_no VARCHAR(100) NOT NULL DEFAULT '',
     project_name VARCHAR(200) NOT NULL,
     designer_employee_no VARCHAR(64) NOT NULL,
     designer_name VARCHAR(100) NOT NULL DEFAULT '',
@@ -24,6 +25,7 @@ CREATE TABLE review_task (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_review_task_query (review_type, status, designer_employee_no),
+    INDEX idx_review_task_project_no (project_no),
     INDEX idx_review_task_designer_name (designer_name)
 );
 
@@ -34,6 +36,7 @@ CREATE TABLE review_opinion (
     source_item_id BIGINT,
     severity VARCHAR(32) NOT NULL,
     is_no_opinion BOOLEAN NOT NULL DEFAULT FALSE,
+    is_draft BOOLEAN NOT NULL DEFAULT FALSE,
     comment LONGTEXT NOT NULL,
     rich_text_content LONGTEXT,
     raised_by_employee_no VARCHAR(64) NOT NULL,
@@ -41,7 +44,8 @@ CREATE TABLE review_opinion (
     status VARCHAR(64) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_review_opinion_task_status (task_id, status, raised_by_employee_no)
+    INDEX idx_review_opinion_task_status (task_id, status, raised_by_employee_no),
+    INDEX idx_review_opinion_task_draft (task_id, is_draft)
 );
 
 CREATE TABLE review_file (

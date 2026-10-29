@@ -55,7 +55,8 @@ class ReviewMailNotificationApplicationServiceTest {
         MailMessage message = payload();
         assertThat(message.notificationType()).isEqualTo("PCB_TASK_CREATED");
         assertThat(message.subject()).isEqualTo("BMS PCB布局布线评审");
-        assertThat(message.content()).contains("王鹏飞、刘满红你们好", "附件是BMSPCB文件，请进行硬件评审与EMC评审。");
+        assertThat(message.content()).contains("王鹏飞、刘满红你们好", "附件是BMSPCB文件，请进行硬件评审与EMC评审。",
+                "http://10.195.135.149:31792/myTodo");
         assertThat(message.recipients()).extracting(MailMessage.MailRecipient::email)
                 .containsExactly("wang@bms.example.com", "liu@bms.example.com");
         assertThat(message.carbonCopies()).isEmpty();
@@ -76,6 +77,19 @@ class ReviewMailNotificationApplicationServiceTest {
         MailMessage message = payload();
         assertThat(message.recipients()).extracting(MailMessage.MailRecipient::email)
                 .containsExactly("wang@bms.example.com", "liu@bms.example.com");
+    }
+
+    @Test
+    void shouldIncludeTodoLinkWhenSchematicTaskCreated() throws Exception {
+        when(whitelistMapper.findActiveByEmployeeNo("BMS001")).thenReturn(user(1L, "BMS001", "王鹏飞", "wang@bms.example.com"));
+        ReviewTaskRecord task = task(11L, "SCHEMATIC", "VCU", "HARDWARE_EXPERT:BMS001");
+
+        service.enqueueTaskCreated(task);
+
+        MailMessage message = payload();
+        assertThat(message.notificationType()).isEqualTo("SCHEMATIC_TASK_CREATED");
+        assertThat(message.content()).contains("附件为VCU原理图文件，请进行原理图评审。",
+                "http://10.195.135.149:31792/myTodo");
     }
 
     @Test
@@ -110,7 +124,8 @@ class ReviewMailNotificationApplicationServiceTest {
 
         MailMessage message = payload();
         assertThat(message.subject()).isEqualTo("BMS工艺评审与结构评审");
-        assertThat(message.content()).contains("附件是BMS工艺评审与结构评审文件，请进行工艺评审与结构评审");
+        assertThat(message.content()).contains("附件是BMS工艺评审与结构评审文件，请进行工艺评审与结构评审",
+                "http://10.195.135.149:31792/myTodo");
         assertThat(message.attachments()).extracting(MailMessage.MailAttachment::fileName).containsExactly("工艺.zip", "结构.zip");
     }
 

@@ -190,6 +190,57 @@ class TaskCheckItemApplicationServiceTest {
     }
 
     @Test
+    void shouldSaveFailedCheckItemAsDraftWithoutPublishingOpinion() {
+        ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
+        TaskCheckItemRecord checkItem = item(51L, 31L);
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(checkItem);
+        when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
+        when(templateMapper.findById(31L)).thenReturn(template(31L, "线距检查"));
+        when(opinionMapper.nextOpinionId()).thenReturn(71L);
+        when(userProfileClient.getByEmployeeNo("BMS001"))
+                .thenReturn(new UserCenterUserProfileClient.UserProfile("BMS001", "王工", null, null, null));
+
+        List<TaskCheckItemApplicationService.CheckItemView> result = service.saveBatch(1001L,
+                List.of(new TaskCheckItemApplicationService.SubmitBatchItemCommand(51L, CheckResult.FAIL, "线距不足", "<p>线距不足</p>")),
+                "BMS001", "王工");
+
+        ArgumentCaptor<ReviewOpinionRecord> captor = ArgumentCaptor.forClass(ReviewOpinionRecord.class);
+        verify(opinionMapper).insert(captor.capture());
+        assertThat(captor.getValue().isDraft()).isTrue();
+        assertThat(captor.getValue().getStatus()).isEqualTo("PENDING_REPLY");
+        assertThat(checkItem.getStatus()).isEqualTo("SAVED");
+        assertThat(result.get(0).opinion().status()).isEqualTo(com.bms.review.domain.OpinionStatus.PENDING_REPLY);
+    }
+
+    @Test
+    void shouldPublishSavedDraftWhenSubmittingBatch() {
+        ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
+        TaskCheckItemRecord checkItem = item(51L, 31L);
+        ReviewOpinionRecord draftOpinion = new ReviewOpinionRecord();
+        draftOpinion.setId(71L);
+        draftOpinion.setStatus("PENDING_REPLY");
+        draftOpinion.setDraft(true);
+        draftOpinion.setRaisedByEmployeeNo("BMS001");
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(checkItem);
+        when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
+        when(templateMapper.findById(31L)).thenReturn(template(31L, "线距检查"));
+        when(opinionMapper.findActiveMutualCheckItemOpinion(1001L, 51L, OpinionSourceType.MUTUAL_CHECK_ITEM)).thenReturn(draftOpinion);
+        when(opinionMapper.updateOpinion(any(ReviewOpinionRecord.class))).thenReturn(1);
+        when(userProfileClient.getByEmployeeNo("BMS001"))
+                .thenReturn(new UserCenterUserProfileClient.UserProfile("BMS001", "王工", null, null, null));
+
+        service.submitBatch(1001L,
+                List.of(new TaskCheckItemApplicationService.SubmitBatchItemCommand(51L, CheckResult.FAIL, "线距不足", "<p>线距不足</p>")),
+                "BMS001", "王工");
+
+        assertThat(draftOpinion.isDraft()).isFalse();
+        assertThat(checkItem.getStatus()).isEqualTo("COMPLETED");
+        verify(opinionMapper).updateOpinion(draftOpinion);
+    }
+
+    @Test
     void shouldKeepExistingSnapshotWhenTaskIsFinished() {
         when(assignmentAccessMapper.isAssignedToTask(1001L, "BMS001")).thenReturn(true);
         ReviewTaskRecord task = task(TaskStatus.FINISHED);

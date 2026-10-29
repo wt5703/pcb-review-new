@@ -175,6 +175,9 @@ public class OpinionApplicationService {
     public OpinionView reply(long opinionId, ReplyOpinionCommand command, String operatorEmployeeNo, String operatorName) {
         ReviewOpinionRecord opinion = requireOpinion(opinionId);
         ReviewTaskRecord task = requireOpenTask(opinion.getTaskId());
+        if (opinion.isDraft()) {
+            throw new BusinessException(ErrorCode.OPINION_STATUS_CONFLICT, "互检单草稿尚未提交，不能答复");
+        }
         if (!task.getDesignerEmployeeNo().equals(operatorEmployeeNo)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "只有任务设计者可以答复意见");
         }
@@ -250,6 +253,8 @@ public class OpinionApplicationService {
         List<ReviewOpinionRecord> records = opinionMapper.findByTaskId(taskId).stream()
                 // 无意见确认是审计记录，不属于需要设计者处理的问题。
                 .filter(item -> !item.isNoOpinion())
+                // 互检单保存的草稿尚未正式提交，不能进入设计者答复页面或意见总览。
+                .filter(item -> !item.isDraft())
                 .filter(item -> severity == null || severity == item.getSeverity())
                 .filter(item -> status == null || status.name().equals(item.getStatus()))
                 .filter(item -> normalizedSourceTypes.isEmpty()
@@ -385,7 +390,7 @@ public class OpinionApplicationService {
         return assignments.stream()
                 .filter(assigned -> reviewerRoleMatchesCurrentSummary(task, sourceTypes, assigned.role()))
                 .distinct()
-                .filter(assigned -> opinions.stream().noneMatch(opinion -> assigned.reviewerEmployeeNo().equals(opinion.getRaisedByEmployeeNo())
+                .filter(assigned -> opinions.stream().filter(opinion -> !opinion.isDraft()).noneMatch(opinion -> assigned.reviewerEmployeeNo().equals(opinion.getRaisedByEmployeeNo())
                         && matchesSourceForRole(opinion.getSourceType(), assigned.role())))
                 .map(assigned -> new OutstandingReviewerView(assigned.reviewerEmployeeNo(),
                         profileName(assigned.reviewerEmployeeNo(), profiles), assigned.role(), "PENDING"))
@@ -486,7 +491,7 @@ public class OpinionApplicationService {
         List<ReviewOpinionRecord> safeOpinions = opinions == null ? List.of() : opinions;
         boolean completed = requiredSources.stream().allMatch(source -> {
             List<ReviewOpinionRecord> sourceOpinions = safeOpinions.stream()
-                    .filter(item -> reviewerEmployeeNo.equals(item.getRaisedByEmployeeNo()) && source == item.getSourceType())
+                    .filter(item -> !item.isDraft() && reviewerEmployeeNo.equals(item.getRaisedByEmployeeNo()) && source == item.getSourceType())
                     .toList();
             return !sourceOpinions.isEmpty() && sourceOpinions.stream().allMatch(this::isClosedPassedOpinion);
         });

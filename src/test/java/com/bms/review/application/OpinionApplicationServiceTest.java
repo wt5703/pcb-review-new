@@ -248,6 +248,20 @@ class OpinionApplicationServiceTest {
     }
 
     @Test
+    void shouldExcludeSavedMutualCheckDraftFromDesignerReplyList() {
+        when(assignmentAccessMapper.isAssignedToTask(1001L, "BMS020")).thenReturn(true);
+        when(taskMapper.findById(1001L)).thenReturn(task("BMS009"));
+        ReviewOpinionRecord savedDraft = opinion(31L, 1001L, "BMS020", OpinionStatus.PENDING_REPLY);
+        savedDraft.setDraft(true);
+        ReviewOpinionRecord publishedOpinion = opinion(32L, 1001L, "BMS020", OpinionStatus.PENDING_REPLY);
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(savedDraft, publishedOpinion));
+
+        List<OpinionApplicationService.OpinionView> opinions = service.list(1001L, "BMS020", "BMS020");
+
+        assertThat(opinions).extracting(OpinionApplicationService.OpinionView::id).containsExactly(32L);
+    }
+
+    @Test
     void shouldExposeEveryDesignerReplyWithItsPairedConfirmationWhenListingOpinions() {
         when(assignmentAccessMapper.isAssignedToTask(1001L, "BMS020")).thenReturn(true);
         ReviewOpinionRecord opinion = opinion(31L, 1001L, "BMS020", OpinionStatus.PENDING_CONFIRMATION);

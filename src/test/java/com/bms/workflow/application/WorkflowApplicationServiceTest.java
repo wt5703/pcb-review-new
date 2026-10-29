@@ -131,21 +131,37 @@ class WorkflowApplicationServiceTest {
     }
 
     @Test
-    void shouldStartPcbStageReviewWithoutCheckingAssignedExpertSubmission() {
+    void shouldRejectPcbStageReviewWhenAssignedExpertHasNotSubmitted() {
         ReviewTaskRecord task = task(TaskStatus.PCB_EXPERT_REVIEWING);
         task.setReviewerAssignments("PCB_EXPERT:BMS020");
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
         when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_STRUCTURE_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
         when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_PROCESS_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
-        when(taskMapper.update(any())).thenReturn(1);
-
-        WorkflowApplicationService.WorkflowView view = service.transition(1001L,
+        assertThatThrownBy(() -> service.transition(1001L,
                 new WorkflowApplicationService.TransitionBatchCommand(List.of(
                         WorkflowAction.START_PCB_STRUCTURE_REVIEW, WorkflowAction.START_PCB_PROCESS_REVIEW), null, List.of()),
-                "BMS010", "BMS010");
+                "BMS010", "BMS010"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("专家评审意见尚未全部确认通过，不能开启工艺或结构评审；以下评审人尚未确认提交：BMS020");
+    }
 
-        assertThat(view.toStatus()).isEqualTo(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
+    @Test
+    void shouldRejectPcbStageReviewWhenSavedOpinionDraftExists() {
+        ReviewTaskRecord task = task(TaskStatus.PCB_EXPERT_REVIEWING);
+        task.setReviewerAssignments("PCB_EXPERT:BMS020");
+        ReviewOpinionRecord savedDraft = new ReviewOpinionRecord();
+        savedDraft.setSourceType(OpinionSourceType.PCB_REVIEW);
+        savedDraft.setRaisedByEmployeeNo("BMS020");
+        savedDraft.setStatus("PENDING_REPLY");
+        savedDraft.setDraft(true);
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(savedDraft));
+
+        assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.START_PCB_STRUCTURE_REVIEW,
+                null, "BMS010", "BMS010"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("专家评审意见尚未全部确认通过，不能开启工艺或结构评审");
     }
 
     @Test
@@ -253,6 +269,19 @@ class WorkflowApplicationServiceTest {
     }
 
     @Test
+    void shouldRejectPcbPrepareFinishWhenMutualReviewerHasNotSubmitted() {
+        ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
+        task.setMutualCheckReviewerEmployeeNos("BMS020");
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.PENDING_FINISH, null,
+                "BMS010", "BMS010"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("互检单意见尚未全部确认通过，不能进入待结束；以下评审人尚未确认提交：BMS020");
+    }
+
+    @Test
     void shouldRejectOriginalFileFromEarlierStage() {
         when(taskMapper.findById(1001L)).thenReturn(task(ReviewType.SCHEMATIC, TaskStatus.SCHEMATIC_REVIEWING));
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
@@ -291,6 +320,19 @@ class WorkflowApplicationServiceTest {
     }
 
     @Test
+    void shouldRejectSchematicReviewWhenMutualReviewerHasNotSubmitted() {
+        ReviewTaskRecord task = task(ReviewType.SCHEMATIC, TaskStatus.MUTUAL_CHECK_REVIEWING);
+        task.setMutualCheckReviewerEmployeeNos("BMS020");
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.START_SCHEMATIC_EXPERT_REVIEW,
+                null, "BMS010", "BMS010"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("互检单意见尚未全部确认通过，不能开启原理图评审；以下评审人尚未确认提交：BMS020");
+    }
+
+    @Test
     void shouldRejectPcbMutualAssignmentWhenAProcessOpinionIsNotConfirmed() {
         when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING));
         ReviewOpinionRecord opinion = new ReviewOpinionRecord();
@@ -305,19 +347,17 @@ class WorkflowApplicationServiceTest {
     }
 
     @Test
-    void shouldStartPcbMutualAssignmentWithoutCheckingAssignedReviewerSubmission() {
+    void shouldRejectPcbMutualAssignmentWhenOptionalReviewerHasNotSubmitted() {
         ReviewTaskRecord task = task(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
         task.setReviewerAssignments("PROCESS_EXPERT:BMS020");
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
         when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_PROCESS_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
         when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_STRUCTURE_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
-        when(taskMapper.update(any())).thenReturn(1);
-
-        WorkflowApplicationService.WorkflowView view = service.transition(1001L,
-                WorkflowAction.START_PCB_MATUAL_ASSIGNMENT, null, "BMS010", "BMS010");
-
-        assertThat(view.toStatus()).isEqualTo(TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT);
+        assertThatThrownBy(() -> service.transition(1001L,
+                WorkflowAction.START_PCB_MATUAL_ASSIGNMENT, null, "BMS010", "BMS010"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("工艺或结构评审意见尚未全部确认通过，不能开启互检单分配；以下评审人尚未确认提交：BMS020");
     }
 
     @Test
@@ -346,11 +386,12 @@ class WorkflowApplicationServiceTest {
     }
 
     @Test
-    void shouldPrepareSchematicFinishWithoutCheckingAssignedExpertSubmission() {
+    void shouldPrepareSchematicFinishAfterAssignedExpertSubmitted() {
         ReviewTaskRecord task = task(ReviewType.SCHEMATIC, TaskStatus.SCHEMATIC_REVIEWING);
         task.setReviewerAssignments("HARDWARE_EXPERT:BMS020");
         ReviewOpinionRecord schematicOpinion = new ReviewOpinionRecord();
         schematicOpinion.setSourceType(OpinionSourceType.SCHEMATIC_REVIEW);
+        schematicOpinion.setRaisedByEmployeeNo("BMS020");
         schematicOpinion.setStatus("CONFIRMED_PASS");
         ReviewOpinionRecord pendingMutualOpinion = new ReviewOpinionRecord();
         pendingMutualOpinion.setSourceType(OpinionSourceType.MUTUAL_EXTRA);

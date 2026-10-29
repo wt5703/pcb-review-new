@@ -7,5 +7,6 @@ package com.bms.review.domain;
  */
 public enum CheckItemStatus {
     PENDING,
+    SAVED,
     COMPLETED
 }

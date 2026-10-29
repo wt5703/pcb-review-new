@@ -77,9 +77,10 @@ public class TaskController {
     }
 
     @GetMapping
-    @Operation(summary = "分页查询评审任务", description = "查询全部符合条件的任务，不按当前用户做数据隔离。taskName、projectName 支持模糊匹配；designerId 按设计者工号精确匹配；任务状态可多选。请求页码参数为 pageNum，响应分页字段为 pageNum、pageSize、total。")
+    @Operation(summary = "分页查询评审任务", description = "查询全部符合条件的任务，不按当前用户做数据隔离。taskName、projectNo、projectName 支持模糊匹配；designerId 按设计者工号精确匹配；任务状态可多选。请求页码参数为 pageNum，响应分页字段为 pageNum、pageSize、total。")
     ApiResponse<TaskApplicationService.TaskPage> list(
             @RequestParam(required = false) @Parameter(description = "任务名称，支持模糊匹配") String taskName,
+            @RequestParam(required = false) @Parameter(description = "项目编号，支持模糊匹配") String projectNo,
             @RequestParam(required = false) @Parameter(description = "项目名称，支持模糊匹配") String projectName,
             @RequestParam(name = "designerId", required = false) @Parameter(description = "设计者工号，精确匹配") String designerId,
             @RequestParam(required = false) @Parameter(description = "评审类型：PCB 或 SCHEMATIC") ReviewType reviewType,
@@ -87,7 +88,7 @@ public class TaskController {
             @RequestParam(name = "pageNum", defaultValue = "1") @Parameter(description = "页码，从 1 开始") Integer pageNum,
             @RequestParam(defaultValue = "20") @Parameter(description = "每页条数，最大 100") Integer pageSize,
             HttpServletRequest servletRequest) {
-        return ApiResponse.ok(taskService.listTasks(new TaskApplicationService.TaskQuery(taskName, projectName, designerId,
+        return ApiResponse.ok(taskService.listTasks(new TaskApplicationService.TaskQuery(taskName, projectNo, projectName, designerId,
                 reviewType, statuses, pageNum, pageSize, null)), getTraceId(servletRequest));
     }
 
@@ -142,7 +143,7 @@ public class TaskController {
         ReviewerWhitelistApplicationService.WhitelistPersonView leader = request.expertLeaderEmployeeNo() == null || request.expertLeaderEmployeeNo().isBlank()
                 ? new ReviewerWhitelistApplicationService.WhitelistPersonView(employeeNo, designerName, null, null, null)
                 : whitelistApplicationService.findByEmployeeNo(request.expertLeaderEmployeeNo());
-        return new TaskApplicationService.CreateTaskCommand(request.reviewType(), request.taskName(), request.projectName(), employeeNo,
+        return new TaskApplicationService.CreateTaskCommand(request.reviewType(), request.taskName(), request.projectNo(), request.projectName(), employeeNo,
                 designerName, request.designName(), request.pcbType(), request.expectedCompletedDate() == null ? LocalDate.now() : request.expectedCompletedDate(),
                 leader.employeeNo(), leader.displayName(),
                 request.reviewRoles() == null || request.reviewRoles().isEmpty() ? List.of(ReviewRole.PCB_EXPERT) : request.reviewRoles(),
@@ -165,6 +166,7 @@ public class TaskController {
     record CreateTaskRequest(
             @Schema(description = "评审类型：PCB 表示 PCB 评审，SCHEMATIC 表示原理图评审", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull ReviewType reviewType,
             @Schema(description = "任务名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String taskName,
+            @Schema(description = "项目编号") String projectNo,
             @Schema(description = "项目名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String projectName,
             @Schema(description = "设计者姓名；优先使用该 JSON 字段保存，避免中文姓名通过请求头传输时乱码", requiredMode = Schema.RequiredMode.REQUIRED) String designerName,
             @Schema(description = "原理图名称或 PCB 名称；随评审类型在页面显示不同标签", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String designName,
