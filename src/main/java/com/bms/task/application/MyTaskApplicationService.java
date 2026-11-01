@@ -43,12 +43,12 @@ public class MyTaskApplicationService {
         this.reviewerWhitelistApplicationService = reviewerWhitelistApplicationService;
     }
 
-    public List<MyTaskView> list(String operatorEmployeeNo, String operatorName) {
+    public List<MyTaskView> list(String operatorEmployeeNo) {
         Set<Long> pendingReplyTaskIds = Set.copyOf(opinionMapper.findPendingReplyTaskIdsForDesignerEmployeeNo(operatorEmployeeNo));
         Set<Long> pendingConfirmationTaskIds = Set.copyOf(opinionMapper.findPendingConfirmationTaskIdsForRaiserEmployeeNo(operatorEmployeeNo));
         Map<Long, EnumSet<MyTaskAction>> actions = new HashMap<>();
         List<ReviewTaskRecord> unfinishedTasks = taskMapper.findAllUnfinished();
-        Map<String, String> reviewerNames = reviewerWhitelistApplicationService.findDisplayNamesByEmployeeNos(
+        Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> reviewerProfiles = reviewerWhitelistApplicationService.findReviewerProfilesByEmployeeNos(
                 unfinishedTasks.stream()
                         .flatMap(task -> TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments()).stream())
                         .flatMap(assignment -> assignment.reviewerEmployeeNos().stream())
@@ -66,13 +66,13 @@ public class MyTaskApplicationService {
                 taskActions.add(MyTaskAction.CONFIRM_OPINION);
             }
             addDesignerWorkflowSubmissionAction(task, operatorEmployeeNo, taskActions);
-            addManagementAction(task, operatorEmployeeNo, operatorName, taskActions);
+            addManagementAction(task, operatorEmployeeNo, taskActions);
             if (!taskActions.isEmpty()) {
                 actions.put(task.getId(), taskActions);
             }
         }
         return unfinishedTasks.stream().filter(task -> actions.containsKey(task.getId()))
-                .map(task -> toView(task, actions.get(task.getId()), reviewerNames)).toList();
+                .map(task -> toView(task, actions.get(task.getId()), reviewerProfiles)).toList();
     }
 
     /**
@@ -80,7 +80,7 @@ public class MyTaskApplicationService {
      * 本月已结束以任务最终状态写入时间为准，并只统计当前设计者创建的任务。
      */
     public WorkbenchTaskStatistics statistics(String operatorEmployeeNo) {
-        List<MyTaskView> myTasks = list(operatorEmployeeNo, null);
+        List<MyTaskView> myTasks = list(operatorEmployeeNo);
         int reviewingTaskCount = (int) myTasks.stream()
                 .filter(task -> task.actions().contains(MyTaskAction.REVIEW))
                 .count();
@@ -97,12 +97,13 @@ public class MyTaskApplicationService {
                 pendingConfirmationTaskCount, finishedThisMonthCount);
     }
 
-    private MyTaskView toView(ReviewTaskRecord task, EnumSet<MyTaskAction> actions, Map<String, String> reviewerNames) {
+    private MyTaskView toView(ReviewTaskRecord task, EnumSet<MyTaskAction> actions,
+                              Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> reviewerProfiles) {
         return MyTaskView.from(task,
                 reviewerWhitelistApplicationService.findDisplayNameOrDefault(task.getDesignerEmployeeNo(), task.getDesignerName()),
                 reviewerWhitelistApplicationService.findDisplayNameOrDefault(task.getExpertLeaderEmployeeNo(), task.getExpertLeaderName()),
                 TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments()).stream()
-                        .map(assignment -> TaskApplicationService.ReviewerAssignmentView.from(assignment, reviewerNames))
+                        .map(assignment -> TaskApplicationService.ReviewerAssignmentView.from(assignment, reviewerProfiles))
                         .toList(), actions);
     }
 
@@ -121,13 +122,14 @@ public class MyTaskApplicationService {
         }
     }
 
-    private void addManagementAction(ReviewTaskRecord task, String operatorEmployeeNo, String operatorName, EnumSet<MyTaskAction> actions) {
+    private void addManagementAction(ReviewTaskRecord task, String operatorEmployeeNo, EnumSet<MyTaskAction> actions) {
         TaskStatus status = TaskStatus.valueOf(task.getStatus());
         // 不再按角色识别管理待办；只向任务记录中指定的组长展示。
         if (!operatorEmployeeNo.equals(task.getExpertLeaderEmployeeNo())) {
             return;
         }
-        if (status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT) {
+        if (status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT
+                || (ReviewType.SCHEMATIC.name().equals(task.getReviewType()) && status == TaskStatus.MUTUAL_CHECK_REVIEWING)) {
             actions.add(MyTaskAction.ASSIGN_REVIEWERS);
         }
         if (status == TaskStatus.PENDING_FINISH) {

@@ -4,7 +4,6 @@ import com.bms.archive.application.TaskArchiveApplicationService;
 import com.bms.archive.application.TaskArchiveOpinionExportApplicationService;
 import com.bms.common.ApiResponse;
 import com.bms.common.TraceIdFilter;
-import com.bms.task.application.TaskApplicationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
@@ -17,13 +16,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.validation.annotation.Validated;
-import jakarta.validation.constraints.NotBlank;
-import org.springframework.web.bind.annotation.RequestHeader;
 
 /**
  * @author 王涛
  * @date 2026-09-18
- * @description 提供已结束任务归档快照的只读查询接口，不允许通过任务标识绕过授权查看历史详情
+ * @description 提供已结束任务归档快照的只读查询接口。
  */
 @RestController
 @Validated
@@ -32,21 +29,18 @@ import org.springframework.web.bind.annotation.RequestHeader;
 public class TaskArchiveController {
     private static final MediaType EXCEL_MEDIA_TYPE = MediaType.parseMediaType(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    private final TaskApplicationService taskApplicationService;
     private final TaskArchiveApplicationService taskArchiveApplicationService;
     private final TaskArchiveOpinionExportApplicationService taskArchiveOpinionExportApplicationService;
 
-    public TaskArchiveController(TaskApplicationService taskApplicationService, TaskArchiveApplicationService taskArchiveApplicationService,
+    public TaskArchiveController(TaskArchiveApplicationService taskArchiveApplicationService,
                                  TaskArchiveOpinionExportApplicationService taskArchiveOpinionExportApplicationService) {
-        this.taskApplicationService = taskApplicationService;
         this.taskArchiveApplicationService = taskArchiveApplicationService;
         this.taskArchiveOpinionExportApplicationService = taskArchiveOpinionExportApplicationService;
     }
 
     @GetMapping
-    @Operation(summary = "查询任务归档记录", description = "仅可读取已结束任务的归档快照；返回流程节点时间/节点名称/操作人姓名/流转意见、阶段文件及邮件投递记录")
-    ApiResponse<TaskArchiveApplicationService.ArchiveView> get(@PathVariable long taskId, @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
-        taskApplicationService.getTaskDetail(taskId, employeeNo, null);
+    @Operation(summary = "查询任务归档记录", description = "返回已结束任务的归档快照，包含流程节点、阶段文件和邮件投递记录；所有用户均可查看。")
+    ApiResponse<TaskArchiveApplicationService.ArchiveView> get(@PathVariable long taskId, HttpServletRequest servletRequest) {
         return ApiResponse.ok(taskArchiveApplicationService.get(taskId), traceId(servletRequest));
     }
 

@@ -42,10 +42,10 @@ class FileApplicationServiceTest {
         when(resourceServiceClient.upload(any(MultipartFile.class), anyString()))
                 .thenReturn(new ResourceServiceClient.StoredResource("/company/BMS.pcb", "/company/BMS.pcb"));
         FileApplicationService.FileView first = service.upload(1L, FileCategory.PCB_REVIEW,
-                multipart("BMS.pcb", "first"), "10", "10");
+                multipart("BMS.pcb", "first"), "10");
 
         FileApplicationService.FileView second = service.upload(1L, FileCategory.PCB_REVIEW,
-                multipart("BMS-v2.pcb", "second"), "10", "10");
+                multipart("BMS-v2.pcb", "second"), "10");
 
         assertThat(first.id()).isEqualTo(101L);
         assertThat(second.id()).isEqualTo(102L);
@@ -61,11 +61,10 @@ class FileApplicationServiceTest {
         when(accessMapper.isAssignedToTask(1L, "20")).thenReturn(true);
         when(resourceServiceClient.download("BMS.pcb", "mock-file-1")).thenReturn(new byte[] { 1 });
 
-        FileApplicationService.DownloadContent download = service.downloadFile(101L,
-                "20", "20");
+        FileApplicationService.DownloadContent download = service.downloadFile(101L, "20");
 
         assertThat(download.fileName()).isEqualTo("BMS.pcb");
-        assertThatThrownBy(() -> service.downloadFile(101L, "21", "21"))
+        assertThatThrownBy(() -> service.downloadFile(101L, "21"))
                 .isInstanceOf(com.bms.common.BusinessException.class)
                 .hasMessage("无权访问该任务的文件");
     }
@@ -76,7 +75,7 @@ class FileApplicationServiceTest {
         finished.setStatus(TaskStatus.FINISHED.name());
         when(taskMapper.findById(1L)).thenReturn(finished);
 
-        assertThatThrownBy(() -> service.upload(1L, FileCategory.PCB_REVIEW, multipart("BMS.pcb", "content"), "10", "10"))
+        assertThatThrownBy(() -> service.upload(1L, FileCategory.PCB_REVIEW, multipart("BMS.pcb", "content"), "10"))
                 .isInstanceOf(com.bms.common.BusinessException.class)
                 .hasMessage("已结束任务不允许上传新文件");
     }
@@ -86,7 +85,7 @@ class FileApplicationServiceTest {
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
 
         assertThatThrownBy(() -> service.upload(1L, FileCategory.PCB_REVIEW,
-                multipart("BMS.pcb", "content"), "11", "11"))
+                multipart("BMS.pcb", "content"), "11"))
                 .isInstanceOf(com.bms.common.BusinessException.class)
                 .hasMessage("仅任务设计者可以上传该任务的 PCB 或原理图文件");
     }
@@ -101,7 +100,7 @@ class FileApplicationServiceTest {
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
         when(fileMapper.findByFileId(fileId)).thenReturn(pending);
 
-        assertThat(service.bindPendingInitialFiles(1L, java.util.List.of(fileId), "10", "10"))
+        assertThat(service.bindPendingInitialFiles(1L, java.util.List.of(fileId), "10"))
                 .singleElement()
                 .satisfies(file -> assertThat(file.fileId()).isEqualTo(fileId));
     }
@@ -115,7 +114,7 @@ class FileApplicationServiceTest {
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
         when(fileMapper.unbindFromTask(1L, fileId)).thenReturn(1);
 
-        service.unbindFile(1L, fileId, "10", "10");
+        service.unbindFile(1L, fileId, "10");
 
         verify(fileMapper).unbindFromTask(1L, fileId);
         verify(taskMapper).removeInitialFileId(1L, 101L);
@@ -133,7 +132,7 @@ class FileApplicationServiceTest {
         when(fileMapper.unbindFromTask(1L, fileId)).thenReturn(1);
         when(fileMapper.findLatestHistoricalByTaskIdAndCategory(1L, FileCategory.PCB_REVIEW.name())).thenReturn(historical);
 
-        service.unbindFile(1L, fileId, "10", "10");
+        service.unbindFile(1L, fileId, "10");
 
         verify(fileMapper).markAsLatest(1L, 101L);
     }

@@ -68,7 +68,7 @@ public class OpinionApplicationService {
     @Transactional
     public OpinionView raise(RaiseOpinionCommand command, String operatorEmployeeNo, String operatorName) {
         ReviewTaskRecord task = requireOpenTask(command.taskId());
-        taskProcessorAuthorizationService.requireCurrentTaskProcessor(command.taskId(), operatorEmployeeNo, operatorName);
+        taskProcessorAuthorizationService.requireCurrentTaskProcessor(command.taskId(), operatorEmployeeNo);
         if (command.sourceType() == OpinionSourceType.MUTUAL_CHECK_ITEM
                 && (command.sourceItemId() == null || taskCheckItemMapper.findByTaskIdAndId(command.taskId(), command.sourceItemId()) == null)) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务");
@@ -98,7 +98,7 @@ public class OpinionApplicationService {
     @Transactional
     public OpinionView submitNoOpinion(long taskId, OpinionSourceType sourceType, String operatorEmployeeNo, String operatorName) {
         ReviewTaskRecord task = requireOpenTask(taskId);
-        taskProcessorAuthorizationService.requireCurrentTaskProcessor(taskId, operatorEmployeeNo, operatorName);
+        taskProcessorAuthorizationService.requireCurrentTaskProcessor(taskId, operatorEmployeeNo);
         if (!isReviewSubmissionAvailable(task, sourceType)) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "当前评审节点不支持确认提交");
         }
@@ -142,10 +142,10 @@ public class OpinionApplicationService {
 
     /** 编辑仅限尚未被设计者答复的本人意见，防止改变已进入闭环的评审事实。 */
     @Transactional
-    public OpinionView update(long opinionId, UpdateOpinionCommand command, String operatorEmployeeNo, String operatorName) {
+    public OpinionView update(long opinionId, UpdateOpinionCommand command, String operatorEmployeeNo) {
         ReviewOpinionRecord opinion = requireOpinion(opinionId);
         requireOpenTask(opinion.getTaskId());
-        requireOpinionOwner(opinion, operatorEmployeeNo, operatorName, "编辑");
+        requireOpinionOwner(opinion, operatorEmployeeNo, "编辑");
         requireNoDesignerReply(opinionId);
         requireComment(command.comment());
         String richText = requireComment(command.richText() == null ? command.comment() : command.richText());
@@ -162,17 +162,17 @@ public class OpinionApplicationService {
 
     /** 删除仅限尚未被设计者答复的本人意见；流程审计记录会保留。 */
     @Transactional
-    public void delete(long opinionId, String operatorEmployeeNo, String operatorName) {
+    public void delete(long opinionId, String operatorEmployeeNo) {
         ReviewOpinionRecord opinion = requireOpinion(opinionId);
         requireOpenTask(opinion.getTaskId());
-        requirePendingReplyOwner(opinion, operatorEmployeeNo, operatorName, "删除");
+        requirePendingReplyOwner(opinion, operatorEmployeeNo, "删除");
         if (opinionMapper.deletePendingReply(opinionId) != 1) {
             throw new BusinessException(ErrorCode.OPINION_STATUS_CONFLICT, "意见已被答复，不能删除");
         }
     }
 
     @Transactional
-    public OpinionView reply(long opinionId, ReplyOpinionCommand command, String operatorEmployeeNo, String operatorName) {
+    public OpinionView reply(long opinionId, ReplyOpinionCommand command, String operatorEmployeeNo) {
         ReviewOpinionRecord opinion = requireOpinion(opinionId);
         ReviewTaskRecord task = requireOpenTask(opinion.getTaskId());
         if (opinion.isDraft()) {
@@ -197,7 +197,7 @@ public class OpinionApplicationService {
     }
 
     @Transactional
-    public OpinionView confirm(long opinionId, ConfirmOpinionCommand command, String operatorEmployeeNo, String operatorName) {
+    public OpinionView confirm(long opinionId, ConfirmOpinionCommand command, String operatorEmployeeNo) {
         ReviewOpinionRecord opinion = requireOpinion(opinionId);
         requireOpenTask(opinion.getTaskId());
         if (!opinion.getRaisedByEmployeeNo().equals(operatorEmployeeNo)) {
@@ -221,7 +221,7 @@ public class OpinionApplicationService {
     }
 
     @Transactional
-    public OpinionView withdraw(long opinionId, WithdrawOpinionCommand command, String operatorEmployeeNo, String operatorName) {
+    public OpinionView withdraw(long opinionId, WithdrawOpinionCommand command, String operatorEmployeeNo) {
         ReviewOpinionRecord opinion = requireOpinion(opinionId);
         requireOpenTask(opinion.getTaskId());
         if (!opinion.getRaisedByEmployeeNo().equals(operatorEmployeeNo)) {
@@ -237,8 +237,8 @@ public class OpinionApplicationService {
         return toView(opinion);
     }
 
-    public List<OpinionView> list(long taskId, OpinionSeverity severity, OpinionStatus status, OpinionSourceType sourceType, String scene, String operatorEmployeeNo, String operatorName) {
-        return list(taskId, severity, status, sourceType, List.of(), scene, operatorEmployeeNo, operatorName);
+    public List<OpinionView> list(long taskId, OpinionSeverity severity, OpinionStatus status, OpinionSourceType sourceType, String scene, String operatorEmployeeNo) {
+        return list(taskId, severity, status, sourceType, List.of(), scene, operatorEmployeeNo);
     }
 
     /**
@@ -246,8 +246,8 @@ public class OpinionApplicationService {
      * sourceTypes 有值时优先于兼容参数 sourceType。
      */
     public List<OpinionView> list(long taskId, OpinionSeverity severity, OpinionStatus status, OpinionSourceType sourceType,
-                                  List<OpinionSourceType> sourceTypes, String scene, String operatorEmployeeNo, String operatorName) {
-        requireOpenOrFinishedTaskVisible(taskId, operatorEmployeeNo, operatorName);
+                                  List<OpinionSourceType> sourceTypes, String scene, String operatorEmployeeNo) {
+        requireOpenOrFinishedTaskVisible(taskId, operatorEmployeeNo);
         boolean reviewWorkspace = "REVIEW_WORKSPACE".equalsIgnoreCase(scene);
         List<OpinionSourceType> normalizedSourceTypes = sourceTypes == null ? List.of() : sourceTypes.stream().distinct().toList();
         List<ReviewOpinionRecord> records = opinionMapper.findByTaskId(taskId).stream()
@@ -274,19 +274,19 @@ public class OpinionApplicationService {
      * @description 在既有筛选、场景权限和倒序规则之上分页返回意见，避免详情页一次加载全部意见及其答复历史。
      */
     public OpinionPage listPage(long taskId, OpinionSeverity severity, OpinionStatus status, OpinionSourceType sourceType, String scene,
-                                Integer pageNum, Integer pageSize, String operatorEmployeeNo, String operatorName) {
-        return listPage(taskId, severity, status, sourceType, List.of(), scene, pageNum, pageSize, operatorEmployeeNo, operatorName);
+                                Integer pageNum, Integer pageSize, String operatorEmployeeNo) {
+        return listPage(taskId, severity, status, sourceType, List.of(), scene, pageNum, pageSize, operatorEmployeeNo);
     }
 
     public OpinionPage listPage(long taskId, OpinionSeverity severity, OpinionStatus status, OpinionSourceType sourceType,
                                 List<OpinionSourceType> sourceTypes, String scene, Integer pageNum, Integer pageSize,
-                                String operatorEmployeeNo, String operatorName) {
+                                String operatorEmployeeNo) {
         int normalizedPageNum = pageNum == null ? 1 : pageNum;
         int normalizedPageSize = pageSize == null ? 20 : pageSize;
         if (normalizedPageNum < 1 || normalizedPageSize < 1 || normalizedPageSize > 100) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "意见分页参数不合法");
         }
-        requireOpenOrFinishedTaskVisible(taskId, operatorEmployeeNo, operatorName);
+        requireOpenOrFinishedTaskVisible(taskId, operatorEmployeeNo);
         List<OpinionSourceType> normalizedSourceTypes = sourceTypes == null ? List.of() : sourceTypes.stream().distinct().toList();
         String raisedByEmployeeNo = "REVIEW_WORKSPACE".equalsIgnoreCase(scene) ? operatorEmployeeNo : null;
         String statusName = status == null ? null : status.name();
@@ -303,15 +303,15 @@ public class OpinionApplicationService {
         return new OpinionPage(total, normalizedPageNum, normalizedPageSize, items);
     }
 
-    public List<OpinionView> list(long taskId, String operatorEmployeeNo, String operatorName) { return list(taskId, null, null, null, "DESIGNER_REPLY", operatorEmployeeNo, operatorName); }
+    public List<OpinionView> list(long taskId, String operatorEmployeeNo) { return list(taskId, null, null, null, "DESIGNER_REPLY", operatorEmployeeNo); }
 
-    public OpinionSummary summary(long taskId, String operatorEmployeeNo, String operatorName) {
-        return summary(taskId, List.of(), operatorEmployeeNo, operatorName);
+    public OpinionSummary summary(long taskId, String operatorEmployeeNo) {
+        return summary(taskId, List.of(), operatorEmployeeNo);
     }
 
-    public OpinionSummary summary(long taskId, List<OpinionSourceType> sourceTypes, String operatorEmployeeNo, String operatorName) {
+    public OpinionSummary summary(long taskId, List<OpinionSourceType> sourceTypes, String operatorEmployeeNo) {
         ReviewTaskRecord task = requireTask(taskId);
-        List<OpinionView> opinions = list(taskId, null, null, null, sourceTypes, "DESIGNER_REPLY", operatorEmployeeNo, operatorName);
+        List<OpinionView> opinions = list(taskId, null, null, null, sourceTypes, "DESIGNER_REPLY", operatorEmployeeNo);
         return new OpinionSummary(opinions.size(), count(opinions, OpinionStatus.PENDING_REPLY), count(opinions, OpinionStatus.PENDING_CONFIRMATION),
                 count(opinions, OpinionStatus.CONFIRMED_PASS), count(opinions, OpinionStatus.CONFIRMED_REJECTED), count(opinions, OpinionStatus.WITHDRAWN),
                 opinions.stream().filter(item -> item.status() == OpinionStatus.PENDING_CONFIRMATION || item.status() == OpinionStatus.CONFIRMED_REJECTED)
@@ -421,7 +421,7 @@ public class OpinionApplicationService {
         return task;
     }
 
-    private void requireOpenOrFinishedTaskVisible(long taskId, String operatorEmployeeNo, String operatorName) {
+    private void requireOpenOrFinishedTaskVisible(long taskId, String operatorEmployeeNo) {
         ReviewTaskRecord task = requireTask(taskId);
         if (!assignmentAccessMapper.isAssignedToTask(taskId, operatorEmployeeNo)
                 && !task.getDesignerEmployeeNo().equals(operatorEmployeeNo)) {
@@ -445,14 +445,14 @@ public class OpinionApplicationService {
         return opinion;
     }
 
-    private void requirePendingReplyOwner(ReviewOpinionRecord opinion, String operatorEmployeeNo, String operatorName, String action) {
-        requireOpinionOwner(opinion, operatorEmployeeNo, operatorName, action);
+    private void requirePendingReplyOwner(ReviewOpinionRecord opinion, String operatorEmployeeNo, String action) {
+        requireOpinionOwner(opinion, operatorEmployeeNo, action);
         if (!OpinionStatus.PENDING_REPLY.name().equals(opinion.getStatus())) {
             throw new BusinessException(ErrorCode.OPINION_STATUS_CONFLICT, "意见已被答复，不能" + action);
         }
     }
 
-    private void requireOpinionOwner(ReviewOpinionRecord opinion, String operatorEmployeeNo, String operatorName, String action) {
+    private void requireOpinionOwner(ReviewOpinionRecord opinion, String operatorEmployeeNo, String action) {
         if (!opinion.getRaisedByEmployeeNo().equals(operatorEmployeeNo)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "只有意见提出人可以" + action + "意见");
         }

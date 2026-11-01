@@ -49,7 +49,7 @@ public class CheckItemTemplateController {
     ApiResponse<CheckItemTemplateApplicationService.TemplateExistenceView> checkExistence(
             @Parameter(description = "模板所属评审类型：PCB 或 SCHEMATIC", required = true) @RequestParam @NotNull ReviewType reviewType,
             HttpServletRequest servletRequest) {
-        return ApiResponse.ok(templateApplicationService.checkExistence(reviewType, null, null), traceId(servletRequest));
+        return ApiResponse.ok(templateApplicationService.checkExistence(reviewType), traceId(servletRequest));
     }
 
     @PostMapping(value = "/import", consumes = "multipart/form-data")
@@ -58,8 +58,7 @@ public class CheckItemTemplateController {
                                                                                  @RequestParam("reviewType") @NotNull ReviewType reviewType,
                                                                                  @RequestParam(value = "confirmed", defaultValue = "false") boolean confirmed,
                                                                                  HttpServletRequest servletRequest) throws IOException {
-        return ApiResponse.ok(templateApplicationService.importWorkbook(file.getBytes(), reviewType, confirmed,
-                null, null), traceId(servletRequest));
+        return ApiResponse.ok(templateApplicationService.importWorkbook(file.getBytes(), reviewType, confirmed), traceId(servletRequest));
     }
 
     @GetMapping
@@ -67,7 +66,7 @@ public class CheckItemTemplateController {
     ApiResponse<CheckItemTemplateApplicationService.TemplateListView> get(
             @Parameter(description = "模板所属评审类型：PCB 或 SCHEMATIC", required = true) @RequestParam @NotNull ReviewType reviewType,
             HttpServletRequest servletRequest) {
-        return ApiResponse.ok(templateApplicationService.get(reviewType, null, null), traceId(servletRequest));
+        return ApiResponse.ok(templateApplicationService.get(reviewType), traceId(servletRequest));
     }
 
 
@@ -78,8 +77,7 @@ public class CheckItemTemplateController {
 
         CheckItemTemplateApplicationService.CreateCategoryCommand command = toCreateCategoryCommand(request);
 
-        CheckItemTemplateApplicationService.TemplateCategoryView created = templateApplicationService.create(
-                command, null, null);
+        CheckItemTemplateApplicationService.TemplateCategoryView created = templateApplicationService.create(command);
 
         return ApiResponse.ok(created, traceId(servletRequest));
     }
@@ -100,8 +98,7 @@ public class CheckItemTemplateController {
         return ApiResponse.ok(templateApplicationService.update(new CheckItemTemplateApplicationService.UpdateTemplateCommand(
                         request.itemId(), request.itemName(), (request.items() == null ? List.<UpdateTemplateItemRequest>of() : request.items()).stream()
                         .map(item -> new CheckItemTemplateApplicationService.UpdateItemCommand(item.itemId(), item.itemName())).toList(),
-                        request.deletedItemIds()),
-                null, null), traceId(servletRequest));
+                        request.deletedItemIds())), traceId(servletRequest));
     }
 
     @DeleteMapping("/{checkItemId}")
@@ -111,7 +108,7 @@ public class CheckItemTemplateController {
             @Parameter(description = "删除目标类别：CATEGORY=大类，ITEM=小类", required = true)
             @RequestParam("category") CheckItemTemplateApplicationService.DeleteTargetCategory category,
             HttpServletRequest servletRequest) {
-        templateApplicationService.disable(checkItemId, category, null, null);
+        templateApplicationService.disable(checkItemId, category);
         return ApiResponse.ok(null, traceId(servletRequest));
     }
 

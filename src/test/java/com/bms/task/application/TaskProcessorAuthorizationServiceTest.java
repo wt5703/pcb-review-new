@@ -18,7 +18,7 @@ class TaskProcessorAuthorizationServiceTest {
     void shouldRejectUserWhoIsNotCurrentTaskProcessor() {
         when(accessMapper.isCurrentTaskProcessor(1001L, "BMS088")).thenReturn(false);
 
-        assertThatThrownBy(() -> service.requireCurrentTaskProcessor(1001L, "BMS088", "BMS088"))
+        assertThatThrownBy(() -> service.requireCurrentTaskProcessor(1001L, "BMS088"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("当前任务节点不需要该用户处理");
     }

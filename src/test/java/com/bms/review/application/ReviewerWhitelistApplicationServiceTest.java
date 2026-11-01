@@ -46,7 +46,7 @@ class ReviewerWhitelistApplicationServiceTest {
                         new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewerWhitelistRole.STRUCTURE_EXPERT, List.of("STR-1001")),
                         new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewerWhitelistRole.PROCESS_EXPERT, List.of("PRO-1001")),
                         new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewerWhitelistRole.PCB_EXPERT, List.of("PCB-1001"))),
-                "BMS001", "BMS001");
+                "BMS001");
 
         assertThat(result.createdCount()).isEqualTo(6);
         verify(whitelistMapper, times(6)).insert(any());
@@ -59,8 +59,7 @@ class ReviewerWhitelistApplicationServiceTest {
         when(whitelistMapper.lockByEmployeeNo("PCB-1001")).thenReturn(person);
         when(whitelistMapper.logicDeleteById(1L, "BMS001")).thenReturn(1);
 
-        ReviewerWhitelistApplicationService.DeleteResult result = service.remove(null, "PCB-1001",
-                "BMS001", "BMS001");
+        ReviewerWhitelistApplicationService.DeleteResult result = service.remove(null, "PCB-1001", "BMS001");
 
         assertThat(result.deletedCount()).isEqualTo(1);
         verify(whitelistMapper).logicDeleteRolesByEmployeeNo("PCB-1001", "BMS001");
@@ -74,7 +73,7 @@ class ReviewerWhitelistApplicationServiceTest {
         var result = service.add(List.of(
                 new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewerWhitelistRole.HARDWARE_EXPERT, List.of("BMS002")),
                 new ReviewerWhitelistApplicationService.RoleEmployeeNos(ReviewerWhitelistRole.EMC_EXPERT, List.of("BMS002"))),
-                "BMS001", "BMS001");
+                "BMS001");
         assertThat(result.createdCount()).isEqualTo(2);
         verify(whitelistMapper, times(1)).insert(any());
         verify(whitelistMapper).addOrRestoreRole("BMS002", "HARDWARE_EXPERT", "BMS001");
@@ -86,8 +85,7 @@ class ReviewerWhitelistApplicationServiceTest {
         when(whitelistMapper.lockActiveById(1L)).thenReturn(person(1L, "BMS002", null));
         when(whitelistMapper.logicDeleteRole("BMS002", "EMC_EXPERT", "BMS001")).thenReturn(1);
         when(whitelistMapper.countActiveRoles("BMS002")).thenReturn(1L);
-        service.removeRole(1L, ReviewerWhitelistRole.EMC_EXPERT,
-                "BMS001", "BMS001");
+        service.removeRole(1L, ReviewerWhitelistRole.EMC_EXPERT, "BMS001");
         verify(whitelistMapper, times(0)).logicDeleteById(anyLong(), any());
     }
 
@@ -96,8 +94,7 @@ class ReviewerWhitelistApplicationServiceTest {
         when(whitelistMapper.lockActiveById(1L)).thenReturn(person(1L, "BMS002", null));
         when(whitelistMapper.logicDeleteRole("BMS002", "EMC_EXPERT", "BMS001")).thenReturn(1);
         when(whitelistMapper.countActiveRoles("BMS002")).thenReturn(0L);
-        service.removeRole(1L, ReviewerWhitelistRole.EMC_EXPERT,
-                "BMS001", "BMS001");
+        service.removeRole(1L, ReviewerWhitelistRole.EMC_EXPERT, "BMS001");
         verify(whitelistMapper).logicDeleteById(1L, "BMS001");
     }
 
@@ -108,8 +105,7 @@ class ReviewerWhitelistApplicationServiceTest {
         when(whitelistMapper.countByKeyword("")).thenReturn(2L);
         when(whitelistMapper.findPageByKeyword("", 0, 1)).thenReturn(List.of(hardware));
         when(whitelistMapper.findRolesByEmployeeNos(List.of("BMS002"))).thenReturn(List.of(hardware, emc));
-        var page = service.listPage(new ReviewerWhitelistApplicationService.ReviewerWhitelistQuery(null, 1, 1),
-                "BMS001", "BMS001");
+        var page = service.listPage(new ReviewerWhitelistApplicationService.ReviewerWhitelistQuery(null, 1, 1));
         assertThat(page.total()).isEqualTo(2);
         assertThat(page.items()).hasSize(1);
         assertThat(page.items().get(0).reviewRoles()).containsExactlyInAnyOrder(ReviewerWhitelistRole.HARDWARE_EXPERT, ReviewerWhitelistRole.EMC_EXPERT);

@@ -55,7 +55,7 @@ public class ReviewMailNotificationApplicationService {
         this.mailTemplateService = mailTemplateService;
     }
 
-    /** 任务提交后通知 PCB 首阶段实际分配的 PCB/EMC 专家，或通知原理图任务的实际分配专家。 */
+    /** 任务提交后通知 PCB 首阶段实际分配的 PCB/EMC 专家；原理图任务通知其硬件部开发经理。 */
     public void enqueueTaskCreated(ReviewTask task) {
         List<TaskReviewerAssignment> assignments = assignments(task.reviewerAssignments(), task.expertLeaderEmployeeNo(), task.reviewRoles());
         if (task.reviewType() == ReviewType.PCB) {
@@ -103,6 +103,19 @@ public class ReviewMailNotificationApplicationService {
         String reviewName = hasProcess && hasStructure ? "工艺评审与结构评审" : hasProcess ? "工艺评审" : "结构评审";
         enqueue(task.getId(), ReviewMailType.PCB_OPTIONAL_REVIEW, task.getProjectName() + reviewName, receivers,
                 latestAttachments(task.getId(), categories), Map.of("projectName", task.getProjectName(), "reviewName", reviewName));
+    }
+
+    /** 硬件部开发经理完成原理图硬件、EMC 专家分配后，通知刚进入评审阶段的实际专家。 */
+    public void enqueueSchematicReviewStarted(ReviewTaskRecord task) {
+        List<TaskReviewerAssignment> receivers = filter(assignments(task), assignment ->
+                assignment.reviewRole() == ReviewRole.HARDWARE_EXPERT || assignment.reviewRole() == ReviewRole.EMC_EXPERT);
+        List<MailMessage.MailAttachment> attachments = latestAttachments(task.getId(), List.of(FileCategory.SCHEMATIC_REVIEW));
+        if (attachments.isEmpty()) {
+            attachments = initialAttachments(parseInitialFileIds(task.getInitialFileIds()), FileCategory.SCHEMATIC_REVIEW);
+        }
+        enqueue(task.getId(), ReviewMailType.SCHEMATIC_TASK_CREATED, task.getProjectName() + "原理图评审", receivers,
+                attachments,
+                Map.of("projectName", task.getProjectName()));
     }
 
     /** 任务结束后发送当前任务中实际分配人员所需的终版文件。 */

@@ -50,13 +50,13 @@ public class FileApplicationService {
      * @description 将创建任务前上传的多个文件 UUID 绑定至任务；未绑定文件同样保存于 review_file，taskId 为空表示尚未关联任务。
      */
     @Transactional
-    public List<FileView> bindPendingInitialFiles(long taskId, List<String> fileIds, String operatorEmployeeNo, String operatorName) {
+    public List<FileView> bindPendingInitialFiles(long taskId, List<String> fileIds, String operatorEmployeeNo) {
         if (fileIds == null || fileIds.isEmpty()) {
             return List.of();
         }
         ReviewTaskRecord task = requireTask(taskId);
         FileCategory initialCategory = initialCategory(task);
-        requireTaskAccess(taskId, operatorEmployeeNo, operatorName, initialCategory, true);
+        requireTaskAccess(taskId, operatorEmployeeNo, initialCategory, true);
         java.util.Set<String> requestFileIds = new java.util.LinkedHashSet<>();
         List<FileView> result = new ArrayList<>();
         for (String fileId : fileIds) {
@@ -93,7 +93,7 @@ public class FileApplicationService {
 
     /** 上传尚未创建任务的初始文件，持久化元数据并返回前端后续保存任务唯一需要携带的 UUID。 */
     @Transactional
-    public UploadedFileView uploadPendingInitialFile(MultipartFile file, FileCategory category, String operatorEmployeeNo, String operatorName) {
+    public UploadedFileView uploadPendingInitialFile(MultipartFile file, FileCategory category, String operatorEmployeeNo) {
         if (category != FileCategory.PCB_REVIEW && category != FileCategory.SCHEMATIC_REVIEW) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "未关联任务的上传仅允许 PCB_REVIEW 或 SCHEMATIC_REVIEW");
         }
@@ -112,11 +112,11 @@ public class FileApplicationService {
     }
 
     @Transactional
-    public FileView upload(long taskId, FileCategory category, MultipartFile file, String operatorEmployeeNo, String operatorName) {
+    public FileView upload(long taskId, FileCategory category, MultipartFile file, String operatorEmployeeNo) {
         if (file == null || file.isEmpty() || file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "上传文件不能为空");
         }
-        ReviewTaskRecord task = requireTaskAccess(taskId, operatorEmployeeNo, operatorName, category, true);
+        ReviewTaskRecord task = requireTaskAccess(taskId, operatorEmployeeNo, category, true);
         String md5 = md5(file);
         String fileId = UUID.randomUUID().toString();
         ResourceServiceClient.StoredResource resource = resourceServiceClient.upload(file, fileId);
@@ -142,18 +142,18 @@ public class FileApplicationService {
     /**
      * 按文件主键下载。任务归属由文件记录决定，调用方不需要、也不能重复传 taskId。
      */
-    public DownloadContent downloadFile(long fileId, String operatorEmployeeNo, String operatorName) {
+    public DownloadContent downloadFile(long fileId, String operatorEmployeeNo) {
         ReviewFileRecord file = fileMapper.findById(fileId);
         if (file == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "文件不存在");
         }
-        requireTaskAccess(file.getTaskId(), operatorEmployeeNo, operatorName, FileCategory.valueOf(file.getFileCategory()), false);
+        requireTaskAccess(file.getTaskId(), operatorEmployeeNo, FileCategory.valueOf(file.getFileCategory()), false);
         byte[] content = resourceServiceClient.download(file.getFileName(), file.getResourcePath());
         return new DownloadContent(file.getFileName(), content);
     }
 
-    public List<FileView> listLatestByCategory(long taskId, FileCategory category, String operatorEmployeeNo, String operatorName) {
-        requireTaskAccess(taskId, operatorEmployeeNo, operatorName, category, false);
+    public List<FileView> listLatestByCategory(long taskId, FileCategory category, String operatorEmployeeNo) {
+        requireTaskAccess(taskId, operatorEmployeeNo, category, false);
         return fileMapper.findLatestByTaskIdAndCategory(taskId, category.name()).stream().map(FileView::from).toList();
     }
 
@@ -161,13 +161,13 @@ public class FileApplicationService {
      * 取消用户刚上传的文件与任务之间的关联。文件元数据和公司资源均保留，避免误删可恢复的上传内容。
      */
     @Transactional
-    public void unbindFile(long taskId, String fileId, String operatorEmployeeNo, String operatorName) {
+    public void unbindFile(long taskId, String fileId, String operatorEmployeeNo) {
         String normalizedFileId = requireFileUuid(fileId);
         ReviewFileRecord file = fileMapper.findByFileId(normalizedFileId);
         if (file == null || !Long.valueOf(taskId).equals(file.getTaskId())) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "当前任务不存在该文件");
         }
-        ReviewTaskRecord task = requireTaskAccess(taskId, operatorEmployeeNo, operatorName,
+        ReviewTaskRecord task = requireTaskAccess(taskId, operatorEmployeeNo,
                 FileCategory.valueOf(file.getFileCategory()), false);
         if (TaskStatus.FINISHED.name().equals(task.getStatus())) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许取消文件上传");
@@ -194,7 +194,7 @@ public class FileApplicationService {
         }
     }
 
-    private ReviewTaskRecord requireTaskAccess(long taskId, String operatorEmployeeNo, String operatorName, FileCategory category, boolean upload) {
+    private ReviewTaskRecord requireTaskAccess(long taskId, String operatorEmployeeNo, FileCategory category, boolean upload) {
         ReviewTaskRecord task = taskMapper.findById(taskId);
         if (task == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");

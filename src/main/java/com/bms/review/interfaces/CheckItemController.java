@@ -46,7 +46,7 @@ public class CheckItemController {
     @Operation(summary = "查询任务互检单详情", description = "任务的互检单详情")
     ApiResponse<List<TaskCheckItemApplicationService.CheckItemCategoryView>> list(@PathVariable long taskId,
                                                                                     @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
-        return ApiResponse.ok(taskCheckItemApplicationService.list(taskId, employeeNo, null), traceId(servletRequest));
+        return ApiResponse.ok(taskCheckItemApplicationService.list(taskId, employeeNo), traceId(servletRequest));
     }
 
     @PutMapping("/{itemId}")

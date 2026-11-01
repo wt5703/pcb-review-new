@@ -93,15 +93,15 @@ public class TaskController {
     }
 
     @GetMapping("/{taskId}")
-    @Operation(summary = "查询评审任务详情", description = "按任务 ID 返回当前用户有权查看的一条任务基础信息和流程流转记录；用于任务详情页加载")
-    ApiResponse<TaskApplicationService.TaskView> detail(@PathVariable long taskId, @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
-        return ApiResponse.ok(taskService.getTaskDetail(taskId, employeeNo, null), getTraceId(servletRequest));
+    @Operation(summary = "查询评审任务详情", description = "按任务 ID 返回一条任务基础信息和流程流转记录；所有用户均可查看。")
+    ApiResponse<TaskApplicationService.TaskView> detail(@PathVariable long taskId, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(taskService.getTaskDetail(taskId), getTraceId(servletRequest));
     }
 
     @GetMapping("/my")
     @Operation(summary = "查询我的待办任务", description = "返回当前流程节点需要当前用户评审、提交流程、答复、确认、分配或结束的任务；PCB 任务在专家评审、工艺/结构评审阶段，以及原理图任务在互检单评审、原理图评审阶段，均会返回给设计者。")
     ApiResponse<List<MyTaskApplicationService.MyTaskView>> myTasks(@NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
-        return ApiResponse.ok(myTaskApplicationService.list(employeeNo, null), getTraceId(servletRequest));
+        return ApiResponse.ok(myTaskApplicationService.list(employeeNo), getTraceId(servletRequest));
     }
 
     @GetMapping("/workbench/statistics")
@@ -122,9 +122,9 @@ public class TaskController {
         List<String> pendingFileIds = extractPendingFileIds(request.files());
         TaskApplicationService.CreateTaskCommand command = toTaskCommand(request, employeeNo, userName);
         if (taskId == null) {
-            return taskService.saveNewTask(command, pendingFileIds, submitAfterSave, employeeNo, userName);
+            return taskService.saveNewTask(command, pendingFileIds, submitAfterSave, employeeNo);
         }
-        return taskService.saveExistingTask(taskId, command, pendingFileIds, submitAfterSave, employeeNo, userName);
+        return taskService.saveExistingTask(taskId, command, pendingFileIds, submitAfterSave, employeeNo);
     }
 
     private List<String> extractPendingFileIds(List<String> files) {
@@ -137,7 +137,7 @@ public class TaskController {
     private TaskApplicationService.CreateTaskCommand toTaskCommand(CreateTaskRequest request, String employeeNo, String userName) {
         if (request.reviewType() == ReviewType.SCHEMATIC
                 && (request.expertLeaderEmployeeNo() == null || request.expertLeaderEmployeeNo().isBlank())) {
-            throw new IllegalArgumentException("原理图评审必须选择组长并传入组长工号");
+            throw new IllegalArgumentException("原理图评审必须选择硬件部开发经理并传入其工号");
         }
         String designerName = designerName(request.designerName(), userName);
         ReviewerWhitelistApplicationService.WhitelistPersonView leader = request.expertLeaderEmployeeNo() == null || request.expertLeaderEmployeeNo().isBlank()
@@ -172,9 +172,9 @@ public class TaskController {
             @Schema(description = "原理图名称或 PCB 名称；随评审类型在页面显示不同标签", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String designName,
             @Schema(description = "PCB 板类型。PCB 评审必填，可选 BMU板、BSU板、分流器板、高压板、转接板、储能板、其他；原理图评审可不传") String pcbType,
             @Schema(description = "期望完成日期，格式 yyyy-MM-dd", example = "2026-09-30", requiredMode = Schema.RequiredMode.REQUIRED) @JsonFormat(pattern = "yyyy-MM-dd") LocalDate expectedCompletedDate,
-            @Schema(description = "原理图组长的企业工号；PCB 任务不需要传，默认使用当前登录设计者", example = "10002") String expertLeaderEmployeeNo,
-            @Schema(description = "评审角色，可多选；PCB 仅支持硬件、EMC、PCB、工艺、结构，原理图仅支持硬件、EMC、PCB", requiredMode = Schema.RequiredMode.REQUIRED) List<ReviewRole> reviewRoles,
-            @Schema(description = "每个已选评审角色对应的白名单专家；每个角色至少选择一人", requiredMode = Schema.RequiredMode.REQUIRED) List<@Valid ReviewerAssignmentRequest> reviewerAssignments,
+            @Schema(description = "原理图硬件部开发经理的企业工号；该人员在互检结束后分配硬件、EMC 评审专家。PCB 任务不需要传，默认使用当前登录设计者", example = "10002") String expertLeaderEmployeeNo,
+            @Schema(description = "评审角色，可多选；PCB 仅支持硬件、EMC、PCB、工艺、结构，原理图仅支持硬件、EMC", requiredMode = Schema.RequiredMode.REQUIRED) List<ReviewRole> reviewRoles,
+            @Schema(description = "创建时分配的白名单专家；原理图的硬件、EMC 评审角色不传人员，由硬件部开发经理在互检结束后分配") List<@Valid ReviewerAssignmentRequest> reviewerAssignments,
             @Schema(description = "评审描述，可不传") String reviewDescription,
             @Schema(description = "前端调用文件上传接口后返回的文件 UUID 列表；后端按 UUID 读取并保存文件元数据，同一任务不可重复传入相同 UUID") List<@NotBlank String> files) { }
 

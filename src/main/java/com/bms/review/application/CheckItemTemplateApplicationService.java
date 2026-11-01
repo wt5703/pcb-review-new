@@ -46,7 +46,7 @@ public class CheckItemTemplateApplicationService {
     }
 
     /** 导入前供页面判断是否需要提示用户确认替换当前模板。 */
-    public TemplateExistenceView checkExistence(ReviewType reviewType, String operatorEmployeeNo, String operatorName) {
+    public TemplateExistenceView checkExistence(ReviewType reviewType) {
         if (reviewType == null) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "查询互检单模板时必须选择任务类型");
         }
@@ -57,8 +57,8 @@ public class CheckItemTemplateApplicationService {
     }
 
     /** 兼容应用层已有调用：未显式确认时绝不替换已有模板。 */
-    public ImportResult importWorkbook(byte[] workbookBytes, ReviewType reviewType, String operatorEmployeeNo, String operatorName) {
-        return importWorkbook(workbookBytes, reviewType, false, operatorEmployeeNo, operatorName);
+    public ImportResult importWorkbook(byte[] workbookBytes, ReviewType reviewType) {
+        return importWorkbook(workbookBytes, reviewType, false);
     }
 
     /**
@@ -67,7 +67,7 @@ public class CheckItemTemplateApplicationService {
      * PCB 检查项同时会保留 .xlsx 单元格内嵌的示例图片。
      */
     @Transactional
-    public ImportResult importWorkbook(byte[] workbookBytes, ReviewType reviewType, boolean confirmed, String operatorEmployeeNo, String operatorName) {
+    public ImportResult importWorkbook(byte[] workbookBytes, ReviewType reviewType, boolean confirmed) {
         if (reviewType == null) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "导入互检单模板时必须选择任务类型");
         }
@@ -100,7 +100,7 @@ public class CheckItemTemplateApplicationService {
     /**
      * 每种评审类型仅维护一套互检单模板；层级关系只由 parentId 表达。
      */
-    public TemplateListView get(ReviewType reviewType, String operatorEmployeeNo, String operatorName) {
+    public TemplateListView get(ReviewType reviewType) {
         if (reviewType == null) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "查询互检单模板时必须选择任务类型");
         }
@@ -118,7 +118,7 @@ public class CheckItemTemplateApplicationService {
     }
 
     @Transactional
-    public TemplateCategoryView create(CreateCategoryCommand command, String operatorEmployeeNo, String operatorName) {
+    public TemplateCategoryView create(CreateCategoryCommand command) {
         requireName(command.categoryName(), "检查项大类名称");
         List<CreateItemCommand> requestedItems = command.items() == null ? List.of() : command.items();
         requireDistinctChildItemNames(requestedItems.stream().map(CreateItemCommand::itemName).toList());
@@ -159,7 +159,7 @@ public class CheckItemTemplateApplicationService {
     }
 
     @Transactional
-    public TemplateUpdateView update(UpdateTemplateCommand command, String operatorEmployeeNo, String operatorName) {
+    public TemplateUpdateView update(UpdateTemplateCommand command) {
         CheckItemTemplateRecord target = templateMapper.findById(command.itemId());
         if (target == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在");
@@ -269,7 +269,7 @@ public class CheckItemTemplateApplicationService {
 
 
     @Transactional
-    public void disable(long id, DeleteTargetCategory category, String operatorEmployeeNo, String operatorName) {
+    public void disable(long id, DeleteTargetCategory category) {
         CheckItemTemplateRecord template = templateMapper.findById(id);
         if (template == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在");

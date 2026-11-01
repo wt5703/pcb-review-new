@@ -3,7 +3,6 @@ package com.bms.task.application;
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
 import com.bms.file.application.FileApplicationService;
-import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.notification.application.ReviewMailNotificationApplicationService;
 import com.bms.task.domain.ReviewTask;
 import com.bms.task.domain.ReviewType;
@@ -35,27 +34,24 @@ import java.util.stream.Collectors;
 /**
  * @author 王涛
  * @date 2026-09-14
- * @description 编排评审任务创建、提交、查询和可见性校验，协调当前用户上下文、任务领域模型与持久化接口。
+ * @description 编排评审任务创建、提交和查询，协调设计者操作校验、任务领域模型与持久化接口。
  */
 
 
 @Service
 public class TaskApplicationService {
     private final ReviewTaskMapper taskMapper;
-    private final TaskAssignmentAccessMapper taskAssignmentAccessMapper;
     private final TaskFlowMapper flowMapper;
     private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService;
     private final ReviewMailNotificationApplicationService reviewMailNotificationApplicationService;
     private final FileApplicationService fileApplicationService;
 
     @Autowired
-    public TaskApplicationService(ReviewTaskMapper taskMapper,
-                                  TaskAssignmentAccessMapper taskAssignmentAccessMapper, TaskFlowMapper flowMapper,
+    public TaskApplicationService(ReviewTaskMapper taskMapper, TaskFlowMapper flowMapper,
                                   ReviewerWhitelistApplicationService reviewerWhitelistApplicationService,
                                   ReviewMailNotificationApplicationService reviewMailNotificationApplicationService,
                                   FileApplicationService fileApplicationService) {
         this.taskMapper = taskMapper;
-        this.taskAssignmentAccessMapper = taskAssignmentAccessMapper;
         this.flowMapper = flowMapper;
         this.reviewerWhitelistApplicationService = reviewerWhitelistApplicationService;
         this.reviewMailNotificationApplicationService = reviewMailNotificationApplicationService;
@@ -67,10 +63,10 @@ public class TaskApplicationService {
      */
     @Transactional
     public TaskView saveNewTask(CreateTaskCommand command, List<String> fileIds,
-                                boolean submit, String operatorEmployeeNo, String operatorName) {
-        TaskView draft = createDraft(command, operatorEmployeeNo, operatorName);
-        List<Long> boundFileIds = bindPendingInitialFiles(draft.id(), fileIds, operatorEmployeeNo, operatorName);
-        return finishSavingTask(draft, boundFileIds, submit, operatorEmployeeNo, operatorName);
+                                boolean submit, String operatorEmployeeNo) {
+        TaskView draft = createDraft(command, operatorEmployeeNo);
+        List<Long> boundFileIds = bindPendingInitialFiles(draft.id(), fileIds, operatorEmployeeNo);
+        return finishSavingTask(draft, boundFileIds, submit, operatorEmployeeNo);
     }
 
     /**
@@ -78,19 +74,19 @@ public class TaskApplicationService {
      */
     @Transactional
     public TaskView saveExistingTask(long taskId, CreateTaskCommand command, List<String> fileIds,
-                                     boolean submit, String operatorEmployeeNo, String operatorName) {
-        TaskView draft = updateDraftTask(taskId, command, operatorEmployeeNo, operatorName);
-        List<Long> boundFileIds = bindPendingInitialFiles(taskId, fileIds, operatorEmployeeNo, operatorName);
-        return finishSavingTask(draft, boundFileIds, submit, operatorEmployeeNo, operatorName);
+                                     boolean submit, String operatorEmployeeNo) {
+        TaskView draft = updateDraftTask(taskId, command, operatorEmployeeNo);
+        List<Long> boundFileIds = bindPendingInitialFiles(taskId, fileIds, operatorEmployeeNo);
+        return finishSavingTask(draft, boundFileIds, submit, operatorEmployeeNo);
     }
 
     /**
      * 提交已经保存的草稿任务，并仅将当前阶段应处理的专家写入待办人员字段。
      */
     @Transactional
-    public TaskView submitTask(long taskId, List<Long> initialFileIds, String operatorEmployeeNo, String operatorName) {
+    public TaskView submitTask(long taskId, List<Long> initialFileIds, String operatorEmployeeNo) {
         ReviewTask task = loadTask(taskId);
-        requireDesignerPermission(task.designerEmployeeNo(), operatorEmployeeNo, operatorName, "提交");
+        requireDesignerPermission(task.designerEmployeeNo(), operatorEmployeeNo, "提交");
         addInitialFiles(task, initialFileIds);
         task.submit();
         ReviewTaskRecord persistedTask = persistSubmittedTask(task);
@@ -101,15 +97,10 @@ public class TaskApplicationService {
         return toTaskSummary(task);
     }
 
-    /**
-     * 读取任务详情，并附带可追溯的流程操作记录。
-     */
-    public TaskView getTaskDetail(long taskId, String operatorEmployeeNo, String operatorName) {
+    /** 所有用户均可读取任务详情；详情附带可追溯的流程操作记录。 */
+    public TaskView getTaskDetail(long taskId) {
         ReviewTaskRecord taskRecord = loadTaskRecord(taskId);
         ReviewTask task = restoreTask(taskRecord);
-        if (!canCurrentUserViewTask(task, operatorEmployeeNo, operatorName)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看该任务");
-        }
         List<TaskFlowRecordView> flowRecords = flowMapper.findByTaskId(taskId).stream()
                 .map(this::toTaskFlowRecordView)
                 .toList();
@@ -133,16 +124,16 @@ public class TaskApplicationService {
                 : taskMapper.findPage(validQuery.normalizedTaskName(), validQuery.normalizedProjectNo(), validQuery.normalizedProjectName(),
                 validQuery.normalizedDesignerEmployeeNo(), reviewTypeName, statusNames, validQuery.taskId(),
                 offset, validQuery.pageSize());
-        Map<String, String> mutualCheckReviewerNames = findMutualCheckReviewerNames(records);
+        Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> reviewerProfiles = findReviewerProfiles(records);
         List<TaskView> items = records.stream()
-                .map(record -> toTaskListItem(record, mutualCheckReviewerNames))
+                .map(record -> toTaskListItem(record, reviewerProfiles))
                 .toList();
         return new TaskPage(total, validQuery.pageNum(), validQuery.pageSize(), items);
     }
 
     /** 新建一条尚未派发的任务草稿。 */
-    private TaskView createDraft(CreateTaskCommand command, String operatorEmployeeNo, String operatorName) {
-        requireDesignerPermission(command.designerEmployeeNo(), operatorEmployeeNo, operatorName, "创建");
+    private TaskView createDraft(CreateTaskCommand command, String operatorEmployeeNo) {
+        requireDesignerPermission(command.designerEmployeeNo(), operatorEmployeeNo, "创建");
         validateReviewerAssignments(command);
         long id = nextTaskId();
         ReviewTask task = ReviewTask.draft(id, command.reviewType(), command.taskName(), command.projectNo(), command.projectName(),
@@ -153,12 +144,12 @@ public class TaskApplicationService {
     }
 
     /** 更新已有草稿的表单内容；已提交任务不能再通过此入口修改。 */
-    private TaskView updateDraftTask(long taskId, CreateTaskCommand command, String operatorEmployeeNo, String operatorName) {
+    private TaskView updateDraftTask(long taskId, CreateTaskCommand command, String operatorEmployeeNo) {
         ReviewTaskRecord existing = loadTaskRecord(taskId);
         if (TaskStatus.DRAFT != TaskStatus.valueOf(existing.getStatus())) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已提交或已产生评审意见的任务不允许编辑");
         }
-        requireDesignerPermission(existing.getDesignerEmployeeNo(), operatorEmployeeNo, operatorName, "编辑");
+        requireDesignerPermission(existing.getDesignerEmployeeNo(), operatorEmployeeNo, "编辑");
         if (!existing.getDesignerEmployeeNo().equals(command.designerEmployeeNo())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "编辑任务时不允许变更设计者");
         }
@@ -174,9 +165,9 @@ public class TaskApplicationService {
     }
 
     /** 将本次成功绑定的文件编号写入草稿，已存在的文件由领域对象自动去重。 */
-    private TaskView addFilesToDraft(long taskId, List<Long> initialFileIds, String operatorEmployeeNo, String operatorName) {
+    private TaskView addFilesToDraft(long taskId, List<Long> initialFileIds, String operatorEmployeeNo) {
         ReviewTask task = loadTask(taskId);
-        requireDesignerPermission(task.designerEmployeeNo(), operatorEmployeeNo, operatorName, "保存草稿文件");
+        requireDesignerPermission(task.designerEmployeeNo(), operatorEmployeeNo, "保存草稿文件");
         addInitialFiles(task, initialFileIds);
         if (taskMapper.update(toTaskRecord(task)) != 1) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
@@ -189,15 +180,15 @@ public class TaskApplicationService {
     }
 
     /** 统一处理“仅保存草稿”与“保存后立即提交”两个页面动作。 */
-    private TaskView finishSavingTask(TaskView draft, List<Long> boundFileIds, boolean submit, String operatorEmployeeNo, String operatorName) {
+    private TaskView finishSavingTask(TaskView draft, List<Long> boundFileIds, boolean submit, String operatorEmployeeNo) {
         if (submit) {
-            return submitTask(draft.id(), boundFileIds, operatorEmployeeNo, operatorName);
+            return submitTask(draft.id(), boundFileIds, operatorEmployeeNo);
         }
-        return boundFileIds.isEmpty() ? draft : addFilesToDraft(draft.id(), boundFileIds, operatorEmployeeNo, operatorName);
+        return boundFileIds.isEmpty() ? draft : addFilesToDraft(draft.id(), boundFileIds, operatorEmployeeNo);
     }
 
-    private List<Long> bindPendingInitialFiles(long taskId, List<String> fileIds, String operatorEmployeeNo, String operatorName) {
-        return fileApplicationService.bindPendingInitialFiles(taskId, fileIds, operatorEmployeeNo, operatorName).stream()
+    private List<Long> bindPendingInitialFiles(long taskId, List<String> fileIds, String operatorEmployeeNo) {
+        return fileApplicationService.bindPendingInitialFiles(taskId, fileIds, operatorEmployeeNo).stream()
                 .map(FileApplicationService.FileView::id)
                 .toList();
     }
@@ -219,12 +210,13 @@ public class TaskApplicationService {
                 lookupEmployeeName(task.expertLeaderEmployeeNo(), task.expertLeaderName()), List.of());
     }
 
-    /** 任务列表仅为互检单实际分配人员批量读取白名单姓名，避免逐条查询。 */
-    private TaskView toTaskListItem(ReviewTaskRecord record, Map<String, String> mutualCheckReviewerNames) {
+    /** 任务列表批量读取评审人与互检人的白名单姓名、部门，避免逐条查询。 */
+    private TaskView toTaskListItem(ReviewTaskRecord record,
+                                    Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> reviewerProfiles) {
         ReviewTask task = restoreTask(record);
         LocalDate createdDate = record.getCreatedAt() == null ? null : record.getCreatedAt().toLocalDate();
-        return TaskView.from(task, task.designerName(), task.expertLeaderName(), List.of(), createdDate, record.getCreatedAt(), Map.of(),
-                toReviewerViews(record.getMutualCheckReviewerEmployeeNos(), mutualCheckReviewerNames));
+        return TaskView.from(task, task.designerName(), task.expertLeaderName(), List.of(), createdDate, record.getCreatedAt(), reviewerProfiles,
+                toReviewerViews(record.getMutualCheckReviewerEmployeeNos(), reviewerProfiles));
     }
 
     private TaskView toTaskDetailView(ReviewTask task, String mutualCheckReviewerEmployeeNos, List<TaskFlowRecordView> flowRecords,
@@ -235,30 +227,39 @@ public class TaskApplicationService {
         reviewerEmployeeNos = java.util.stream.Stream.concat(reviewerEmployeeNos.stream(),
                         TaskReviewerAssignmentCodec.decodeReviewerEmployeeNos(mutualCheckReviewerEmployeeNos).stream())
                 .distinct().toList();
-        Map<String, String> reviewerNames = reviewerWhitelistApplicationService.findDisplayNamesByEmployeeNos(reviewerEmployeeNos);
+        Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> reviewerProfiles = reviewerWhitelistApplicationService
+                .findReviewerProfilesByEmployeeNos(reviewerEmployeeNos);
         return TaskView.from(task, task.designerName(),
                 lookupEmployeeName(task.expertLeaderEmployeeNo(), task.expertLeaderName()), flowRecords,
-                createdAt == null ? null : createdAt.toLocalDate(), createdAt, reviewerNames == null ? Map.of() : reviewerNames,
-                toReviewerViews(mutualCheckReviewerEmployeeNos, reviewerNames));
+                createdAt == null ? null : createdAt.toLocalDate(), createdAt, reviewerProfiles == null ? Map.of() : reviewerProfiles,
+                toReviewerViews(mutualCheckReviewerEmployeeNos, reviewerProfiles));
     }
 
-    private Map<String, String> findMutualCheckReviewerNames(List<ReviewTaskRecord> records) {
+    private Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> findReviewerProfiles(List<ReviewTaskRecord> records) {
         List<String> employeeNos = records.stream()
-                .flatMap(record -> TaskReviewerAssignmentCodec.decodeReviewerEmployeeNos(
-                        record.getMutualCheckReviewerEmployeeNos()).stream())
+                .flatMap(record -> java.util.stream.Stream.concat(
+                        TaskReviewerAssignmentCodec.decode(record.getReviewerAssignments()).stream()
+                                .flatMap(assignment -> assignment.reviewerEmployeeNos().stream()),
+                        TaskReviewerAssignmentCodec.decodeReviewerEmployeeNos(record.getMutualCheckReviewerEmployeeNos()).stream()))
                 .distinct()
                 .toList();
         if (employeeNos.isEmpty()) {
             return Map.of();
         }
-        Map<String, String> names = reviewerWhitelistApplicationService.findDisplayNamesByEmployeeNos(employeeNos);
-        return names == null ? Map.of() : names;
+        Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> profiles = reviewerWhitelistApplicationService
+                .findReviewerProfilesByEmployeeNos(employeeNos);
+        return profiles == null ? Map.of() : profiles;
     }
 
-    private List<ReviewerView> toReviewerViews(String reviewerEmployeeNos, Map<String, String> reviewerNames) {
-        Map<String, String> safeReviewerNames = reviewerNames == null ? Map.of() : reviewerNames;
+    private List<ReviewerView> toReviewerViews(String reviewerEmployeeNos,
+                                                Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> reviewerProfiles) {
+        Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> safeProfiles = reviewerProfiles == null ? Map.of() : reviewerProfiles;
         return TaskReviewerAssignmentCodec.decodeReviewerEmployeeNos(reviewerEmployeeNos).stream()
-                .map(employeeNo -> new ReviewerView(employeeNo, safeReviewerNames.getOrDefault(employeeNo, employeeNo)))
+                .map(employeeNo -> {
+                    ReviewerWhitelistApplicationService.ReviewerProfile profile = safeProfiles.get(employeeNo);
+                    return new ReviewerView(employeeNo, profile == null ? employeeNo : profile.reviewerName(),
+                            profile == null ? null : profile.deptName());
+                })
                 .toList();
     }
 
@@ -295,13 +296,7 @@ public class TaskApplicationService {
                 operatorName, record.getComment(), record.getCreatedAt());
     }
 
-    private boolean canCurrentUserViewTask(ReviewTask task, String operatorEmployeeNo, String operatorName) {
-        return operatorEmployeeNo.equals(task.designerEmployeeNo())
-                || operatorEmployeeNo.equals(task.expertLeaderEmployeeNo())
-                || taskAssignmentAccessMapper.isAssignedToTask(task.id(), operatorEmployeeNo);
-    }
-
-    private void requireDesignerPermission(String designerEmployeeNo, String operatorEmployeeNo, String operatorName, String action) {
+    private void requireDesignerPermission(String designerEmployeeNo, String operatorEmployeeNo, String action) {
         if (designerEmployeeNo == null || designerEmployeeNo.isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "任务设计者工号不能为空");
         }
@@ -311,8 +306,7 @@ public class TaskApplicationService {
     }
 
     /**
-     * 创建时的角色与人员就是首轮专家评审的依据：每个勾选角色至少指定一位对应白名单专家。
-     * PCB 允许五类评审，原理图仅允许硬件、EMC、PCB 三类评审。
+     * PCB 任务在创建时完成全部角色—人员分配；原理图的硬件、EMC 专家由硬件部开发经理在互检结束后分配。
      */
     private void validateReviewerAssignments(CreateTaskCommand command) {
         Set<ReviewRole> allowedRoles = command.reviewType() == ReviewType.PCB
@@ -323,23 +317,28 @@ public class TaskApplicationService {
         if (roles.isEmpty() || roles.stream().anyMatch(role -> !allowedRoles.contains(role))) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, command.reviewType() == ReviewType.PCB
                     ? "PCB 任务仅可选择硬件、EMC、PCB、工艺、结构评审角色"
-                    : "原理图任务仅可选择硬件、EMC、PCB 评审角色");
+                    : "原理图任务仅可选择硬件、EMC 评审角色");
         }
         if (roles.stream().distinct().count() != roles.size()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "评审角色不能重复选择");
         }
         List<TaskReviewerAssignment> assignments = command.reviewerAssignments() == null ? List.of() : command.reviewerAssignments();
-        // 兼容存量接口调用：旧客户端未传该字段时仍以历史专家/组长逻辑处理；新页面始终传完整映射。
-        if (assignments.isEmpty()) {
-            return;
-        }
         Map<ReviewRole, List<String>> reviewersByRole = assignments.stream().collect(Collectors.toMap(
                 TaskReviewerAssignment::reviewRole, TaskReviewerAssignment::reviewerEmployeeNos,
                 (left, right) -> { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "同一评审角色只能选择一组专家"); }));
-        if (!reviewersByRole.keySet().equals(Set.copyOf(roles)) || reviewersByRole.values().stream().anyMatch(List::isEmpty)) {
+        Set<ReviewRole> rolesAssignedByHardwareManager = command.reviewType() == ReviewType.SCHEMATIC
+                ? EnumSet.of(ReviewRole.HARDWARE_EXPERT, ReviewRole.EMC_EXPERT) : Set.of();
+        if (reviewersByRole.keySet().stream().anyMatch(rolesAssignedByHardwareManager::contains)) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "原理图任务的硬件、EMC 评审人员由硬件部开发经理在互检结束后分配");
+        }
+        Set<ReviewRole> rolesRequiringCreationAssignment = roles.stream()
+                .filter(role -> !rolesAssignedByHardwareManager.contains(role))
+                .collect(Collectors.toSet());
+        if (!reviewersByRole.keySet().equals(rolesRequiringCreationAssignment)
+                || reviewersByRole.values().stream().anyMatch(List::isEmpty)) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "每个已勾选的评审角色都必须选择至少一名专家");
         }
-        for (ReviewRole role : roles) {
+        for (ReviewRole role : rolesRequiringCreationAssignment) {
             Set<String> whitelistEmployeeNos = reviewerWhitelistApplicationService.listAssignableUsers(
                             List.of(ReviewerWhitelistRole.fromReviewRole(role))).stream()
                     .map(ReviewerWhitelistApplicationService.AssignableReviewerView::employeeNo)
@@ -396,28 +395,30 @@ public class TaskApplicationService {
         }
 
         static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords,
-                             Map<String, String> reviewerNames) {
-            return from(task, designerName, expertLeaderName, flowRecords, (LocalDate) null, reviewerNames, List.of());
+                             Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> reviewerProfiles) {
+            return from(task, designerName, expertLeaderName, flowRecords, (LocalDate) null, reviewerProfiles, List.of());
         }
 
         static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords,
-                             Map<String, String> reviewerNames, List<ReviewerView> mutualCheckReviewers) {
-            return from(task, designerName, expertLeaderName, flowRecords, (LocalDate) null, reviewerNames, mutualCheckReviewers);
+                             Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> reviewerProfiles,
+                             List<ReviewerView> mutualCheckReviewers) {
+            return from(task, designerName, expertLeaderName, flowRecords, (LocalDate) null, reviewerProfiles, mutualCheckReviewers);
         }
 
         private static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords,
-                                     LocalDate createdDate, Map<String, String> reviewerNames,
+                                     LocalDate createdDate, Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> reviewerProfiles,
                                      List<ReviewerView> mutualCheckReviewers) {
-            return from(task, designerName, expertLeaderName, flowRecords, createdDate, null, reviewerNames, mutualCheckReviewers);
+            return from(task, designerName, expertLeaderName, flowRecords, createdDate, null, reviewerProfiles, mutualCheckReviewers);
         }
 
         private static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords,
-                                     LocalDate createdDate, java.time.LocalDateTime createdTime, Map<String, String> reviewerNames,
+                                     LocalDate createdDate, java.time.LocalDateTime createdTime,
+                                     Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> reviewerProfiles,
                                      List<ReviewerView> mutualCheckReviewers) {
             return new TaskView(task.id(), task.reviewType(), task.taskName(), task.projectNo(), task.projectName(), task.designerEmployeeNo(), designerName,
                     task.designName(), task.pcbType(), task.expectedCompletedDate(), task.expertLeaderEmployeeNo(), expertLeaderName,
                     task.reviewRoles(), task.reviewerAssignments().stream()
-                    .map(assignment -> ReviewerAssignmentView.from(assignment, reviewerNames)).toList(),
+                    .map(assignment -> ReviewerAssignmentView.from(assignment, reviewerProfiles)).toList(),
                     task.reviewDescription(), task.status().name(), List.copyOf(mutualCheckReviewers), List.copyOf(flowRecords), createdDate, createdTime);
         }
     }
@@ -436,19 +437,24 @@ public class TaskApplicationService {
                     assignment.reviewerEmployeeNos(), List.of());
         }
 
-        static ReviewerAssignmentView from(TaskReviewerAssignment assignment, Map<String, String> reviewerNames) {
+        static ReviewerAssignmentView from(TaskReviewerAssignment assignment,
+                                           Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> reviewerProfiles) {
             List<String> employeeNos = assignment.reviewerEmployeeNos();
-            if (reviewerNames == null || reviewerNames.isEmpty()) {
+            if (reviewerProfiles == null || reviewerProfiles.isEmpty()) {
                 return from(assignment);
             }
             return new ReviewerAssignmentView(assignment.reviewRole(), assignment.reviewRole().displayName(), employeeNos,
-                    employeeNos.stream().map(employeeNo -> new ReviewerView(employeeNo,
-                            reviewerNames.getOrDefault(employeeNo, employeeNo))).toList());
+                    employeeNos.stream().map(employeeNo -> {
+                        ReviewerWhitelistApplicationService.ReviewerProfile profile = reviewerProfiles.get(employeeNo);
+                        return new ReviewerView(employeeNo, profile == null ? employeeNo : profile.reviewerName(),
+                                profile == null ? null : profile.deptName());
+                    }).toList());
         }
     }
 
     public record ReviewerView(@Schema(description = "评审人工号") String employeeNo,
-                               @Schema(description = "评审人姓名") String reviewerName) { }
+                               @Schema(description = "评审人姓名") String reviewerName,
+                               @Schema(description = "评审人部门，取白名单资料中的 deptName") String deptName) { }
 
     /** 任务详情中的流程审计记录；邮件投递记录不属于任务详情返回范围。 */
     public record TaskFlowRecordView(Long id, String action, String actionName, String operatorEmployeeNo, String operatorName,

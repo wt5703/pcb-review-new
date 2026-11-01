@@ -28,7 +28,7 @@ class CheckItemTemplateApplicationServiceTest {
     void shouldDisableCategoryAndShiftFollowingCategorySortNumbers() {
         when(templateMapper.findById(100L)).thenReturn(template(100L, null, 2));
 
-        service.disable(100L, CheckItemTemplateApplicationService.DeleteTargetCategory.CATEGORY, "BMS001", "BMS001");
+        service.disable(100L, CheckItemTemplateApplicationService.DeleteTargetCategory.CATEGORY);
 
         verify(templateMapper).disableById(100L);
         verify(templateMapper).disableChildrenByParentId(100L);
@@ -40,7 +40,7 @@ class CheckItemTemplateApplicationServiceTest {
     void shouldDisableItemAndShiftFollowingSiblingSortNumbers() {
         when(templateMapper.findById(101L)).thenReturn(template(101L, 100L, 3));
 
-        service.disable(101L, CheckItemTemplateApplicationService.DeleteTargetCategory.ITEM, "BMS001", "BMS001");
+        service.disable(101L, CheckItemTemplateApplicationService.DeleteTargetCategory.ITEM);
 
         verify(templateMapper).disableById(101L);
         verify(templateMapper).decrementSiblingItemSortAfter(100L, 3);
@@ -58,7 +58,7 @@ class CheckItemTemplateApplicationServiceTest {
         when(templateMapper.findByIds(List.of(102L, 104L))).thenReturn(List.of(second, fourth));
 
         service.update(new CheckItemTemplateApplicationService.UpdateTemplateCommand(
-                100L, "大类", List.of(), List.of(102L, 104L)), "BMS001", "测试用户");
+                100L, "大类", List.of(), List.of(102L, 104L)));
 
         org.mockito.InOrder order = org.mockito.Mockito.inOrder(templateMapper);
         order.verify(templateMapper).disableById(104L);
@@ -90,7 +90,7 @@ class CheckItemTemplateApplicationServiceTest {
         assertThatThrownBy(() -> service.create(new CheckItemTemplateApplicationService.CreateCategoryCommand(
                 ReviewType.PCB, "大类", List.of(
                 new CheckItemTemplateApplicationService.CreateItemCommand("重复小项"),
-                new CheckItemTemplateApplicationService.CreateItemCommand(" 重复小项 "))), "BMS001", "测试用户"))
+                new CheckItemTemplateApplicationService.CreateItemCommand(" 重复小项 ")))))
                 .hasMessage("同一检查项大类下不能存在同名子检查项");
     }
 
@@ -100,7 +100,7 @@ class CheckItemTemplateApplicationServiceTest {
                 .thenReturn(template(100L, null, 1));
 
         assertThatThrownBy(() -> service.create(new CheckItemTemplateApplicationService.CreateCategoryCommand(
-                ReviewType.PCB, "已有大类", List.of()), "BMS001", "测试用户"))
+                ReviewType.PCB, "已有大类", List.of())))
                 .hasMessage("同一评审类型下不能存在同名检查项大类");
     }
 

@@ -45,11 +45,10 @@ public class FileController {
                                        @RequestParam @NotNull @Schema(description = "PCB评审=PCB_REVIEW，PCB工艺评审=PCB_PROCESS_REVIEW，PCB结构评审=PCB_STRUCTURE_REVIEW，原理图评审=SCHEMATIC_REVIEW", requiredMode = Schema.RequiredMode.REQUIRED) FileCategory fileCategory,
                                        @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         if (taskId == null) {
-            FileApplicationService.UploadedFileView uploaded = fileApplicationService.uploadPendingInitialFile(multipartFile, fileCategory,
-                    employeeNo, null);
+            FileApplicationService.UploadedFileView uploaded = fileApplicationService.uploadPendingInitialFile(multipartFile, fileCategory, employeeNo);
             return ApiResponse.ok(new UploadFileView(uploaded.fileId(), uploaded.taskFileId(), uploaded.fileName(), uploaded.fileSize(), uploaded.fileCategory()), traceId(servletRequest));
         }
-        FileApplicationService.FileView storedFile = fileApplicationService.upload(taskId, fileCategory, multipartFile, employeeNo, null);
+        FileApplicationService.FileView storedFile = fileApplicationService.upload(taskId, fileCategory, multipartFile, employeeNo);
         return ApiResponse.ok(new UploadFileView(storedFile.fileId(), storedFile.id(), storedFile.fileName(), storedFile.fileSize(), storedFile.category()), traceId(servletRequest));
     }
 
@@ -57,7 +56,7 @@ public class FileController {
     @Operation(summary = "下载文件", description = "只传 review_file 主键 fileId。后端从文件记录取得任务归属和文件类别，完成权限校验后代理公司资源服务下载。")
     ResponseEntity<byte[]> downloadContent(@RequestParam long fileId,
                                            @NotBlank @RequestHeader("userId") String employeeNo) {
-        FileApplicationService.DownloadContent content = fileApplicationService.downloadFile(fileId, employeeNo, null);
+        FileApplicationService.DownloadContent content = fileApplicationService.downloadFile(fileId, employeeNo);
         return ResponseEntity.ok().header("Content-Disposition", ContentDisposition.attachment().filename(content.fileName()).build().toString())
                 .contentType(MediaType.APPLICATION_OCTET_STREAM).body(content.content());
     }
@@ -68,7 +67,7 @@ public class FileController {
                              @RequestParam @NotBlank @Schema(description = "文件 UUID，即上传接口返回的 fileId", requiredMode = Schema.RequiredMode.REQUIRED) String fileId,
                              @NotBlank @RequestHeader("userId") String employeeNo,
                              HttpServletRequest servletRequest) {
-        fileApplicationService.unbindFile(taskId, fileId, employeeNo, null);
+        fileApplicationService.unbindFile(taskId, fileId, employeeNo);
         return ApiResponse.ok(null, traceId(servletRequest));
     }
 
@@ -76,7 +75,7 @@ public class FileController {
     @Operation(summary = "查询任务当前节点的最新文件", description = "按任务和文件类别查询当前有效文件；类别仅支持四类 FileCategory。")
     ApiResponse<java.util.List<FileApplicationService.FileView>> latest(@RequestParam long taskId,
                                                                         @RequestParam FileCategory fileCategory, @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
-        return ApiResponse.ok(fileApplicationService.listLatestByCategory(taskId, fileCategory, employeeNo, null), traceId(servletRequest));
+        return ApiResponse.ok(fileApplicationService.listLatestByCategory(taskId, fileCategory, employeeNo), traceId(servletRequest));
     }
 
     private String traceId(HttpServletRequest request) { return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString(); }

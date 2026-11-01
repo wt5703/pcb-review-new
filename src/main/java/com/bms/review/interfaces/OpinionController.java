@@ -73,13 +73,13 @@ public class OpinionController {
                                                                 @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.update(opinionId,
                 new OpinionApplicationService.UpdateOpinionCommand(request.comment(), request.richText(), request.severity()),
-                employeeNo, null), traceId(servletRequest));
+                employeeNo), traceId(servletRequest));
     }
 
     @DeleteMapping("/opinions/{opinionId}")
     @Operation(summary = "删除待答复评审意见", description = "仅意见提出人可删除尚未被设计者答复的 PENDING_REPLY 意见；已答复、待确认或已确认意见不可删除。")
     ApiResponse<Void> delete(@PathVariable long opinionId, @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
-        opinionApplicationService.delete(opinionId, employeeNo, null);
+        opinionApplicationService.delete(opinionId, employeeNo);
         return ApiResponse.ok(null, traceId(servletRequest));
     }
 
@@ -95,7 +95,7 @@ public class OpinionController {
             @RequestParam(defaultValue = "20") @Parameter(description = "每页条数，最大 100") @Min(1) @Max(100) int pageSize,
             @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.listPage(taskId, severity, status, sourceType, sourceTypes, scene, pageNum, pageSize,
-                employeeNo, null), traceId(servletRequest));
+                employeeNo), traceId(servletRequest));
     }
 
     @GetMapping("/tasks/{taskId}/opinions/summary")
@@ -103,7 +103,7 @@ public class OpinionController {
     ApiResponse<OpinionApplicationService.OpinionSummary> summary(@PathVariable long taskId,
             @RequestParam(required = false) @Parameter(description = "多个意见来源，使用逗号分隔：PCB_PROCESS_REVIEW,PCB_STRUCTURE_REVIEW") List<OpinionSourceType> sourceTypes,
             @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
-        return ApiResponse.ok(opinionApplicationService.summary(taskId, sourceTypes, employeeNo, null), traceId(servletRequest));
+        return ApiResponse.ok(opinionApplicationService.summary(taskId, sourceTypes, employeeNo), traceId(servletRequest));
     }
 
     @PostMapping("/opinions/{opinionId}/reply")
@@ -111,7 +111,7 @@ public class OpinionController {
     ApiResponse<OpinionApplicationService.OpinionView> reply(@PathVariable long opinionId, @Valid @RequestBody ReplyOpinionRequest request,
                                                                @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.reply(opinionId, new OpinionApplicationService.ReplyOpinionCommand(
-                request.replyType(), request.reason()), employeeNo, null), traceId(servletRequest));
+                request.replyType(), request.reason()), employeeNo), traceId(servletRequest));
     }
 
     @PostMapping("/opinions/{opinionId}/confirm")
@@ -120,7 +120,7 @@ public class OpinionController {
                                                                  @Valid @RequestBody ConfirmOpinionRequest request,
                                                                  @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.confirm(opinionId, new OpinionApplicationService.ConfirmOpinionCommand(
-                request.passed(), request.comment()), employeeNo, null), traceId(servletRequest));
+                request.passed(), request.comment()), employeeNo), traceId(servletRequest));
     }
 
     @PostMapping("/opinions/{opinionId}/withdraw")
@@ -129,7 +129,7 @@ public class OpinionController {
                                                                   @Valid @RequestBody WithdrawOpinionRequest request,
                                                                   @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         return ApiResponse.ok(opinionApplicationService.withdraw(opinionId, new OpinionApplicationService.WithdrawOpinionCommand(request.reason()),
-                employeeNo, null), traceId(servletRequest));
+                employeeNo), traceId(servletRequest));
     }
 
     private String traceId(HttpServletRequest request) {

@@ -19,7 +19,7 @@ public class TaskProcessorAuthorizationService {
         this.taskAssignmentAccessMapper = taskAssignmentAccessMapper;
     }
 
-    public void requireCurrentTaskProcessor(long taskId, String operatorEmployeeNo, String operatorName) {
+    public void requireCurrentTaskProcessor(long taskId, String operatorEmployeeNo) {
         if (!taskAssignmentAccessMapper.isCurrentTaskProcessor(taskId, operatorEmployeeNo)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "当前任务节点不需要该用户处理");
         }

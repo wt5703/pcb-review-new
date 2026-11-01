@@ -50,8 +50,7 @@ public class ReviewerWhitelistController {
             HttpServletRequest servletRequest) {
         ReviewerWhitelistQueryRequest query = request == null ? new ReviewerWhitelistQueryRequest(null, null, null) : request;
         return ApiResponse.ok(whitelistApplicationService.listPage(
-                new ReviewerWhitelistApplicationService.ReviewerWhitelistQuery(query.keyword(), query.pageNum(), query.pageSize()),
-                null, null), traceId(servletRequest));
+                new ReviewerWhitelistApplicationService.ReviewerWhitelistQuery(query.keyword(), query.pageNum(), query.pageSize())), traceId(servletRequest));
     }
 
     @GetMapping("/people")
@@ -68,7 +67,7 @@ public class ReviewerWhitelistController {
         List<ReviewerWhitelistApplicationService.RoleEmployeeNos> mappings = request.roleEmployeeNos().stream()
                 .map(item -> new ReviewerWhitelistApplicationService.RoleEmployeeNos(item.reviewRole(), item.employeeNos()))
                 .toList();
-        return ApiResponse.ok(whitelistApplicationService.add(mappings, employeeNo, null), traceId(servletRequest));
+        return ApiResponse.ok(whitelistApplicationService.add(mappings, employeeNo), traceId(servletRequest));
     }
 
     @DeleteMapping
@@ -77,14 +76,14 @@ public class ReviewerWhitelistController {
             @RequestParam(required = false) @Schema(description = "白名单主键；与 employeeNo 二选一") Long id,
             @RequestParam(required = false) @Schema(description = "员工工号；与 id 二选一，传入后删除该工号下所有白名单角色映射") String employeeNo,
             @NotBlank @RequestHeader("userId") String operatorEmployeeNo, HttpServletRequest servletRequest) {
-        return ApiResponse.ok(whitelistApplicationService.remove(id, employeeNo, operatorEmployeeNo, null), traceId(servletRequest));
+        return ApiResponse.ok(whitelistApplicationService.remove(id, employeeNo, operatorEmployeeNo), traceId(servletRequest));
     }
 
     @DeleteMapping("/{id}/roles/{role}")
     @Operation(summary = "删除白名单人员的指定角色", description = "仅删除指定角色；若该人员没有其他有效角色，则同时停用人员。")
     ApiResponse<ReviewerWhitelistApplicationService.DeleteResult> removeRole(@PathVariable long id,
             @PathVariable ReviewerWhitelistRole role, @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
-        return ApiResponse.ok(whitelistApplicationService.removeRole(id, role, employeeNo, null), traceId(servletRequest));
+        return ApiResponse.ok(whitelistApplicationService.removeRole(id, role, employeeNo), traceId(servletRequest));
     }
 
     private String traceId(HttpServletRequest request) {

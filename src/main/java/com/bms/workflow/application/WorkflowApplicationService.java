@@ -30,7 +30,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -40,6 +42,8 @@ import java.util.Set;
  */
 @Service
 public class WorkflowApplicationService {
+    private static final Set<ReviewRole> SCHEMATIC_MANAGER_ASSIGNED_ROLES =
+            Set.of(ReviewRole.HARDWARE_EXPERT, ReviewRole.EMC_EXPERT);
     private final ReviewTaskMapper taskMapper;
     private final ReviewOpinionMapper opinionMapper;
     private final ReviewFileMapper fileMapper;
@@ -70,25 +74,24 @@ public class WorkflowApplicationService {
         this.reviewMailNotificationApplicationService = reviewMailNotificationApplicationService;
     }
 
-    /** 返回创建任务时可选择的专家白名单；候选角色只由评审类型决定，不依赖任务状态。 */
+    /** 返回可供分配的专家白名单；原理图任务由硬件部开发经理在互检结束后分配硬件、EMC 专家。 */
     public List<ReviewerWhitelistApplicationService.AssignableReviewerView> listAssignableReviewers(ReviewType reviewType) {
         List<ReviewerWhitelistRole> roles = reviewType == ReviewType.PCB
                 ? List.of(ReviewerWhitelistRole.EMC_EXPERT, ReviewerWhitelistRole.PCB_EXPERT)
-                : List.of(ReviewerWhitelistRole.HARDWARE_EXPERT);
+                : List.of(ReviewerWhitelistRole.HARDWARE_EXPERT, ReviewerWhitelistRole.EMC_EXPERT);
         return reviewerWhitelistApplicationService.listAssignableUsers(roles);
     }
 
     /** 互检单分配候选人与任务创建专家候选人职责不同。 */
-    public List<ReviewerWhitelistApplicationService.AssignableReviewerView> listMutualCheckReviewers(ReviewType reviewType,
-                                                                                                         String operatorEmployeeNo, String operatorName) {
+    public List<ReviewerWhitelistApplicationService.AssignableReviewerView> listMutualCheckReviewers(ReviewType reviewType) {
         ReviewerWhitelistRole role = reviewType == ReviewType.PCB
                 ? ReviewerWhitelistRole.PCB_MUTUAL_CHECK : ReviewerWhitelistRole.SCHEMATIC_MUTUAL_CHECK;
         return reviewerWhitelistApplicationService.listAssignableUsers(List.of(role));
     }
 
     @Transactional
-    public WorkflowView transition(long taskId, WorkflowAction action, String comment, String operatorEmployeeNo, String operatorName) {
-        return transition(taskId, new TransitionCommand(action, comment, List.of()), operatorEmployeeNo, operatorName);
+    public WorkflowView transition(long taskId, WorkflowAction action, String comment, String operatorEmployeeNo) {
+        return transition(taskId, new TransitionCommand(action, comment, List.of()), operatorEmployeeNo);
     }
 
     /**
@@ -96,8 +99,8 @@ public class WorkflowApplicationService {
      * 其余业务动作必须单独提交，避免一次请求跨越多个无关节点。
      */
     @Transactional
-    public WorkflowView transition(long taskId, TransitionBatchCommand command, String operatorEmployeeNo, String operatorName) {
-        return transition(taskId, command, List.of(), operatorEmployeeNo, operatorName);
+    public WorkflowView transition(long taskId, TransitionBatchCommand command, String operatorEmployeeNo) {
+        return transition(taskId, command, List.of(), operatorEmployeeNo);
     }
 
     /**
@@ -105,7 +108,7 @@ public class WorkflowApplicationService {
      */
     @Transactional
     public WorkflowView transition(long taskId, TransitionBatchCommand command, List<TransitionFileCommand> files,
-                                   String operatorEmployeeNo, String operatorName) {
+                                   String operatorEmployeeNo) {
         List<TransitionFileCommand> transitionFiles = files == null ? List.of() : List.copyOf(files);
         validateTransitionFiles(taskId, command, transitionFiles);
         if (!transitionFiles.isEmpty() && command.actions().size() == 1
@@ -114,21 +117,23 @@ public class WorkflowApplicationService {
             ReviewTaskRecord task = requireTask(taskId);
             requireTaskCanTransition(task, WorkflowAction.PENDING_FINISH);
             validatePayload(task, WorkflowAction.PENDING_FINISH,
-                    new TransitionCommand(WorkflowAction.PENDING_FINISH, command.comment(), command.reviewerEmployeeNos()));
-            resolveTransitionPlan(task, WorkflowAction.PENDING_FINISH, operatorEmployeeNo, operatorName);
+                    new TransitionCommand(WorkflowAction.PENDING_FINISH, command.comment(), command.reviewerEmployeeNos(),
+                            command.reviewerAssignments()));
+            resolveTransitionPlan(task, WorkflowAction.PENDING_FINISH, operatorEmployeeNo);
         }
         // 文件类别与本次开启动作一一匹配；FileApplicationService 负责资源上传、任务绑定及同类旧文件置历史。
-        transitionFiles.forEach(file -> fileApplicationService.upload(taskId, file.fileCategory(), file.file(), operatorEmployeeNo, operatorName));
-        return transitionAfterFilesUploaded(taskId, command, operatorEmployeeNo, operatorName);
+        transitionFiles.forEach(file -> fileApplicationService.upload(taskId, file.fileCategory(), file.file(), operatorEmployeeNo));
+        return transitionAfterFilesUploaded(taskId, command, operatorEmployeeNo);
     }
 
-    private WorkflowView transitionAfterFilesUploaded(long taskId, TransitionBatchCommand command, String operatorEmployeeNo, String operatorName) {
+    private WorkflowView transitionAfterFilesUploaded(long taskId, TransitionBatchCommand command, String operatorEmployeeNo) {
         if (command == null || command.actions().isEmpty()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "流程动作不能为空");
         }
         if (command.actions().size() == 1) {
             WorkflowAction action = command.actions().get(0);
-            WorkflowView view = transition(taskId, new TransitionCommand(action, command.comment(), command.reviewerEmployeeNos()), operatorEmployeeNo, operatorName);
+            WorkflowView view = transition(taskId, new TransitionCommand(action, command.comment(), command.reviewerEmployeeNos(),
+                    command.reviewerAssignments()), operatorEmployeeNo);
             notifyPcbStageReviewStarted(taskId, List.of(action));
             return view;
         }
@@ -141,9 +146,9 @@ public class WorkflowApplicationService {
         }
         // 文件已由文件接口完成上传和落库；这里固定先开启结构评审，再开启工艺评审。
         WorkflowView structureView = transition(taskId, new TransitionCommand(WorkflowAction.START_PCB_STRUCTURE_REVIEW,
-                command.comment(), List.of()), operatorEmployeeNo, operatorName);
+                command.comment(), List.of()), operatorEmployeeNo);
         WorkflowView processView = transition(taskId, new TransitionCommand(WorkflowAction.START_PCB_PROCESS_REVIEW,
-                command.comment(), List.of()), operatorEmployeeNo, operatorName);
+                command.comment(), List.of()), operatorEmployeeNo);
         notifyPcbStageReviewStarted(taskId, command.actions());
         return new WorkflowView(taskId, structureView.fromStatus(), processView.toStatus(), List.of());
     }
@@ -204,9 +209,9 @@ public class WorkflowApplicationService {
 
     /** 统一编排一次流程推进；文件已通过批量流程入口写入后，在这里校验其最新版本是否满足节点要求。 */
     @Transactional
-    public WorkflowView transition(long taskId, TransitionCommand command, String operatorEmployeeNo, String operatorName) {
+    public WorkflowView transition(long taskId, TransitionCommand command, String operatorEmployeeNo) {
         // 1. 只做校验和目标状态计算；此阶段不写任务状态，校验失败不会留下半成品数据。
-        TransitionContext context = prepareTransition(taskId, command, operatorEmployeeNo, operatorName);
+        TransitionContext context = prepareTransition(taskId, command, operatorEmployeeNo);
 
         // 2. 原子地写入当前节点人员、任务状态、流转记录和状态变更事件，四者始终保持一致。
         persistTransition(context);
@@ -220,7 +225,7 @@ public class WorkflowApplicationService {
      * 组装一次已通过全部前置校验的流转上下文。
      * 普通节点和结束节点的差异只在 {@link #resolveTransitionPlan} 中处理，入口不再散落条件分支。
      */
-    private TransitionContext prepareTransition(long taskId, TransitionCommand command, String operatorEmployeeNo, String operatorName) {
+    private TransitionContext prepareTransition(long taskId, TransitionCommand command, String operatorEmployeeNo) {
         requireTransitionCommand(command);
         ReviewTaskRecord task = requireTask(taskId);
         WorkflowAction action = command.action();
@@ -228,17 +233,18 @@ public class WorkflowApplicationService {
         validatePayload(task, action, command);
 
         // 先确认当前用户、当前状态和前序意见允许执行该动作，再确定最终状态。
-        TransitionPlan plan = resolveTransitionPlan(task, action, operatorEmployeeNo, operatorName);
+        TransitionPlan plan = resolveTransitionPlan(task, action, operatorEmployeeNo);
         // 文件在文件域上传完成；流程域只校验本次节点所需的最新文件是否已存在。
         validateStageFilePresence(task, action);
         // 结束前需要冻结检查项快照，且必须发生在任务状态变为 FINISHED 之前。
         freezeCheckItemsBeforeFinish(task, plan);
         return new TransitionContext(task, action, command.comment(), operatorEmployeeNo,
-                TaskStatus.valueOf(task.getStatus()), plan, command.reviewerEmployeeNos());
+                TaskStatus.valueOf(task.getStatus()), plan, command.reviewerEmployeeNos(), command.reviewerAssignments());
     }
 
     /** 将状态变更、流程审计和供异步消费者使用的事件作为同一笔事务数据写入。 */
     private void persistTransition(TransitionContext context) {
+        replaceSchematicManagerAssignments(context);
         refreshActiveReviewers(context);
         persistStatus(context.task(), context.plan().targetStatus());
         persistActiveReviewers(context.task());
@@ -247,9 +253,24 @@ public class WorkflowApplicationService {
     }
 
     /**
+     * 原理图任务创建时不会预先指定硬件、EMC 专家。经理分配时仅替换这两个角色，保留其他角色的既有分配。
+     */
+    private void replaceSchematicManagerAssignments(TransitionContext context) {
+        if (context.action() != WorkflowAction.START_SCHEMATIC_EXPERT_REVIEW) {
+            return;
+        }
+        Map<ReviewRole, TaskReviewerAssignment> assignmentsByRole = new LinkedHashMap<>();
+        TaskReviewerAssignmentCodec.decode(context.task().getReviewerAssignments()).stream()
+                .filter(assignment -> !SCHEMATIC_MANAGER_ASSIGNED_ROLES.contains(assignment.reviewRole()))
+                .forEach(assignment -> assignmentsByRole.put(assignment.reviewRole(), assignment));
+        context.reviewerAssignments().forEach(assignment -> assignmentsByRole.put(assignment.reviewRole(), assignment));
+        context.task().setReviewerAssignments(TaskReviewerAssignmentCodec.encode(List.copyOf(assignmentsByRole.values())));
+    }
+
+    /**
      * assigned_reviewer_employee_nos 只保存当前已开启节点的待处理人员：
      * - PCB 首轮仅 PCB、EMC 专家，工艺/结构在各自节点开启时追加；
-     * - 互检使用本次分配的人员；原理图评审直接使用创建任务时指定的专家；
+     * - 互检使用本次分配的人员；原理图硬件、EMC 专家由硬件部开发经理在互检结束后分配；
      * - 已通过前一节点校验的历史人员在进入下一节点时清理，兼容旧数据中曾预写全部人员的情况。
      */
     private void refreshActiveReviewers(TransitionContext context) {
@@ -276,7 +297,7 @@ public class WorkflowApplicationService {
                         .encodeReviewerEmployeeNos(context.reviewerEmployeeNos()));
             }
             case START_SCHEMATIC_EXPERT_REVIEW -> {
-                // 原理图互检意见已闭环，切换到创建任务时已指定的原理图评审专家。
+                // 原理图互检意见已闭环，切换到硬件部开发经理刚刚指定的原理图评审专家。
                 activeReviewerEmployeeNos.clear();
                 activeReviewerEmployeeNos.addAll(reviewerEmployeeNosForRoles(task, ReviewRole.HARDWARE_EXPERT,
                         ReviewRole.EMC_EXPERT, ReviewRole.PCB_EXPERT));
@@ -308,6 +329,8 @@ public class WorkflowApplicationService {
         if (context.plan().finishing()) {
             taskArchiveApplicationService.archive(context.task());
             reviewMailNotificationApplicationService.enqueueTaskFinished(context.task());
+        } else if (context.action() == WorkflowAction.START_SCHEMATIC_EXPERT_REVIEW) {
+            reviewMailNotificationApplicationService.enqueueSchematicReviewStarted(context.task());
         }
     }
 
@@ -326,20 +349,20 @@ public class WorkflowApplicationService {
         }
     }
 
-    private TransitionPlan resolveTransitionPlan(ReviewTaskRecord task, WorkflowAction action, String operatorEmployeeNo, String operatorName) {
+    private TransitionPlan resolveTransitionPlan(ReviewTaskRecord task, WorkflowAction action, String operatorEmployeeNo) {
         if (action == WorkflowAction.FINISH) {
-            return resolveFinishPlan(task, operatorEmployeeNo, operatorName);
+            return resolveFinishPlan(task, operatorEmployeeNo);
         }
         validateActionPrerequisites(task, action);
-        return new TransitionPlan(resolveNonFinishTargetStatus(task, action, operatorEmployeeNo, operatorName), false);
+        return new TransitionPlan(resolveNonFinishTargetStatus(task, action, operatorEmployeeNo), false);
     }
 
     /** 所有“真正结束任务”的判断集中在此处，避免与普通节点推进混在一起。 */
-    private TransitionPlan resolveFinishPlan(ReviewTaskRecord task, String operatorEmployeeNo, String operatorName) {
+    private TransitionPlan resolveFinishPlan(ReviewTaskRecord task, String operatorEmployeeNo) {
         requireOpinionsPassed(task.getId(), List.of(), "存在未确认通过的意见，不能结束任务");
         TaskStatus current = TaskStatus.valueOf(task.getStatus());
         ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
-        return new TransitionPlan(requireFinishTransition(reviewType, current, operatorEmployeeNo, operatorName), true);
+        return new TransitionPlan(requireFinishTransition(reviewType, current), true);
     }
 
     /** 结束前先冻结任务检查项快照，随后才更新状态并归档。 */
@@ -371,34 +394,63 @@ public class WorkflowApplicationService {
         if (!requiresAssignment && !command.reviewerEmployeeNos().isEmpty()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "当前流程动作不支持分配评审人员");
         }
+        if (action == WorkflowAction.START_SCHEMATIC_EXPERT_REVIEW) {
+            validateSchematicManagerAssignments(task, command.reviewerAssignments());
+            return;
+        }
+        if (!command.reviewerAssignments().isEmpty()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "当前流程动作不支持按评审角色分配人员");
+        }
     }
 
-    private TaskStatus resolveNonFinishTargetStatus(ReviewTaskRecord task, WorkflowAction action, String operatorEmployeeNo, String operatorName) {
+    private void validateSchematicManagerAssignments(ReviewTaskRecord task,
+                                                      List<TaskReviewerAssignment> assignments) {
+        Set<ReviewRole> expectedRoles = parseReviewRoles(task.getReviewRoles()).stream()
+                .filter(SCHEMATIC_MANAGER_ASSIGNED_ROLES::contains)
+                .collect(java.util.stream.Collectors.toSet());
+        if (expectedRoles.isEmpty()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "原理图任务未配置硬件或 EMC 评审角色");
+        }
+        Map<ReviewRole, List<String>> reviewersByRole = new LinkedHashMap<>();
+        for (TaskReviewerAssignment assignment : assignments == null ? List.<TaskReviewerAssignment>of() : assignments) {
+            if (!SCHEMATIC_MANAGER_ASSIGNED_ROLES.contains(assignment.reviewRole())) {
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "硬件部开发经理仅可分配硬件评审和 EMC 评审人员");
+            }
+            if (reviewersByRole.putIfAbsent(assignment.reviewRole(), assignment.reviewerEmployeeNos()) != null) {
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "同一评审角色只能分配一组专家");
+            }
+        }
+        if (!reviewersByRole.keySet().equals(expectedRoles) || reviewersByRole.values().stream().anyMatch(List::isEmpty)) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "请为每个已选择的硬件、EMC 评审角色至少指定一名专家");
+        }
+    }
+
+    private TaskStatus resolveNonFinishTargetStatus(ReviewTaskRecord task, WorkflowAction action, String operatorEmployeeNo) {
         TaskStatus current = TaskStatus.valueOf(task.getStatus());
         ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
         return switch (action) {
             case CREATE, FINISH -> throw new BusinessException(ErrorCode.VALIDATION_ERROR, "当前流程动作不能按普通节点推进");
             case START_PCB_STRUCTURE_REVIEW -> requireDesignerTransition(task, reviewType == ReviewType.PCB
                             && (current == TaskStatus.PCB_EXPERT_REVIEWING || current == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING),
-                    TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING, operatorEmployeeNo, operatorName);
+                    TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING, operatorEmployeeNo);
             case START_PCB_PROCESS_REVIEW -> requireDesignerTransition(task, reviewType == ReviewType.PCB
                             && (current == TaskStatus.PCB_EXPERT_REVIEWING || current == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING),
-                    TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING, operatorEmployeeNo, operatorName);
+                    TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING, operatorEmployeeNo);
             case START_PCB_MATUAL_ASSIGNMENT -> requireDesignerTransition(task, reviewType == ReviewType.PCB
                             && (current == TaskStatus.PCB_EXPERT_REVIEWING || current == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING),
-                    TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT, operatorEmployeeNo, operatorName);
+                    TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT, operatorEmployeeNo);
             case START_PCB_MATUAL_REVIEW -> requireTransition(reviewType == ReviewType.PCB && current == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT,
                     TaskStatus.MUTUAL_CHECK_REVIEWING);
             case START_SCHEMATIC_MATUAL_REVIEW -> requireTransition(reviewType == ReviewType.SCHEMATIC
                             && current == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT,
                     TaskStatus.MUTUAL_CHECK_REVIEWING);
-            case START_SCHEMATIC_EXPERT_REVIEW -> requireDesignerTransition(task,
+            case START_SCHEMATIC_EXPERT_REVIEW -> requireHardwareManagerTransition(task,
                     reviewType == ReviewType.SCHEMATIC && current == TaskStatus.MUTUAL_CHECK_REVIEWING,
-                    TaskStatus.SCHEMATIC_REVIEWING, operatorEmployeeNo, operatorName);
+                    TaskStatus.SCHEMATIC_REVIEWING, operatorEmployeeNo);
             case PENDING_FINISH -> requireDesignerTransition(task,
                     (reviewType == ReviewType.PCB && current == TaskStatus.MUTUAL_CHECK_REVIEWING)
                             || (reviewType == ReviewType.SCHEMATIC && current == TaskStatus.SCHEMATIC_REVIEWING),
-                    TaskStatus.PENDING_FINISH, operatorEmployeeNo, operatorName);
+                    TaskStatus.PENDING_FINISH, operatorEmployeeNo);
         };
     }
 
@@ -410,12 +462,24 @@ public class WorkflowApplicationService {
     }
 
     private TaskStatus requireDesignerTransition(ReviewTaskRecord task, boolean allowedStatus, TaskStatus target,
-                                                 String operatorEmployeeNo, String operatorName) {
+                                                 String operatorEmployeeNo) {
         if (!allowedStatus) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "当前任务状态不允许执行该流程动作");
         }
         if (!task.getDesignerEmployeeNo().equals(operatorEmployeeNo)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "仅任务设计者可以执行当前流程动作");
+        }
+        return target;
+    }
+
+    /** 原理图硬件、EMC 专家由创建任务时指定的硬件部开发经理分配。 */
+    private TaskStatus requireHardwareManagerTransition(ReviewTaskRecord task, boolean allowedStatus, TaskStatus target,
+                                                        String operatorEmployeeNo) {
+        if (!allowedStatus) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "当前任务状态不允许执行该流程动作");
+        }
+        if (!operatorEmployeeNo.equals(task.getExpertLeaderEmployeeNo())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅硬件部开发经理可以分配原理图评审人员");
         }
         return target;
     }
@@ -615,7 +679,7 @@ public class WorkflowApplicationService {
         }
     }
 
-    private TaskStatus requireFinishTransition(ReviewType type, TaskStatus current, String operatorEmployeeNo, String operatorName) {
+    private TaskStatus requireFinishTransition(ReviewType type, TaskStatus current) {
         boolean readyToFinish = current == TaskStatus.PENDING_FINISH;
         return requireTransition(readyToFinish, TaskStatus.FINISHED);
     }
@@ -639,23 +703,35 @@ public class WorkflowApplicationService {
         flowMapper.insert(record);
     }
 
-    public record TransitionCommand(WorkflowAction action, String comment, List<String> reviewerEmployeeNos) {
+    public record TransitionCommand(WorkflowAction action, String comment, List<String> reviewerEmployeeNos,
+                                    List<TaskReviewerAssignment> reviewerAssignments) {
         public TransitionCommand {
             if (reviewerEmployeeNos != null && reviewerEmployeeNos.stream().anyMatch(employeeNo -> employeeNo == null || employeeNo.isBlank())) {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "评审人员工号不能为空");
             }
             reviewerEmployeeNos = reviewerEmployeeNos == null ? List.of() : reviewerEmployeeNos.stream().map(String::trim).distinct().toList();
+            reviewerAssignments = reviewerAssignments == null ? List.of() : List.copyOf(reviewerAssignments);
+        }
+
+        public TransitionCommand(WorkflowAction action, String comment, List<String> reviewerEmployeeNos) {
+            this(action, comment, reviewerEmployeeNos, List.of());
         }
     }
 
     /** 前端 transition 请求模型；工艺和结构评审可分别提交，也可同时出现，其余动作一次只能提交一个。 */
-    public record TransitionBatchCommand(List<WorkflowAction> actions, String comment, List<String> reviewerEmployeeNos) {
+    public record TransitionBatchCommand(List<WorkflowAction> actions, String comment, List<String> reviewerEmployeeNos,
+                                         List<TaskReviewerAssignment> reviewerAssignments) {
         public TransitionBatchCommand {
             if (actions == null || actions.isEmpty() || actions.stream().anyMatch(action -> action == null)) {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "流程动作不能为空");
             }
             actions = List.copyOf(actions);
             reviewerEmployeeNos = reviewerEmployeeNos == null ? List.of() : reviewerEmployeeNos.stream().map(String::trim).distinct().toList();
+            reviewerAssignments = reviewerAssignments == null ? List.of() : List.copyOf(reviewerAssignments);
+        }
+
+        public TransitionBatchCommand(List<WorkflowAction> actions, String comment, List<String> reviewerEmployeeNos) {
+            this(actions, comment, reviewerEmployeeNos, List.of());
         }
     }
 
@@ -679,7 +755,8 @@ public class WorkflowApplicationService {
 
     /** 一次流转中已确认的输入、原状态和目标状态，避免持久化阶段再次重新判断业务规则。 */
     private record TransitionContext(ReviewTaskRecord task, WorkflowAction action, String comment, String operatorEmployeeNo,
-                                     TaskStatus fromStatus, TransitionPlan plan, List<String> reviewerEmployeeNos) {
+                                     TaskStatus fromStatus, TransitionPlan plan, List<String> reviewerEmployeeNos,
+                                     List<TaskReviewerAssignment> reviewerAssignments) {
         private WorkflowView toView() {
             return new WorkflowView(task.getId(), fromStatus, plan.targetStatus(),
                     TaskReviewerAssignmentCodec.decodeReviewerEmployeeNos(task.getAssignedReviewerEmployeeNos()));

@@ -93,6 +93,22 @@ class ReviewMailNotificationApplicationServiceTest {
     }
 
     @Test
+    void shouldNotifyHardwareAndEmcExpertsAfterSchematicManagerAssignment() throws Exception {
+        when(whitelistMapper.findActiveByEmployeeNo("BMS001")).thenReturn(user(1L, "BMS001", "硬件专家", "hardware@bms.example.com"));
+        when(whitelistMapper.findActiveByEmployeeNo("BMS002")).thenReturn(user(2L, "BMS002", "EMC专家", "emc@bms.example.com"));
+        when(fileMapper.findLatestByTaskIdAndCategory(12L, "SCHEMATIC_REVIEW"))
+                .thenReturn(List.of(file(120L, "VCU原理图.zip", "SCHEMATIC_REVIEW")));
+
+        service.enqueueSchematicReviewStarted(task(12L, "SCHEMATIC", "VCU",
+                "HARDWARE_EXPERT:BMS001;EMC_EXPERT:BMS002;PCB_EXPERT:BMS003"));
+
+        MailMessage message = payload();
+        assertThat(message.recipients()).extracting(MailMessage.MailRecipient::email)
+                .containsExactly("hardware@bms.example.com", "emc@bms.example.com");
+        assertThat(message.attachments()).extracting(MailMessage.MailAttachment::fileName).containsExactly("VCU原理图.zip");
+    }
+
+    @Test
     void shouldBuildCarbonCopiesFromWhitelistRolesWhenDepartmentIsEmpty() throws Exception {
         when(whitelistMapper.findActiveByEmployeeNo("BMS001")).thenReturn(user(1L, "BMS001", "王鹏飞", "wang@bms.example.com"));
         when(whitelistMapper.findActiveByEmployeeNo("BMS002")).thenReturn(user(2L, "BMS002", "刘满红", "liu@bms.example.com"));

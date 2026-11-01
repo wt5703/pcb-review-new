@@ -86,7 +86,8 @@ public class UserCenterUserProfileClient {
     public record UserCenterResponse(int code, String msg, UserCenterProfile data) { }
     public record UserCenterProfile(String leapId, String name, String email, String shortPhone, String deptName) { }
 
-    public record UserProfile(String employeeNo, String displayName, String email, String mobile, String departmentName) {
+    /** 用户中心原始字段为 deptName，对外模型保持相同命名，避免字段转换歧义。 */
+    public record UserProfile(String employeeNo, String displayName, String email, String mobile, String deptName) {
         static UserProfile empty(String employeeNo) {
             return new UserProfile(employeeNo, employeeNo, null, null, null);
         }

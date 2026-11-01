@@ -83,7 +83,7 @@ class OpinionApplicationServiceTest {
 
         OpinionApplicationService.OpinionView replied = service.reply(31L,
                 new OpinionApplicationService.ReplyOpinionCommand(ReplyType.ACCEPT, "已上传新设计文件"),
-                "BMS009", "BMS009");
+                "BMS009");
 
         OpinionReplyRecord persistedReply = new OpinionReplyRecord();
         persistedReply.setId(41L);
@@ -92,7 +92,7 @@ class OpinionApplicationServiceTest {
         when(opinionMapper.nextConfirmationId()).thenReturn(51L);
         OpinionApplicationService.OpinionView confirmed = service.confirm(31L,
                 new OpinionApplicationService.ConfirmOpinionCommand(true, "确认通过"),
-                "BMS020", "BMS020");
+                "BMS020");
 
         assertThat(replied.status()).isEqualTo(OpinionStatus.PENDING_CONFIRMATION);
         assertThat(confirmed.status()).isEqualTo(OpinionStatus.CONFIRMED_PASS);
@@ -119,7 +119,7 @@ class OpinionApplicationServiceTest {
         when(taskMapper.updateAssignedReviewerEmployeeNos(any())).thenReturn(1);
 
         service.confirm(31L, new OpinionApplicationService.ConfirmOpinionCommand(true, "确认通过"),
-                "BMS020", "BMS020");
+                "BMS020");
 
         assertThat(activeTask.getAssignedReviewerEmployeeNos()).isEqualTo("BMS020");
 
@@ -240,7 +240,7 @@ class OpinionApplicationServiceTest {
                 opinion(32L, 1001L, "BMS020", OpinionStatus.CONFIRMED_PASS),
                 opinion(33L, 1001L, "BMS020", OpinionStatus.CONFIRMED_PASS)));
 
-        OpinionApplicationService.OpinionSummary summary = service.summary(1001L, "BMS020", "BMS020");
+        OpinionApplicationService.OpinionSummary summary = service.summary(1001L, "BMS020");
 
         assertThat(summary.total()).isEqualTo(3);
         assertThat(summary.pendingReply()).isEqualTo(1);
@@ -256,7 +256,7 @@ class OpinionApplicationServiceTest {
         ReviewOpinionRecord publishedOpinion = opinion(32L, 1001L, "BMS020", OpinionStatus.PENDING_REPLY);
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(savedDraft, publishedOpinion));
 
-        List<OpinionApplicationService.OpinionView> opinions = service.list(1001L, "BMS020", "BMS020");
+        List<OpinionApplicationService.OpinionView> opinions = service.list(1001L, "BMS020");
 
         assertThat(opinions).extracting(OpinionApplicationService.OpinionView::id).containsExactly(32L);
     }
@@ -297,8 +297,7 @@ class OpinionApplicationServiceTest {
         when(opinionMapper.findRepliesByOpinionId(31L)).thenReturn(List.of(reply, secondReply));
         when(opinionMapper.findConfirmationsByOpinionId(31L)).thenReturn(List.of(confirmation, secondConfirmation));
 
-        OpinionApplicationService.OpinionView view = service.list(1001L,
-                "BMS020", "BMS020").get(0);
+        OpinionApplicationService.OpinionView view = service.list(1001L, "BMS020").get(0);
 
         assertThat(view.replies()).hasSize(2);
         assertThat(view.replies().get(0).reason()).isEqualTo("已优化布局并更新文件");

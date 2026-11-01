@@ -6,8 +6,10 @@ import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
 import com.bms.file.domain.FileCategory;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
+import com.bms.review.domain.ReviewRole;
 import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.task.domain.ReviewType;
+import com.bms.task.domain.TaskReviewerAssignment;
 import com.bms.workflow.application.WorkflowApplicationService;
 import com.bms.workflow.domain.WorkflowAction;
 import io.swagger.v3.oas.annotations.Operation;
@@ -55,13 +57,13 @@ public class WorkflowController {
     @Operation(summary = "按业务动作推进任务流程", description = """
             <b>传参说明</b><br/>
             所有流程推进均使用 multipart/form-data。CREATE 不调用本接口，创建任务请调用任务提交接口。<br/>
-            需要分配人员时，传 reviewerEmployeeNos；不上传文件时无需传 files。<br/>
+            分配互检人员时传 reviewerEmployeeNos；硬件部开发经理分配原理图专家时传 reviewerAssignments。<br/>
             流程文件必须按对象传递：files[0].fileCategory + files[0].file，二者表示同一个文件，不能使用分离的文件类型数组。<br/><br/>
             1. 开启工艺/结构评审：可单独传 START_PCB_STRUCTURE_REVIEW 或 START_PCB_PROCESS_REVIEW，也可同时传二者。<br/>
             2. 开启互检单分配：传 START_PCB_MATUAL_ASSIGNMENT。<br/>
             3. 分配互检人员并开启互检：传 START_PCB_MATUAL_REVIEW + reviewerEmployeeNos。<br/>
             4. 分配互检人员并开启互检：传 START_SCHEMATIC_MATUAL_REVIEW + reviewerEmployeeNos。<br/>
-            5. 设计者在互检意见闭环后开启原理图评审：传 START_SCHEMATIC_EXPERT_REVIEW；评审人员取创建任务时的角色分配。<br/>
+            5. 原理图互检意见闭环后，由硬件部开发经理传 START_SCHEMATIC_EXPERT_REVIEW，并以 reviewerAssignments 指定硬件、EMC 评审角色及人员；成功后任务进入原理图评审。<br/>
             6. 设计者推进流程时只校验指定来源意见：开启 PCB 工艺/结构评审校验 PCB_REVIEW；开启 PCB 互检单分配校验 PCB_PROCESS_REVIEW、PCB_STRUCTURE_REVIEW；PCB 进入待结束校验互检意见；原理图开启专家评审校验互检意见，进入待结束校验 SCHEMATIC_REVIEW。<br/>
             7. 相关意见闭环后，设计者重新上传终版文件并传 PENDING_FINISH，任务进入待结束；组长传 FINISH 结束任务。<br/>
             
@@ -71,11 +73,11 @@ public class WorkflowController {
                                                                       @Valid @ModelAttribute TransitionRequest request,
                                                                       @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         return ApiResponse.ok(workflowApplicationService.transition(taskId,
-                request.command(whitelistApplicationService), request.fileCommands(), employeeNo, null), traceId(servletRequest));
+                request.command(whitelistApplicationService), request.fileCommands(), employeeNo), traceId(servletRequest));
     }
 
     @GetMapping("/workflow/assignable-reviewers")
-    @Operation(summary = "按评审类型查询可选专家", description = "PCB任务返回 EMC、PCB 评审白名单；原理图任务返回硬件评审白名单。每人一条，whitelistRoles 为该人员全部有效白名单角色。")
+    @Operation(summary = "按评审类型查询可选专家", description = "PCB任务返回 EMC、PCB 评审白名单；原理图任务返回硬件、EMC 评审白名单，供硬件部开发经理在互检结束后分配。每人一条，whitelistRoles 为该人员全部有效白名单角色。")
     ApiResponse<List<ReviewerWhitelistApplicationService.AssignableReviewerView>> listAssignableReviewers(
             @RequestParam @Schema(description = "PCB 或 SCHEMATIC", requiredMode = Schema.RequiredMode.REQUIRED) ReviewType reviewType,
             HttpServletRequest servletRequest) {
@@ -87,7 +89,7 @@ public class WorkflowController {
     ApiResponse<List<ReviewerWhitelistApplicationService.AssignableReviewerView>> listMutualCheckReviewers(
             @RequestParam @Schema(description = "PCB 或 SCHEMATIC", requiredMode = Schema.RequiredMode.REQUIRED) ReviewType reviewType,
             HttpServletRequest servletRequest) {
-        return ApiResponse.ok(workflowApplicationService.listMutualCheckReviewers(reviewType, null, null),
+        return ApiResponse.ok(workflowApplicationService.listMutualCheckReviewers(reviewType),
                 traceId(servletRequest));
     }
 
@@ -104,6 +106,9 @@ public class WorkflowController {
         private String comment;
         @Schema(description = "随本次动作分配的评审人员企业工号；使用多个 reviewerEmployeeNos 表单字段传递。需要分配人员的动作至少传一名，支持多人。")
         private List<String> reviewerEmployeeNos = new ArrayList<>();
+        @Schema(description = "原理图硬件部开发经理分配的评审角色及专家；仅 START_SCHEMATIC_EXPERT_REVIEW 使用。通过 reviewerAssignments[i].reviewRole、reviewerAssignments[i].reviewerEmployeeNos 传递")
+        @Valid
+        private List<TransitionReviewerAssignmentRequest> reviewerAssignments = new ArrayList<>();
         @Schema(description = "本次流程上传文件；每项同时传 files[i].fileCategory 和 files[i].file。进入待结束时可上传 PCB_REVIEW 或 SCHEMATIC_REVIEW 终版。")
         @Valid
         private List<TransitionFileRequest> files = new ArrayList<>();
@@ -114,12 +119,32 @@ public class WorkflowController {
         public void setComment(String comment) { this.comment = comment; }
         public List<String> getReviewerEmployeeNos() { return reviewerEmployeeNos; }
         public void setReviewerEmployeeNos(List<String> reviewerEmployeeNos) { this.reviewerEmployeeNos = reviewerEmployeeNos == null ? new ArrayList<>() : reviewerEmployeeNos; }
+        public List<TransitionReviewerAssignmentRequest> getReviewerAssignments() { return reviewerAssignments; }
+        public void setReviewerAssignments(List<TransitionReviewerAssignmentRequest> reviewerAssignments) {
+            this.reviewerAssignments = reviewerAssignments == null ? new ArrayList<>() : reviewerAssignments;
+        }
         public List<TransitionFileRequest> getFiles() { return files; }
         public void setFiles(List<TransitionFileRequest> files) { this.files = files == null ? new ArrayList<>() : files; }
 
         WorkflowApplicationService.TransitionBatchCommand command(ReviewerWhitelistApplicationService whitelistApplicationService) {
+            if (isSchematicExpertAssignment()) {
+                if (reviewerEmployeeNos != null && !reviewerEmployeeNos.isEmpty()) {
+                    throw new BusinessException(ErrorCode.VALIDATION_ERROR,
+                            "原理图专家分配必须按 reviewerAssignments 传递角色和人员");
+                }
+                List<TaskReviewerAssignment> assignments = reviewerAssignments.stream()
+                        .map(assignment -> new TaskReviewerAssignment(assignment.getReviewRole(), whitelistApplicationService
+                                .findByRoleAndEmployeeNos(ReviewerWhitelistRole.fromReviewRole(assignment.getReviewRole()),
+                                        assignment.getReviewerEmployeeNos()).stream()
+                                .map(ReviewerWhitelistApplicationService.WhitelistPersonView::employeeNo).toList()))
+                        .toList();
+                return new WorkflowApplicationService.TransitionBatchCommand(actions, comment, List.of(), assignments);
+            }
             ReviewerWhitelistRole whitelistRole = whitelistRoleForAssignment();
             if (whitelistRole == null) {
+                if (reviewerAssignments != null && !reviewerAssignments.isEmpty()) {
+                    throw new BusinessException(ErrorCode.VALIDATION_ERROR, "当前流程动作不支持按评审角色分配人员");
+                }
                 if (reviewerEmployeeNos != null && !reviewerEmployeeNos.isEmpty()) {
                     throw new BusinessException(ErrorCode.VALIDATION_ERROR, "当前流程动作不支持分配评审人员");
                 }
@@ -144,6 +169,28 @@ public class WorkflowController {
                 case START_SCHEMATIC_MATUAL_REVIEW -> ReviewerWhitelistRole.SCHEMATIC_MUTUAL_CHECK;
                 default -> null;
             };
+        }
+
+        private boolean isSchematicExpertAssignment() {
+            return actions != null && actions.size() == 1
+                    && actions.get(0) == WorkflowAction.START_SCHEMATIC_EXPERT_REVIEW;
+        }
+    }
+
+    @Schema(description = "原理图评审角色及硬件部开发经理指定的专家")
+    public static class TransitionReviewerAssignmentRequest {
+        @Schema(description = "评审角色，仅支持 HARDWARE_EXPERT、EMC_EXPERT", requiredMode = Schema.RequiredMode.REQUIRED)
+        @jakarta.validation.constraints.NotNull
+        private ReviewRole reviewRole;
+        @Schema(description = "该角色下的专家企业工号，至少一人", requiredMode = Schema.RequiredMode.REQUIRED)
+        @NotEmpty
+        private List<@NotBlank String> reviewerEmployeeNos = new ArrayList<>();
+
+        public ReviewRole getReviewRole() { return reviewRole; }
+        public void setReviewRole(ReviewRole reviewRole) { this.reviewRole = reviewRole; }
+        public List<String> getReviewerEmployeeNos() { return reviewerEmployeeNos; }
+        public void setReviewerEmployeeNos(List<String> reviewerEmployeeNos) {
+            this.reviewerEmployeeNos = reviewerEmployeeNos == null ? new ArrayList<>() : reviewerEmployeeNos;
         }
     }
 

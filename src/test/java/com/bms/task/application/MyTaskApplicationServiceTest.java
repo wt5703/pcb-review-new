@@ -45,10 +45,10 @@ class MyTaskApplicationServiceTest {
         when(taskMapper.findAllUnfinished()).thenReturn(List.of(completedTask, myTask));
         when(assignmentAccessMapper.isCurrentTaskProcessor(1L, "BMS088")).thenReturn(false);
         when(assignmentAccessMapper.isCurrentTaskProcessor(2L, "BMS088")).thenReturn(true);
-        when(reviewerWhitelistApplicationService.findDisplayNamesByEmployeeNos(List.of("BMS099")))
-                .thenReturn(Map.of("BMS099", "评审工程师"));
+        when(reviewerWhitelistApplicationService.findReviewerProfilesByEmployeeNos(List.of("BMS099")))
+                .thenReturn(Map.of("BMS099", new ReviewerWhitelistApplicationService.ReviewerProfile("评审工程师", "硬件部")));
 
-        List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS088", "BMS088");
+        List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS088");
 
         assertThat(tasks).hasSize(1);
         assertThat(tasks.get(0).id()).isEqualTo(2L);
@@ -74,7 +74,7 @@ class MyTaskApplicationServiceTest {
         when(opinionMapper.findPendingReplyTaskIdsForDesignerEmployeeNo("BMS020")).thenReturn(List.of());
         when(opinionMapper.findPendingConfirmationTaskIdsForRaiserEmployeeNo("BMS020")).thenReturn(List.of());
 
-        List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS020", "张工");
+        List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS020");
 
         assertThat(tasks).isEmpty();
     }
@@ -86,10 +86,10 @@ class MyTaskApplicationServiceTest {
                 List.of(task(2L, "BMS099", TaskStatus.PENDING_FINISH)));
         when(opinionMapper.findPendingReplyTaskIdsForDesignerEmployeeNo("BMS010")).thenReturn(List.of(1L));
 
-        List<MyTaskApplicationService.MyTaskView> designerTasks = service.list("BMS010", "BMS010");
+        List<MyTaskApplicationService.MyTaskView> designerTasks = service.list("BMS010");
         assertThat(designerTasks.get(0).actions()).contains(MyTaskAction.REPLY_OPINION);
 
-        List<MyTaskApplicationService.MyTaskView> leaderTasks = service.list("BMS001", "BMS001");
+        List<MyTaskApplicationService.MyTaskView> leaderTasks = service.list("BMS001");
         assertThat(leaderTasks).extracting(MyTaskApplicationService.MyTaskView::id).containsExactly(2L);
         assertThat(leaderTasks.get(0).actions()).containsExactly(MyTaskAction.FINISH_TASK);
     }
@@ -102,7 +102,7 @@ class MyTaskApplicationServiceTest {
         schematicReviewTask.setReviewType(ReviewType.SCHEMATIC.name());
         when(taskMapper.findAllUnfinished()).thenReturn(List.of(mutualCheckTask, schematicReviewTask));
 
-        List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS010", "设计者");
+        List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS010");
 
         assertThat(tasks).extracting(MyTaskApplicationService.MyTaskView::id).containsExactly(1L, 2L);
         assertThat(tasks).allSatisfy(task -> assertThat(task.actions()).containsExactly(MyTaskAction.SUBMIT_WORKFLOW));
@@ -114,7 +114,7 @@ class MyTaskApplicationServiceTest {
         ReviewTaskRecord processStructureReviewTask = task(2L, "BMS010", TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
         when(taskMapper.findAllUnfinished()).thenReturn(List.of(expertReviewTask, processStructureReviewTask));
 
-        List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS010", "设计者");
+        List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS010");
 
         assertThat(tasks).extracting(MyTaskApplicationService.MyTaskView::id).containsExactly(1L, 2L);
         assertThat(tasks).allSatisfy(task -> assertThat(task.actions()).containsExactly(MyTaskAction.SUBMIT_WORKFLOW));

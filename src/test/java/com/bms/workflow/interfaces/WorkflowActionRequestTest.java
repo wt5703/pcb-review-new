@@ -28,7 +28,7 @@ class WorkflowActionRequestTest {
     void bindsPendingFinishActionFromMultipartRequest() throws Exception {
         WorkflowApplicationService service = mock(WorkflowApplicationService.class);
         ReviewerWhitelistApplicationService whitelist = mock(ReviewerWhitelistApplicationService.class);
-        when(service.transition(eq(1L), any(WorkflowApplicationService.TransitionBatchCommand.class), any(), any(), any()))
+        when(service.transition(eq(1L), any(WorkflowApplicationService.TransitionBatchCommand.class), any(), any()))
                 .thenReturn(new WorkflowApplicationService.WorkflowView(1L, TaskStatus.MUTUAL_CHECK_REVIEWING,
                         TaskStatus.PENDING_FINISH, List.of()));
         MockMvc mvc = MockMvcBuilders.standaloneSetup(new WorkflowController(service, whitelist))
@@ -42,7 +42,7 @@ class WorkflowActionRequestTest {
 
         ArgumentCaptor<WorkflowApplicationService.TransitionBatchCommand> command =
                 ArgumentCaptor.forClass(WorkflowApplicationService.TransitionBatchCommand.class);
-        verify(service).transition(eq(1L), command.capture(), any(), eq("BMS010"), eq(null));
+        verify(service).transition(eq(1L), command.capture(), any(), eq("BMS010"));
         assertThat(command.getValue().actions()).containsExactly(WorkflowAction.PENDING_FINISH);
     }
 }

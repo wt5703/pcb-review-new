@@ -57,8 +57,8 @@ public class TaskCheckItemApplicationService {
     }
 
     @Transactional
-    public List<CheckItemCategoryView> list(long taskId, String operatorEmployeeNo, String operatorName) {
-        ReviewTaskRecord task = requireVisibleTask(taskId, operatorEmployeeNo, operatorName);
+    public List<CheckItemCategoryView> list(long taskId, String operatorEmployeeNo) {
+        ReviewTaskRecord task = requireVisibleTask(taskId, operatorEmployeeNo);
         List<CheckItemTemplateRecord> templates = materializeSingleTemplateIfActive(task);
         List<TaskCheckItemRecord> records = taskCheckItemMapper.findByTaskId(taskId);
         if (!isFinished(task)) {
@@ -88,7 +88,7 @@ public class TaskCheckItemApplicationService {
         if (isFinished(task)) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许修改检查项");
         }
-        taskProcessorAuthorizationService.requireCurrentTaskProcessor(taskId, operatorEmployeeNo, operatorName);
+        taskProcessorAuthorizationService.requireCurrentTaskProcessor(taskId, operatorEmployeeNo);
 
         // 2. 仅定位任务已经生成的检查项快照，防止模板修改影响本次保存。
         TaskCheckItemRecord record = taskCheckItemMapper.findByTaskIdAndId(taskId, itemId);
@@ -140,7 +140,7 @@ public class TaskCheckItemApplicationService {
         // 1. 批量提交同样只处理既有任务快照，不在保存过程中读取或同步模板。
         ReviewTaskRecord task = requireTaskExists(taskId);
         if (isFinished(task)) { throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许修改检查项"); }
-        taskProcessorAuthorizationService.requireCurrentTaskProcessor(taskId, operatorEmployeeNo, operatorName);
+        taskProcessorAuthorizationService.requireCurrentTaskProcessor(taskId, operatorEmployeeNo);
         if (commands == null || commands.isEmpty()) { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "互检单至少需要提交一条检查项结果"); }
 
         // 2. 先逐项校验归属和重复提交；任一项失败会由事务整体回滚。
@@ -227,7 +227,7 @@ public class TaskCheckItemApplicationService {
         return item;
     }
 
-    private ReviewTaskRecord requireVisibleTask(long taskId, String operatorEmployeeNo, String operatorName) {
+    private ReviewTaskRecord requireVisibleTask(long taskId, String operatorEmployeeNo) {
         ReviewTaskRecord task = requireTaskExists(taskId);
         if (assignmentAccessMapper.isAssignedToTask(taskId, operatorEmployeeNo)) {
             return task;

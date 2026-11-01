@@ -59,7 +59,7 @@ class TaskCheckItemApplicationServiceTest {
         when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of(), List.of(materialized));
         when(taskCheckItemMapper.nextId()).thenReturn(51L);
 
-        List<TaskCheckItemApplicationService.CheckItemCategoryView> items = service.list(1001L, "BMS001", "BMS001");
+        List<TaskCheckItemApplicationService.CheckItemCategoryView> items = service.list(1001L, "BMS001");
 
         assertThat(items).extracting(item -> item.category().itemName()).containsExactly("线距检查");
         verify(taskCheckItemMapper).insert(any(TaskCheckItemRecord.class));
@@ -252,7 +252,7 @@ class TaskCheckItemApplicationServiceTest {
         when(templateMapper.findByIds(List.of(30L, 31L))).thenReturn(List.of(template(30L, "结束时的类别"),
                 template(31L, "结束时的线距检查")));
 
-        List<TaskCheckItemApplicationService.CheckItemCategoryView> items = service.list(1001L, "BMS001", "BMS001");
+        List<TaskCheckItemApplicationService.CheckItemCategoryView> items = service.list(1001L, "BMS001");
 
         assertThat(items).extracting(item -> item.category().itemName()).containsExactly("结束时的类别");
         assertThat(items.get(0).items()).extracting(TaskCheckItemApplicationService.CheckItemListItemView::itemName).containsExactly("结束时的线距检查");
