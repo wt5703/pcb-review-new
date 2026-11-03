@@ -319,6 +319,12 @@ class WorkflowApplicationServiceTest {
         when(taskMapper.updateAssignedReviewerEmployeeNos(any())).thenReturn(1);
         when(flowMapper.nextId()).thenReturn(3L);
 
+        WorkflowApplicationService.WorkflowView assignmentView = service.transition(1001L,
+                WorkflowAction.START_SCHEMATIC_EXPERT_ASSIGNMENT, null, "BMS010");
+
+        assertThat(assignmentView.toStatus()).isEqualTo(TaskStatus.SCHEMATIC_EXPERT_PENDING_ASSIGNMENT);
+        assertThat(assignmentView.assignedReviewerEmployeeNos()).containsExactly("BMS010");
+
         WorkflowApplicationService.WorkflowView view = service.transition(1001L,
                 new WorkflowApplicationService.TransitionCommand(WorkflowAction.START_SCHEMATIC_EXPERT_REVIEW, null, List.of(), List.of(
                         new TaskReviewerAssignment(ReviewRole.HARDWARE_EXPERT, List.of("BMS020")),
@@ -328,7 +334,7 @@ class WorkflowApplicationServiceTest {
         assertThat(view.assignedReviewerEmployeeNos()).containsExactly("BMS020", "BMS021");
         ArgumentCaptor<ReviewTaskRecord> taskCaptor = ArgumentCaptor.forClass(ReviewTaskRecord.class);
         verify(taskMapper).update(taskCaptor.capture());
-        assertThat(taskCaptor.getValue().getReviewerAssignments())
+        assertThat(taskCaptor.getAllValues().get(1).getReviewerAssignments())
                 .isEqualTo("PCB_EXPERT:BMS099;HARDWARE_EXPERT:BMS020;EMC_EXPERT:BMS021");
         verify(reviewMailNotificationApplicationService).enqueueSchematicReviewStarted(any());
     }
@@ -341,11 +347,10 @@ class WorkflowApplicationServiceTest {
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
 
-        assertThatThrownBy(() -> service.transition(1001L,
-                new WorkflowApplicationService.TransitionCommand(WorkflowAction.START_SCHEMATIC_EXPERT_REVIEW, null, List.of(), List.of(
-                        new TaskReviewerAssignment(ReviewRole.HARDWARE_EXPERT, List.of("BMS021")))), "BMS010"))
+        assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.START_SCHEMATIC_EXPERT_ASSIGNMENT,
+                null, "BMS010"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessage("互检单意见尚未全部确认通过，不能开启原理图评审；以下评审人尚未确认提交：BMS020");
+                .hasMessage("互检单意见尚未全部确认通过，不能开启硬件专家分配；以下评审人尚未确认提交：BMS020");
     }
 
     @Test

@@ -302,6 +302,13 @@ public class WorkflowApplicationService {
                 activeReviewerEmployeeNos.addAll(reviewerEmployeeNosForRoles(task, ReviewRole.HARDWARE_EXPERT,
                         ReviewRole.EMC_EXPERT, ReviewRole.PCB_EXPERT));
             }
+            case START_SCHEMATIC_EXPERT_ASSIGNMENT -> {
+                // 原理图互检结束后，任务先流转给硬件部开发经理；经理完成角色—专家分配后才进入原理图评审。
+                activeReviewerEmployeeNos.clear();
+                if (task.getExpertLeaderEmployeeNo() != null && !task.getExpertLeaderEmployeeNo().isBlank()) {
+                    activeReviewerEmployeeNos.add(task.getExpertLeaderEmployeeNo());
+                }
+            }
             case PENDING_FINISH, FINISH -> activeReviewerEmployeeNos.clear();
             default -> { }
         }
@@ -444,8 +451,11 @@ public class WorkflowApplicationService {
             case START_SCHEMATIC_MATUAL_REVIEW -> requireTransition(reviewType == ReviewType.SCHEMATIC
                             && current == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT,
                     TaskStatus.MUTUAL_CHECK_REVIEWING);
-            case START_SCHEMATIC_EXPERT_REVIEW -> requireHardwareManagerTransition(task,
+            case START_SCHEMATIC_EXPERT_ASSIGNMENT -> requireDesignerTransition(task,
                     reviewType == ReviewType.SCHEMATIC && current == TaskStatus.MUTUAL_CHECK_REVIEWING,
+                    TaskStatus.SCHEMATIC_EXPERT_PENDING_ASSIGNMENT, operatorEmployeeNo);
+            case START_SCHEMATIC_EXPERT_REVIEW -> requireHardwareManagerTransition(task,
+                    reviewType == ReviewType.SCHEMATIC && current == TaskStatus.SCHEMATIC_EXPERT_PENDING_ASSIGNMENT,
                     TaskStatus.SCHEMATIC_REVIEWING, operatorEmployeeNo);
             case PENDING_FINISH -> requireDesignerTransition(task,
                     (reviewType == ReviewType.PCB && current == TaskStatus.MUTUAL_CHECK_REVIEWING)
@@ -497,9 +507,9 @@ public class WorkflowApplicationService {
             case START_PCB_MATUAL_ASSIGNMENT -> requireStageCompleted(task,
                     List.of(OpinionSourceType.PCB_PROCESS_REVIEW, OpinionSourceType.PCB_STRUCTURE_REVIEW),
                     pcbOptionalReviewSubmissionRequirements(task), "工艺或结构评审意见尚未全部确认通过，不能开启互检单分配");
-            case START_SCHEMATIC_EXPERT_REVIEW ->
+            case START_SCHEMATIC_EXPERT_ASSIGNMENT ->
                     requireStageCompleted(task, List.of(OpinionSourceType.MUTUAL_CHECK_ITEM, OpinionSourceType.MUTUAL_EXTRA),
-                            mutualCheckSubmissionRequirements(task), "互检单意见尚未全部确认通过，不能开启原理图评审");
+                            mutualCheckSubmissionRequirements(task), "互检单意见尚未全部确认通过，不能开启硬件专家分配");
             case PENDING_FINISH -> {
                 if (ReviewType.PCB.name().equals(task.getReviewType())) {
                     requireStageCompleted(task, List.of(OpinionSourceType.MUTUAL_CHECK_ITEM, OpinionSourceType.MUTUAL_EXTRA),

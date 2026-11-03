@@ -2,7 +2,6 @@ package com.bms.archive.interfaces;
 
 import com.bms.archive.application.TaskArchiveApplicationService;
 import com.bms.archive.application.TaskArchiveOpinionExportApplicationService;
-import com.bms.task.application.TaskApplicationService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -25,13 +24,11 @@ class TaskArchiveControllerTest {
 
     @Test
     void shouldReturnExcelDownloadResponseForOpinionExport() {
-        TaskApplicationService taskApplicationService = mock(TaskApplicationService.class);
         TaskArchiveApplicationService taskArchiveApplicationService = mock(TaskArchiveApplicationService.class);
         TaskArchiveOpinionExportApplicationService exportApplicationService = mock(TaskArchiveOpinionExportApplicationService.class);
         when(exportApplicationService.export(101L)).thenReturn(
                 new TaskArchiveOpinionExportApplicationService.ExportedExcel("22PCB评审检查表.xlsx", new byte[] {1, 2, 3}));
-        TaskArchiveController controller = new TaskArchiveController(taskApplicationService, taskArchiveApplicationService,
-                exportApplicationService);
+        TaskArchiveController controller = new TaskArchiveController(taskArchiveApplicationService, exportApplicationService);
 
         ResponseEntity<byte[]> response = controller.exportOpinions(101L);
 
@@ -47,7 +44,7 @@ class TaskArchiveControllerTest {
         assertThat(ContentDisposition.parse(disposition).getFilename()).isEqualTo("22PCB评审检查表.xlsx");
         assertThat(response.getHeaders().getFirst(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS))
                 .isEqualTo(HttpHeaders.CONTENT_DISPOSITION);
-        verifyNoInteractions(taskApplicationService, taskArchiveApplicationService);
+        verifyNoInteractions(taskArchiveApplicationService);
     }
 
     @Test
@@ -56,7 +53,7 @@ class TaskArchiveControllerTest {
         byte[] xlsxBytes = new byte[] {'P', 'K', 3, 4};
         when(exportApplicationService.export(101L)).thenReturn(
                 new TaskArchiveOpinionExportApplicationService.ExportedExcel("BMS项目PCB评审检查表.xlsx", xlsxBytes));
-        MockMvc mvc = MockMvcBuilders.standaloneSetup(new TaskArchiveController(mock(TaskApplicationService.class),
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new TaskArchiveController(
                 mock(TaskArchiveApplicationService.class), exportApplicationService)).build();
 
         MvcResult result = mvc.perform(get("/tasks/{taskId}/archive/export", 101L)

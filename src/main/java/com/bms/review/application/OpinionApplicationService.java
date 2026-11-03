@@ -324,8 +324,8 @@ public class OpinionApplicationService {
         ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
         return switch (sourceType) {
             case PCB_REVIEW -> reviewType == ReviewType.PCB && status == TaskStatus.PCB_EXPERT_REVIEWING;
-            // 原理图没有独立的专家分配节点：互检阶段由当前互检执行人使用
-            // SCHEMATIC_REVIEW 确认其评审结果。
+            // 原理图互检阶段保留 SCHEMATIC_REVIEW 的无意见确认兼容逻辑；
+            // 进入“硬件专家分配”后不允许提交意见，经理分配完成并进入原理图评审后才由专家提交。
             case SCHEMATIC_REVIEW -> reviewType == ReviewType.SCHEMATIC
                     && (status == TaskStatus.SCHEMATIC_REVIEWING || status == TaskStatus.MUTUAL_CHECK_REVIEWING);
             case PCB_PROCESS_REVIEW, PCB_STRUCTURE_REVIEW -> reviewType == ReviewType.PCB

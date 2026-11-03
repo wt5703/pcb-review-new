@@ -99,7 +99,7 @@ public class TaskController {
     }
 
     @GetMapping("/my")
-    @Operation(summary = "查询我的待办任务", description = "返回当前流程节点需要当前用户评审、提交流程、答复、确认、分配或结束的任务；PCB 任务在专家评审、工艺/结构评审阶段，以及原理图任务在互检单评审、原理图评审阶段，均会返回给设计者。")
+    @Operation(summary = "查询我的待办任务", description = "返回当前流程节点需要当前用户评审、提交流程、答复、确认、分配或结束的任务；原理图互检闭环后，设计者提交 START_SCHEMATIC_EXPERT_ASSIGNMENT 进入硬件专家分配，硬件部开发经理在该状态下执行专家分配。")
     ApiResponse<List<MyTaskApplicationService.MyTaskView>> myTasks(@NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
         return ApiResponse.ok(myTaskApplicationService.list(employeeNo), getTraceId(servletRequest));
     }

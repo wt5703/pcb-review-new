@@ -56,7 +56,7 @@ public class MyTaskApplicationService {
                         .toList());
         for (ReviewTaskRecord task : unfinishedTasks) {
             EnumSet<MyTaskAction> taskActions = EnumSet.noneOf(MyTaskAction.class);
-            if (assignmentAccessMapper.isCurrentTaskProcessor(task.getId(), operatorEmployeeNo)) {
+            if (isReviewingStatus(task) && assignmentAccessMapper.isCurrentTaskProcessor(task.getId(), operatorEmployeeNo)) {
                 taskActions.add(MyTaskAction.REVIEW);
             }
             if (pendingReplyTaskIds.contains(task.getId())) {
@@ -73,6 +73,15 @@ public class MyTaskApplicationService {
         }
         return unfinishedTasks.stream().filter(task -> actions.containsKey(task.getId()))
                 .map(task -> toView(task, actions.get(task.getId()), reviewerProfiles)).toList();
+    }
+
+    /** 人员被指派为流程处理人不等于需要填写评审意见；分配节点只显示“分配评审人”操作。 */
+    private boolean isReviewingStatus(ReviewTaskRecord task) {
+        return switch (TaskStatus.valueOf(task.getStatus())) {
+            case PCB_EXPERT_REVIEWING, PCB_PROCESS_STRUCTURE_REVIEWING,
+                    MUTUAL_CHECK_REVIEWING, SCHEMATIC_REVIEWING -> true;
+            default -> false;
+        };
     }
 
     /**
@@ -129,7 +138,8 @@ public class MyTaskApplicationService {
             return;
         }
         if (status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT
-                || (ReviewType.SCHEMATIC.name().equals(task.getReviewType()) && status == TaskStatus.MUTUAL_CHECK_REVIEWING)) {
+                || (ReviewType.SCHEMATIC.name().equals(task.getReviewType())
+                && status == TaskStatus.SCHEMATIC_EXPERT_PENDING_ASSIGNMENT)) {
             actions.add(MyTaskAction.ASSIGN_REVIEWERS);
         }
         if (status == TaskStatus.PENDING_FINISH) {

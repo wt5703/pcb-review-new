@@ -109,6 +109,19 @@ class MyTaskApplicationServiceTest {
     }
 
     @Test
+    void shouldIncludeSchematicExpertAssignmentForHardwareManager() {
+        ReviewTaskRecord task = task(1L, "BMS010", TaskStatus.SCHEMATIC_EXPERT_PENDING_ASSIGNMENT);
+        task.setReviewType(ReviewType.SCHEMATIC.name());
+        when(taskMapper.findAllUnfinished()).thenReturn(List.of(task));
+        when(assignmentAccessMapper.isCurrentTaskProcessor(1L, "BMS001")).thenReturn(true);
+
+        List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS001");
+
+        assertThat(tasks).singleElement().satisfies(item ->
+                assertThat(item.actions()).containsExactly(MyTaskAction.ASSIGN_REVIEWERS));
+    }
+
+    @Test
     void shouldIncludePcbTasksForDesignerWhenWorkflowSubmissionIsRequired() {
         ReviewTaskRecord expertReviewTask = task(1L, "BMS010", TaskStatus.PCB_EXPERT_REVIEWING);
         ReviewTaskRecord processStructureReviewTask = task(2L, "BMS010", TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
