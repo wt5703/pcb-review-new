@@ -6,6 +6,7 @@ import com.bms.common.ErrorCode;
 import com.bms.file.application.FileApplicationService;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.domain.FileCategory;
+import com.bms.identity.domain.SystemRole;
 import com.bms.notification.infrastructure.OutboxEventMapper;
 import com.bms.notification.infrastructure.OutboxEventRecord;
 import com.bms.notification.application.ReviewMailNotificationApplicationService;
@@ -43,7 +44,7 @@ import java.util.Set;
 @Service
 public class WorkflowApplicationService {
     private static final Set<ReviewRole> SCHEMATIC_MANAGER_ASSIGNED_ROLES =
-            Set.of(ReviewRole.HARDWARE_EXPERT, ReviewRole.EMC_EXPERT);
+            Set.of(ReviewRole.HARDWARE_EXPERT);
     private final ReviewTaskMapper taskMapper;
     private final ReviewOpinionMapper opinionMapper;
     private final ReviewFileMapper fileMapper;
@@ -74,11 +75,11 @@ public class WorkflowApplicationService {
         this.reviewMailNotificationApplicationService = reviewMailNotificationApplicationService;
     }
 
-    /** 返回可供分配的专家白名单；原理图任务由硬件部开发经理在互检结束后分配硬件、EMC 专家。 */
+    /** 返回流程分配使用的专家白名单；原理图任务由硬件部开发经理在互检结束后分配硬件专家。 */
     public List<ReviewerWhitelistApplicationService.AssignableReviewerView> listAssignableReviewers(ReviewType reviewType) {
         List<ReviewerWhitelistRole> roles = reviewType == ReviewType.PCB
                 ? List.of(ReviewerWhitelistRole.EMC_EXPERT, ReviewerWhitelistRole.PCB_EXPERT)
-                : List.of(ReviewerWhitelistRole.HARDWARE_EXPERT, ReviewerWhitelistRole.EMC_EXPERT);
+                : List.of(ReviewerWhitelistRole.HARDWARE_EXPERT);
         return reviewerWhitelistApplicationService.listAssignableUsers(roles);
     }
 
@@ -253,7 +254,7 @@ public class WorkflowApplicationService {
     }
 
     /**
-     * 原理图任务创建时不会预先指定硬件、EMC 专家。经理分配时仅替换这两个角色，保留其他角色的既有分配。
+     * 原理图任务创建时已指定 EMC 专家；经理分配时仅替换硬件专家，保留 EMC 及其他角色的既有分配。
      */
     private void replaceSchematicManagerAssignments(TransitionContext context) {
         if (context.action() != WorkflowAction.START_SCHEMATIC_EXPERT_REVIEW) {
@@ -270,7 +271,7 @@ public class WorkflowApplicationService {
     /**
      * assigned_reviewer_employee_nos 只保存当前已开启节点的待处理人员：
      * - PCB 首轮仅 PCB、EMC 专家，工艺/结构在各自节点开启时追加；
-     * - 互检使用本次分配的人员；原理图硬件、EMC 专家由硬件部开发经理在互检结束后分配；
+     * - 互检使用本次分配的人员；原理图 EMC 专家在创建时分配，硬件专家由硬件部开发经理在互检结束后分配；
      * - 已通过前一节点校验的历史人员在进入下一节点时清理，兼容旧数据中曾预写全部人员的情况。
      */
     private void refreshActiveReviewers(TransitionContext context) {
@@ -296,6 +297,7 @@ public class WorkflowApplicationService {
                 task.setMutualCheckReviewerEmployeeNos(TaskReviewerAssignmentCodec
                         .encodeReviewerEmployeeNos(context.reviewerEmployeeNos()));
             }
+            case START_PCB_MATUAL_ASSIGNMENT -> activeReviewerEmployeeNos.clear();
             case START_SCHEMATIC_EXPERT_REVIEW -> {
                 // 原理图互检意见已闭环，切换到硬件部开发经理刚刚指定的原理图评审专家。
                 activeReviewerEmployeeNos.clear();
@@ -303,11 +305,8 @@ public class WorkflowApplicationService {
                         ReviewRole.EMC_EXPERT, ReviewRole.PCB_EXPERT));
             }
             case START_SCHEMATIC_EXPERT_ASSIGNMENT -> {
-                // 原理图互检结束后，任务先流转给硬件部开发经理；经理完成角色—专家分配后才进入原理图评审。
+                // 原理图互检结束后，任务进入硬件专家分配；具备 HARDWARE-MANAGER 角色的人员可处理该待办。
                 activeReviewerEmployeeNos.clear();
-                if (task.getExpertLeaderEmployeeNo() != null && !task.getExpertLeaderEmployeeNo().isBlank()) {
-                    activeReviewerEmployeeNos.add(task.getExpertLeaderEmployeeNo());
-                }
             }
             case PENDING_FINISH, FINISH -> activeReviewerEmployeeNos.clear();
             default -> { }
@@ -416,19 +415,19 @@ public class WorkflowApplicationService {
                 .filter(SCHEMATIC_MANAGER_ASSIGNED_ROLES::contains)
                 .collect(java.util.stream.Collectors.toSet());
         if (expectedRoles.isEmpty()) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "原理图任务未配置硬件或 EMC 评审角色");
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "原理图任务未配置硬件评审角色");
         }
         Map<ReviewRole, List<String>> reviewersByRole = new LinkedHashMap<>();
         for (TaskReviewerAssignment assignment : assignments == null ? List.<TaskReviewerAssignment>of() : assignments) {
             if (!SCHEMATIC_MANAGER_ASSIGNED_ROLES.contains(assignment.reviewRole())) {
-                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "硬件部开发经理仅可分配硬件评审和 EMC 评审人员");
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "硬件部开发经理仅可分配硬件评审人员");
             }
             if (reviewersByRole.putIfAbsent(assignment.reviewRole(), assignment.reviewerEmployeeNos()) != null) {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "同一评审角色只能分配一组专家");
             }
         }
         if (!reviewersByRole.keySet().equals(expectedRoles) || reviewersByRole.values().stream().anyMatch(List::isEmpty)) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "请为每个已选择的硬件、EMC 评审角色至少指定一名专家");
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "请为每个已选择的硬件评审角色至少指定一名专家");
         }
     }
 
@@ -446,11 +445,13 @@ public class WorkflowApplicationService {
             case START_PCB_MATUAL_ASSIGNMENT -> requireDesignerTransition(task, reviewType == ReviewType.PCB
                             && (current == TaskStatus.PCB_EXPERT_REVIEWING || current == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING),
                     TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT, operatorEmployeeNo);
-            case START_PCB_MATUAL_REVIEW -> requireTransition(reviewType == ReviewType.PCB && current == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT,
-                    TaskStatus.MUTUAL_CHECK_REVIEWING);
-            case START_SCHEMATIC_MATUAL_REVIEW -> requireTransition(reviewType == ReviewType.SCHEMATIC
-                            && current == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT,
-                    TaskStatus.MUTUAL_CHECK_REVIEWING);
+            case START_PCB_MATUAL_REVIEW -> requireSystemRoleTransition(task,
+                    reviewType == ReviewType.PCB && current == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT,
+                    TaskStatus.MUTUAL_CHECK_REVIEWING, operatorEmployeeNo, SystemRole.PCB_LEADER,
+                    "仅具备 PCB-LEADER 角色的用户可以分配 PCB 互检单评审人员");
+            case START_SCHEMATIC_MATUAL_REVIEW -> requireSchematicLeaderTransition(task,
+                    reviewType == ReviewType.SCHEMATIC && current == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT,
+                    TaskStatus.MUTUAL_CHECK_REVIEWING, operatorEmployeeNo);
             case START_SCHEMATIC_EXPERT_ASSIGNMENT -> requireDesignerTransition(task,
                     reviewType == ReviewType.SCHEMATIC && current == TaskStatus.MUTUAL_CHECK_REVIEWING,
                     TaskStatus.SCHEMATIC_EXPERT_PENDING_ASSIGNMENT, operatorEmployeeNo);
@@ -482,13 +483,36 @@ public class WorkflowApplicationService {
         return target;
     }
 
-    /** 原理图硬件、EMC 专家由创建任务时指定的硬件部开发经理分配。 */
+    private TaskStatus requireSystemRoleTransition(ReviewTaskRecord task, boolean allowedStatus, TaskStatus target,
+                                                   String operatorEmployeeNo, SystemRole role, String forbiddenMessage) {
+        if (!allowedStatus) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "当前任务状态不允许执行该流程动作");
+        }
+        if (!reviewerWhitelistApplicationService.hasSystemRole(operatorEmployeeNo, role)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, forbiddenMessage);
+        }
+        return target;
+    }
+
+    private TaskStatus requireSchematicLeaderTransition(ReviewTaskRecord task, boolean allowedStatus, TaskStatus target,
+                                                        String operatorEmployeeNo) {
+        if (!allowedStatus) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "当前任务状态不允许执行该流程动作");
+        }
+        if (!operatorEmployeeNo.equals(task.getExpertLeaderEmployeeNo())
+                || !reviewerWhitelistApplicationService.hasSystemRole(operatorEmployeeNo, SystemRole.SCHEMATIC_LEADER)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "仅任务指定且具备 SCHEMATIC-LEADER 角色的原理图组长可以分配互检单评审人员");
+        }
+        return target;
+    }
+
+    /** 原理图硬件专家分配任务仅归属于具备 HARDWARE-MANAGER 角色的用户。 */
     private TaskStatus requireHardwareManagerTransition(ReviewTaskRecord task, boolean allowedStatus, TaskStatus target,
                                                         String operatorEmployeeNo) {
         if (!allowedStatus) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "当前任务状态不允许执行该流程动作");
         }
-        if (!operatorEmployeeNo.equals(task.getExpertLeaderEmployeeNo())) {
+        if (!reviewerWhitelistApplicationService.hasSystemRole(operatorEmployeeNo, SystemRole.HARDWARE_MANAGER)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "仅硬件部开发经理可以分配原理图评审人员");
         }
         return target;

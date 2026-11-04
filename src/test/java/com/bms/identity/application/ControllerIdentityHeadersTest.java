@@ -22,8 +22,8 @@ class ControllerIdentityHeadersTest {
                 "DictionaryController.taskOptions", "WorkflowController.listAssignableReviewers",
                 "WorkflowController.listMutualCheckReviewers", "ReviewerWhitelistController.list",
                 "ReviewerWhitelistController.people", "CheckItemTemplateController.checkExistence",
-                "TaskController.list",
-                "TaskArchiveController.exportOpinions",
+                "TaskController.list", "TaskController.detail",
+                "TaskArchiveController.exportOpinions", "TaskArchiveController.get",
                 "CheckItemTemplateController.importWorkbook", "CheckItemTemplateController.get",
                 "CheckItemTemplateController.create", "CheckItemTemplateController.createItem",
                 "CheckItemTemplateController.update",
@@ -31,7 +31,7 @@ class ControllerIdentityHeadersTest {
         Set<String> bothIdentityHeaders = Set.of(
                 "CurrentUserController.currentUser", "TaskController.saveTaskDraft", "TaskController.submitTask",
                 "OpinionController.raise", "OpinionController.submitNoOpinion",
-                "CheckItemController.submit", "CheckItemController.submitBatch");
+                "CheckItemController.submit", "CheckItemController.submitBatch", "CheckItemController.saveBatch");
         var scanner = new ClassPathScanningCandidateComponentProvider(false);
         scanner.addIncludeFilter(new AnnotationTypeFilter(RestController.class));
         var controllers = scanner.findCandidateComponents("com.bms");

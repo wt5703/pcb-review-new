@@ -167,14 +167,14 @@ public class TaskController {
             @Schema(description = "评审类型：PCB 表示 PCB 评审，SCHEMATIC 表示原理图评审", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull ReviewType reviewType,
             @Schema(description = "任务名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String taskName,
             @Schema(description = "项目编号") String projectNo,
-            @Schema(description = "项目名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String projectName,
+            @Schema(description = "项目名称，可不传") String projectName,
             @Schema(description = "设计者姓名；优先使用该 JSON 字段保存，避免中文姓名通过请求头传输时乱码", requiredMode = Schema.RequiredMode.REQUIRED) String designerName,
             @Schema(description = "原理图名称或 PCB 名称；随评审类型在页面显示不同标签", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String designName,
             @Schema(description = "PCB 板类型。PCB 评审必填，可选 BMU板、BSU板、分流器板、高压板、转接板、储能板、其他；原理图评审可不传") String pcbType,
             @Schema(description = "期望完成日期，格式 yyyy-MM-dd", example = "2026-09-30", requiredMode = Schema.RequiredMode.REQUIRED) @JsonFormat(pattern = "yyyy-MM-dd") LocalDate expectedCompletedDate,
-            @Schema(description = "原理图硬件部开发经理的企业工号；该人员在互检结束后分配硬件、EMC 评审专家。PCB 任务不需要传，默认使用当前登录设计者", example = "10002") String expertLeaderEmployeeNo,
+            @Schema(description = "原理图组长的企业工号；必须具备 SCHEMATIC-LEADER 角色，原理图互检单待分配任务仅归属于该人员。PCB 任务不需要传，默认使用当前登录设计者", example = "10002") String expertLeaderEmployeeNo,
             @Schema(description = "评审角色，可多选；PCB 仅支持硬件、EMC、PCB、工艺、结构，原理图仅支持硬件、EMC", requiredMode = Schema.RequiredMode.REQUIRED) List<ReviewRole> reviewRoles,
-            @Schema(description = "创建时分配的白名单专家；原理图的硬件、EMC 评审角色不传人员，由硬件部开发经理在互检结束后分配") List<@Valid ReviewerAssignmentRequest> reviewerAssignments,
+            @Schema(description = "创建时分配的白名单专家；原理图只需分配 EMC 评审专家，硬件评审专家由硬件部开发经理在互检结束后分配") List<@Valid ReviewerAssignmentRequest> reviewerAssignments,
             @Schema(description = "评审描述，可不传") String reviewDescription,
             @Schema(description = "前端调用文件上传接口后返回的文件 UUID 列表；后端按 UUID 读取并保存文件元数据，同一任务不可重复传入相同 UUID") List<@NotBlank String> files) { }
 

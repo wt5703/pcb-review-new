@@ -105,7 +105,7 @@ public class ReviewMailNotificationApplicationService {
                 latestAttachments(task.getId(), categories), Map.of("projectName", task.getProjectName(), "reviewName", reviewName));
     }
 
-    /** 硬件部开发经理完成原理图硬件、EMC 专家分配后，通知刚进入评审阶段的实际专家。 */
+    /** 硬件部开发经理完成原理图硬件专家分配后，通知刚进入评审阶段的全部实际专家。 */
     public void enqueueSchematicReviewStarted(ReviewTaskRecord task) {
         List<TaskReviewerAssignment> receivers = filter(assignments(task), assignment ->
                 assignment.reviewRole() == ReviewRole.HARDWARE_EXPERT || assignment.reviewRole() == ReviewRole.EMC_EXPERT);

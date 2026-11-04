@@ -127,8 +127,9 @@ public class TaskCheckItemApplicationService {
     }
 
     /**
-     * 保存互检单草稿。FAIL 产生的意见带 isDraft 标记，不进入设计者答复、意见统计和设计者待办；
-     * 草稿仍会阻止专家确认提交及设计者推进流程，后续调用 submitBatch 后才会发布为正式意见。
+     * 保存互检单草稿。草稿不校验意见文字和富文本是否为空；FAIL 产生的意见带 isDraft 标记，
+     * 不进入设计者答复、意见统计和设计者待办。草稿仍会阻止专家确认提交及设计者推进流程，
+     * 后续调用 submitBatch 后才会发布为正式意见。
      */
     @Transactional
     public List<CheckItemView> saveBatch(long taskId, List<SubmitBatchItemCommand> commands, String operatorEmployeeNo, String operatorName) {
@@ -151,7 +152,7 @@ public class TaskCheckItemApplicationService {
             TaskCheckItemRecord record = taskCheckItemMapper.findByTaskIdAndId(taskId, command.itemId());
             if (record == null) { throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务"); }
             requireLeafCheckItem(record);
-            validateBatchCommand(command);
+            validateBatchCommand(command, draft);
 
             // 3. 结论与同源意见保持一致：保存时 FAIL 仅写草稿，提交时才发布为设计者可答复的意见。
             ReviewOpinionRecord opinion = command.result() == CheckResult.FAIL
@@ -263,8 +264,13 @@ public class TaskCheckItemApplicationService {
         }
     }
 
-    private void validateBatchCommand(SubmitBatchItemCommand command) {
-        validateResult(command.result(), command.comment());
+    private void validateBatchCommand(SubmitBatchItemCommand command, boolean draft) {
+        if (command.result() == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "检查结果不能为空");
+        }
+        if (!draft) {
+            validateResult(command.result(), command.comment());
+        }
     }
 
     private void validateResult(CheckResult result, String comment) {
@@ -278,8 +284,11 @@ public class TaskCheckItemApplicationService {
                                                             String operatorEmployeeNo, String operatorName, boolean draft) {
         // comment 是问题描述，必须保留前端传入的纯文本；richText 仅保存富文本内容。
         // 未传富文本时才以 comment 作为富文本回显的兜底值，不能反向覆盖 comment。
-        String opinionComment = comment.trim();
-        String opinionRichText = richText == null || richText.isBlank() ? opinionComment : richText.trim();
+        String opinionComment = normalizeText(comment);
+        String opinionRichText = normalizeText(richText);
+        if (!draft && opinionRichText.isBlank()) {
+            opinionRichText = opinionComment;
+        }
         ReviewOpinionRecord opinion = opinionMapper.findActiveMutualCheckItemOpinion(taskId, item.getId(), OpinionSourceType.MUTUAL_CHECK_ITEM);
         if (opinion == null) {
             opinion = new ReviewOpinionRecord(); opinion.setId(opinionMapper.nextOpinionId()); opinion.setTaskId(taskId);
@@ -301,6 +310,10 @@ public class TaskCheckItemApplicationService {
             }
         }
         return opinion;
+    }
+
+    private String normalizeText(String value) {
+        return value == null ? "" : value.trim();
     }
 
     /**

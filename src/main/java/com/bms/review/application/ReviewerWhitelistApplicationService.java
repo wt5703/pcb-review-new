@@ -2,6 +2,7 @@ package com.bms.review.application;
 
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
+import com.bms.identity.domain.SystemRole;
 import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.review.infrastructure.AssignableReviewerRecord;
@@ -264,6 +265,15 @@ public class ReviewerWhitelistApplicationService {
         return employeeNos.stream().distinct().map(this::findByEmployeeNo).toList();
     }
 
+    /** 当前用户是否拥有用户中心 PCB 评审工具中配置的系统角色。 */
+    public boolean hasSystemRole(String employeeNo, SystemRole systemRole) {
+        if (employeeNo == null || employeeNo.isBlank() || systemRole == null) {
+            return false;
+        }
+        ReviewerWhitelistRecord record = whitelistMapper.findActiveByEmployeeNo(employeeNo);
+        return record != null && systemRoles(record.getRoles()).contains(systemRole.code());
+    }
+
     /** 暂不校验人员和角色是否属于白名单；已有人员资料仍用于返回展示信息。 */
     public List<WhitelistPersonView> findByRoleAndEmployeeNos(ReviewerWhitelistRole whitelistRole,
                                                                List<String> employeeNos) {
@@ -278,12 +288,12 @@ public class ReviewerWhitelistApplicationService {
     }
 
     /**
-     * 用户中心成功返回至少一项资料时才覆盖已有缓存，避免临时网络故障清空已保存的邮箱、手机号等数据。
+     * 用户中心成功返回至少一项资料或 PCB 系统角色时才覆盖已有缓存，避免临时网络故障清空已保存的邮箱、手机号等数据。
      */
     private boolean fillProfile(ReviewerWhitelistRecord record) {
         UserCenterUserProfileClient.UserProfile profile = userProfileClient.getByEmployeeNo(record.getEmployeeNo());
         boolean profileAvailable = !record.getEmployeeNo().equals(profile.displayName())
-                || profile.email() != null || profile.mobile() != null || profile.deptName() != null;
+                || profile.email() != null || profile.mobile() != null || profile.deptName() != null || !profile.roles().isEmpty();
         if (!profileAvailable) {
             if (record.getId() == null) {
                 record.setDisplayName(record.getEmployeeNo());
@@ -294,12 +304,24 @@ public class ReviewerWhitelistApplicationService {
         record.setEmail(profile.email());
         record.setMobile(profile.mobile());
         record.setDepartmentName(profile.deptName());
+        record.setRoles(String.join(",", profile.roles()));
         return true;
     }
 
     private ReviewerWhitelistView toView(ReviewerWhitelistRecord record, List<ReviewerWhitelistRole> roles) {
         return new ReviewerWhitelistView(record.getId(), List.copyOf(roles), record.getEmployeeNo(),
-                record.getDisplayName(), record.getEmail(), record.getMobile(), record.getDepartmentName(), record.getCreatedAt());
+                record.getDisplayName(), record.getEmail(), record.getMobile(), record.getDepartmentName(), systemRoles(record.getRoles()), record.getCreatedAt());
+    }
+
+    private List<String> systemRoles(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(value.split(","))
+                .filter(role -> role != null && !role.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
     }
 
     private int normalizePageNum(Integer pageNum) {
@@ -319,7 +341,13 @@ public class ReviewerWhitelistApplicationService {
     public record RoleEmployeeNos(ReviewerWhitelistRole reviewRole, List<String> employeeNos) { }
     public record RoleEmployeeNosView(ReviewerWhitelistRole reviewRole, List<String> employeeNos) { }
     public record ReviewerWhitelistView(Long id, List<ReviewerWhitelistRole> reviewRoles, String employeeNo, String displayName,
-                                        String email, String mobile, String deptName, java.time.LocalDateTime createdAt) { }
+                                        String email, String mobile, String deptName, List<String> roles,
+                                        java.time.LocalDateTime createdAt) {
+        public ReviewerWhitelistView(Long id, List<ReviewerWhitelistRole> reviewRoles, String employeeNo, String displayName,
+                                     String email, String mobile, String deptName, java.time.LocalDateTime createdAt) {
+            this(id, reviewRoles, employeeNo, displayName, email, mobile, deptName, List.of(), createdAt);
+        }
+    }
     public record ReviewerWhitelistQuery(String keyword, Integer pageNum, Integer pageSize) { }
     /** 分页响应字段与前端约定为 pageNum、pageSize、total。 */
     public record ReviewerWhitelistPage(long total, int pageNum, int pageSize, List<ReviewerWhitelistView> items) { }

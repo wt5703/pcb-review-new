@@ -40,7 +40,7 @@ public final class ReviewTask {
         this.reviewType = Objects.requireNonNull(reviewType);
         this.taskName = requireText(taskName, "任务名称不能为空");
         this.projectNo = projectNo == null ? "" : projectNo.trim();
-        this.projectName = requireText(projectName, "项目名称不能为空");
+        this.projectName = projectName == null ? "" : projectName.trim();
         this.designerEmployeeNo = requireText(designerEmployeeNo, "设计者工号不能为空");
         this.designerName = requireText(designerName, "设计者姓名不能为空");
         this.designName = requireText(designName, "设计名称不能为空");

@@ -44,7 +44,7 @@ public class ReviewerWhitelistController {
     }
 
     @PostMapping("/query")
-    @Operation(summary = "分页查询评审人员白名单", description = "按人员分页，每人返回一条及全部有效角色 reviewRoles；keyword 支持工号或姓名，分页参数为 pageNum、pageSize。")
+    @Operation(summary = "分页查询评审人员白名单", description = "按人员分页，每人返回一条、全部有效白名单角色 reviewRoles，以及用户中心 PCB 系统角色 roles；keyword 支持工号或姓名，分页参数为 pageNum、pageSize。")
     ApiResponse<ReviewerWhitelistApplicationService.ReviewerWhitelistPage> list(
             @RequestBody(required = false) ReviewerWhitelistQueryRequest request,
             HttpServletRequest servletRequest) {

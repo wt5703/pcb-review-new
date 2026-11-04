@@ -48,7 +48,7 @@ class TaskControllerIntegrationTest {
         reviewFileMapper.insert(pending(pcbFileId, "BMS-P2.pcb", 8L, "company-p2-pcb"));
         reviewFileMapper.insert(pending(schematicFileId, "BMS-P2.sch", 13L, "company-p2-sch"));
         String request = """
-                {"reviewType":"PCB","taskName":"多文件一体化创建","projectName":"BMS","designName":"BMS-P2","pcbType":"BMU","expectedCompletedDate":"2026-09-30","reviewRoles":["PCB_EXPERT"],"files":["c778c14e-6f1a-4f4f-9f11-100000000001","c778c14e-6f1a-4f4f-9f11-100000000002"]}
+                {"reviewType":"PCB","taskName":"多文件一体化创建","projectName":"BMS","designName":"BMS-P2","pcbType":"BMU","expectedCompletedDate":"2026-09-30","reviewRoles":["PCB_EXPERT"],"reviewerAssignments":[{"reviewRole":"PCB_EXPERT","reviewerEmployeeNos":["BMS003"]}],"files":["c778c14e-6f1a-4f4f-9f11-100000000001","c778c14e-6f1a-4f4f-9f11-100000000002"]}
                 """;
 
         String response = mockMvc.perform(post("/tasks/submit").contentType(MediaType.APPLICATION_JSON).content(request)
@@ -71,7 +71,7 @@ class TaskControllerIntegrationTest {
         reviewFileMapper.insert(pending(firstFileId, "BMS-DRAFT-A.pcb", 8L, "company-draft-a"));
         reviewFileMapper.insert(pending(secondFileId, "BMS-DRAFT-B.sch", 13L, "company-draft-b"));
         String request = """
-                {"reviewType":"PCB","taskName":"多文件草稿保存","projectName":"BMS","designName":"BMS-DRAFT","pcbType":"BMU","expectedCompletedDate":"2026-09-30","reviewRoles":["PCB_EXPERT"],"files":["c778c14e-6f1a-4f4f-9f11-100000000021","c778c14e-6f1a-4f4f-9f11-100000000022"]}
+                {"reviewType":"PCB","taskName":"多文件草稿保存","projectName":"BMS","designName":"BMS-DRAFT","pcbType":"BMU","expectedCompletedDate":"2026-09-30","reviewRoles":["PCB_EXPERT"],"reviewerAssignments":[{"reviewRole":"PCB_EXPERT","reviewerEmployeeNos":["BMS003"]}],"files":["c778c14e-6f1a-4f4f-9f11-100000000021","c778c14e-6f1a-4f4f-9f11-100000000022"]}
                 """;
 
         String response = mockMvc.perform(post("/tasks/save").contentType(MediaType.APPLICATION_JSON).content(request)
@@ -103,7 +103,7 @@ class TaskControllerIntegrationTest {
     @Test
     void shouldCreateSubmitAndQueryTaskThroughRestApi() throws Exception {
         String taskRequest = """
-                {"reviewType":"PCB","taskName":"REST-BMS PCB评审","projectNo":"PRJ-REST-001","projectName":"BMS","designName":"BMS-P1","pcbType":"BMU"}
+                {"reviewType":"PCB","taskName":"REST-BMS PCB评审","projectNo":"PRJ-REST-001","projectName":"BMS","designName":"BMS-P1","pcbType":"BMU","reviewRoles":["PCB_EXPERT"],"reviewerAssignments":[{"reviewRole":"PCB_EXPERT","reviewerEmployeeNos":["BMS003"]}]}
                 """;
         String createResponse = mockMvc.perform(post("/tasks/save").contentType(MediaType.APPLICATION_JSON).content(taskRequest)
                         .header("userId", "BMS010")
@@ -114,7 +114,7 @@ class TaskControllerIntegrationTest {
         long taskId = ((Number) com.jayway.jsonpath.JsonPath.read(createResponse, "$.data.id")).longValue();
 
         String updateTaskRequest = """
-                {"reviewType":"PCB","taskName":"REST-BMS PCB评审（已编辑）","projectNo":"PRJ-REST-002","projectName":"BMS","designName":"BMS-P1","pcbType":"BMU"}
+                {"reviewType":"PCB","taskName":"REST-BMS PCB评审（已编辑）","projectNo":"PRJ-REST-002","projectName":"BMS","designName":"BMS-P1","pcbType":"BMU","reviewRoles":["PCB_EXPERT"],"reviewerAssignments":[{"reviewRole":"PCB_EXPERT","reviewerEmployeeNos":["BMS003"]}]}
                 """;
         mockMvc.perform(post("/tasks/save").contentType(MediaType.APPLICATION_JSON).content(updateTaskRequest)
                         .param("taskId", String.valueOf(taskId))
@@ -126,7 +126,7 @@ class TaskControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.projectNo").value("PRJ-REST-002"));
 
         String submitTaskRequest = """
-                {"reviewType":"PCB","taskName":"REST-BMS PCB评审（已编辑）","projectNo":"PRJ-REST-002","projectName":"BMS","designName":"BMS-P1","pcbType":"BMU","files":["c778c14e-6f1a-4f4f-9f11-100000000003"]}
+                {"reviewType":"PCB","taskName":"REST-BMS PCB评审（已编辑）","projectNo":"PRJ-REST-002","projectName":"BMS","designName":"BMS-P1","pcbType":"BMU","reviewRoles":["PCB_EXPERT"],"reviewerAssignments":[{"reviewRole":"PCB_EXPERT","reviewerEmployeeNos":["BMS003"]}],"files":["c778c14e-6f1a-4f4f-9f11-100000000003"]}
                 """;
         reviewFileMapper.insert(pending("c778c14e-6f1a-4f4f-9f11-100000000003", "BMS-P1.pcb", 8L, "company-p1"));
         mockMvc.perform(post("/tasks/submit").contentType(MediaType.APPLICATION_JSON).content(submitTaskRequest)
@@ -166,7 +166,7 @@ class TaskControllerIntegrationTest {
     @Test
     void shouldPreferDesignerNameFromRequestBodyOverRequestHeader() throws Exception {
         String taskRequest = """
-                {"reviewType":"PCB","taskName":"设计者名称来源","projectName":"BMS","designerName":"设计师张三","designName":"BMS-P1","pcbType":"BMU"}
+                {"reviewType":"PCB","taskName":"设计者名称来源","projectName":"BMS","designerName":"设计师张三","designName":"BMS-P1","pcbType":"BMU","reviewRoles":["PCB_EXPERT"],"reviewerAssignments":[{"reviewRole":"PCB_EXPERT","reviewerEmployeeNos":["BMS003"]}]}
                 """;
         mockMvc.perform(post("/tasks/save").contentType(MediaType.APPLICATION_JSON).content(taskRequest)
                         .header("userId", "BMS010")

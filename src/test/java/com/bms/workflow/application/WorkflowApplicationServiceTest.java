@@ -3,6 +3,7 @@ package com.bms.workflow.application;
 import com.bms.archive.application.TaskArchiveApplicationService;
 import com.bms.common.BusinessException;
 import com.bms.file.application.FileApplicationService;
+import com.bms.identity.domain.SystemRole;
 import com.bms.file.domain.FileCategory;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
@@ -308,35 +309,60 @@ class WorkflowApplicationServiceTest {
     }
 
     @Test
-    void shouldStartSchematicReviewAfterHardwareManagerAssignsExperts() {
+    void shouldStartSchematicReviewAfterHardwareManagerAssignsHardwareExpert() {
         ReviewTaskRecord task = task(ReviewType.SCHEMATIC, TaskStatus.MUTUAL_CHECK_REVIEWING);
         task.setReviewRoles("HARDWARE_EXPERT,EMC_EXPERT");
-        task.setReviewerAssignments("PCB_EXPERT:BMS099");
+        task.setReviewerAssignments("EMC_EXPERT:BMS021");
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
         when(fileMapper.findLatestByTaskIdAndCategory(1001L, "SCHEMATIC_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
         when(taskMapper.update(any())).thenReturn(1);
         when(taskMapper.updateAssignedReviewerEmployeeNos(any())).thenReturn(1);
         when(flowMapper.nextId()).thenReturn(3L);
+        when(reviewerWhitelistApplicationService.hasSystemRole("BMS010", SystemRole.HARDWARE_MANAGER)).thenReturn(true);
 
         WorkflowApplicationService.WorkflowView assignmentView = service.transition(1001L,
                 WorkflowAction.START_SCHEMATIC_EXPERT_ASSIGNMENT, null, "BMS010");
 
         assertThat(assignmentView.toStatus()).isEqualTo(TaskStatus.SCHEMATIC_EXPERT_PENDING_ASSIGNMENT);
-        assertThat(assignmentView.assignedReviewerEmployeeNos()).containsExactly("BMS010");
+        assertThat(assignmentView.assignedReviewerEmployeeNos()).isEmpty();
 
         WorkflowApplicationService.WorkflowView view = service.transition(1001L,
                 new WorkflowApplicationService.TransitionCommand(WorkflowAction.START_SCHEMATIC_EXPERT_REVIEW, null, List.of(), List.of(
-                        new TaskReviewerAssignment(ReviewRole.HARDWARE_EXPERT, List.of("BMS020")),
-                        new TaskReviewerAssignment(ReviewRole.EMC_EXPERT, List.of("BMS021")))), "BMS010");
+                        new TaskReviewerAssignment(ReviewRole.HARDWARE_EXPERT, List.of("BMS020")))), "BMS010");
 
         assertThat(view.toStatus()).isEqualTo(TaskStatus.SCHEMATIC_REVIEWING);
-        assertThat(view.assignedReviewerEmployeeNos()).containsExactly("BMS020", "BMS021");
+        assertThat(view.assignedReviewerEmployeeNos()).containsExactlyInAnyOrder("BMS020", "BMS021");
         ArgumentCaptor<ReviewTaskRecord> taskCaptor = ArgumentCaptor.forClass(ReviewTaskRecord.class);
-        verify(taskMapper).update(taskCaptor.capture());
+        verify(taskMapper, times(2)).update(taskCaptor.capture());
         assertThat(taskCaptor.getAllValues().get(1).getReviewerAssignments())
-                .isEqualTo("PCB_EXPERT:BMS099;HARDWARE_EXPERT:BMS020;EMC_EXPERT:BMS021");
+                .isEqualTo("EMC_EXPERT:BMS021;HARDWARE_EXPERT:BMS020");
         verify(reviewMailNotificationApplicationService).enqueueSchematicReviewStarted(any());
+    }
+
+    @Test
+    void shouldRejectPcbMutualCheckAssignmentForUserWithoutPcbLeaderRole() {
+        ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT);
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(reviewerWhitelistApplicationService.hasSystemRole("BMS001", SystemRole.PCB_LEADER)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.transition(1001L,
+                new WorkflowApplicationService.TransitionCommand(WorkflowAction.START_PCB_MATUAL_REVIEW, null, List.of("BMS020")), "BMS001"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("仅具备 PCB-LEADER 角色的用户可以分配 PCB 互检单评审人员");
+    }
+
+    @Test
+    void shouldRejectSchematicMutualCheckAssignmentForUnspecifiedSchematicLeader() {
+        ReviewTaskRecord task = task(ReviewType.SCHEMATIC, TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT);
+        task.setExpertLeaderEmployeeNo("BMS001");
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(reviewerWhitelistApplicationService.hasSystemRole("BMS002", SystemRole.SCHEMATIC_LEADER)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.transition(1001L,
+                new WorkflowApplicationService.TransitionCommand(WorkflowAction.START_SCHEMATIC_MATUAL_REVIEW, null, List.of("BMS020")), "BMS002"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("仅任务指定且具备 SCHEMATIC-LEADER 角色的原理图组长可以分配互检单评审人员");
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.bms.identity.infrastructure;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
@@ -19,6 +20,7 @@ import java.util.stream.Collectors;
  */
 @Component
 public class UserCenterUserProfileClient {
+    static final String PCB_APPLICATION_CODE = "LEAPENERGY_PCB";
     private final RestClient restClient;
     private final String profileUrlTemplate;
 
@@ -50,7 +52,7 @@ public class UserCenterUserProfileClient {
             }
             UserCenterProfile data = response.data();
             return new UserProfile(employeeNo, displayName(data.name(), employeeNo), data.email(),
-                    data.shortPhone(), data.deptName());
+                    data.shortPhone(), data.deptName(), extractPcbRoleCodes(data.roles()));
         } catch (Exception ignored) {
             return mockOrEmpty(employeeNo);
         }
@@ -83,11 +85,50 @@ public class UserCenterUserProfileClient {
         return name == null || name.isBlank() ? employeeNo : name;
     }
 
+    /** 仅提取 PCB 评审工具应用下的系统角色编码，忽略其他应用中的同名或无关角色。 */
+    static List<String> extractPcbRoleCodes(List<UserCenterRoleBinding> roleBindings) {
+        if (roleBindings == null || roleBindings.isEmpty()) {
+            return List.of();
+        }
+        return roleBindings.stream()
+                .filter(binding -> binding != null && binding.app() != null
+                        && PCB_APPLICATION_CODE.equals(binding.app().code()))
+                .flatMap(binding -> binding.roles() == null ? java.util.stream.Stream.<UserCenterRole>empty()
+                        : binding.roles().stream())
+                .map(UserCenterRole::code)
+                .filter(code -> code != null && !code.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record UserCenterResponse(int code, String msg, UserCenterProfile data) { }
-    public record UserCenterProfile(String leapId, String name, String email, String shortPhone, String deptName) { }
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record UserCenterProfile(String leapId, String name, String email, String shortPhone, String deptName,
+                                    List<UserCenterRoleBinding> roles) { }
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record UserCenterRoleBinding(UserCenterApplication app, List<UserCenterRole> roles) { }
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record UserCenterApplication(String code) { }
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record UserCenterRole(String code) { }
 
     /** 用户中心原始字段为 deptName，对外模型保持相同命名，避免字段转换歧义。 */
-    public record UserProfile(String employeeNo, String displayName, String email, String mobile, String deptName) {
+    public record UserProfile(String employeeNo, String displayName, String email, String mobile, String deptName,
+                              List<String> roles) {
+        public UserProfile {
+            roles = roles == null ? List.of() : roles.stream()
+                    .filter(role -> role != null && !role.isBlank())
+                    .map(String::trim)
+                    .distinct()
+                    .toList();
+        }
+
+        public UserProfile(String employeeNo, String displayName, String email, String mobile, String deptName) {
+            this(employeeNo, displayName, email, mobile, deptName, List.of());
+        }
+
         static UserProfile empty(String employeeNo) {
             return new UserProfile(employeeNo, employeeNo, null, null, null);
         }

@@ -3,6 +3,7 @@ package com.bms.task.application;
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
 import com.bms.file.application.FileApplicationService;
+import com.bms.identity.domain.SystemRole;
 import com.bms.notification.application.ReviewMailNotificationApplicationService;
 import com.bms.task.domain.ReviewTask;
 import com.bms.task.domain.ReviewType;
@@ -135,6 +136,7 @@ public class TaskApplicationService {
     private TaskView createDraft(CreateTaskCommand command, String operatorEmployeeNo) {
         requireDesignerPermission(command.designerEmployeeNo(), operatorEmployeeNo, "创建");
         validateReviewerAssignments(command);
+        validateSchematicLeader(command);
         long id = nextTaskId();
         ReviewTask task = ReviewTask.draft(id, command.reviewType(), command.taskName(), command.projectNo(), command.projectName(),
                 command.designerEmployeeNo(), command.designerName(), command.designName(), command.pcbType(), command.expectedCompletedDate(),
@@ -154,6 +156,7 @@ public class TaskApplicationService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "编辑任务时不允许变更设计者");
         }
         validateReviewerAssignments(command);
+        validateSchematicLeader(command);
         ReviewTask updated = ReviewTask.draft(taskId, command.reviewType(), command.taskName(), command.projectNo(), command.projectName(),
                 command.designerEmployeeNo(), command.designerName(), command.designName(), command.pcbType(), command.expectedCompletedDate(),
                 command.expertLeaderEmployeeNo(), command.expertLeaderName(), command.reviewRoles(), command.reviewerAssignments(), command.reviewDescription());
@@ -306,7 +309,8 @@ public class TaskApplicationService {
     }
 
     /**
-     * PCB 任务在创建时完成全部角色—人员分配；原理图的硬件、EMC 专家由硬件部开发经理在互检结束后分配。
+     * PCB 任务在创建时完成全部角色—人员分配；原理图创建时分配 EMC 专家，
+     * 硬件专家由硬件部开发经理在互检结束后分配。
      */
     private void validateReviewerAssignments(CreateTaskCommand command) {
         Set<ReviewRole> allowedRoles = command.reviewType() == ReviewType.PCB
@@ -327,9 +331,9 @@ public class TaskApplicationService {
                 TaskReviewerAssignment::reviewRole, TaskReviewerAssignment::reviewerEmployeeNos,
                 (left, right) -> { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "同一评审角色只能选择一组专家"); }));
         Set<ReviewRole> rolesAssignedByHardwareManager = command.reviewType() == ReviewType.SCHEMATIC
-                ? EnumSet.of(ReviewRole.HARDWARE_EXPERT, ReviewRole.EMC_EXPERT) : Set.of();
+                ? EnumSet.of(ReviewRole.HARDWARE_EXPERT) : Set.of();
         if (reviewersByRole.keySet().stream().anyMatch(rolesAssignedByHardwareManager::contains)) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "原理图任务的硬件、EMC 评审人员由硬件部开发经理在互检结束后分配");
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "原理图任务的硬件评审人员由硬件部开发经理在互检结束后分配");
         }
         Set<ReviewRole> rolesRequiringCreationAssignment = roles.stream()
                 .filter(role -> !rolesAssignedByHardwareManager.contains(role))
@@ -346,6 +350,16 @@ public class TaskApplicationService {
             if (!whitelistEmployeeNos.containsAll(reviewersByRole.get(role))) {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "所选专家不属于“" + role.name() + "”角色白名单");
             }
+        }
+    }
+
+    /** 原理图互检单待分配任务只归属于任务指定的原理图组长。 */
+    private void validateSchematicLeader(CreateTaskCommand command) {
+        if (command.reviewType() != ReviewType.SCHEMATIC) {
+            return;
+        }
+        if (!reviewerWhitelistApplicationService.hasSystemRole(command.expertLeaderEmployeeNo(), SystemRole.SCHEMATIC_LEADER)) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "原理图任务指定的组长必须具备 SCHEMATIC-LEADER 角色");
         }
     }
 

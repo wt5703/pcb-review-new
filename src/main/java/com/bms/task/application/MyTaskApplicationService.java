@@ -1,6 +1,7 @@
 package com.bms.task.application;
 
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
+import com.bms.identity.domain.SystemRole;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.task.domain.MyTaskAction;
@@ -25,7 +26,7 @@ import java.time.LocalDateTime;
 /**
  * @author 王涛
  * @date 2026-09-14
- * @description 计算“我的任务”待办清单，只返回当前节点需要用户评审、提交流程、答复、确认、分配或结束的任务，不混入用户创建或仅可查看的任务。
+ * @description 计算“我的任务”待办清单，只返回当前节点需要用户评审、提交流程、答复、确认、分配或结束的任务；互检单和硬件专家分配待办按用户中心系统角色归属。
  */
 @Service
 public class MyTaskApplicationService {
@@ -50,8 +51,10 @@ public class MyTaskApplicationService {
         List<ReviewTaskRecord> unfinishedTasks = taskMapper.findAllUnfinished();
         Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> reviewerProfiles = reviewerWhitelistApplicationService.findReviewerProfilesByEmployeeNos(
                 unfinishedTasks.stream()
-                        .flatMap(task -> TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments()).stream())
-                        .flatMap(assignment -> assignment.reviewerEmployeeNos().stream())
+                        .flatMap(task -> java.util.stream.Stream.concat(
+                                TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments()).stream()
+                                        .flatMap(assignment -> assignment.reviewerEmployeeNos().stream()),
+                                TaskReviewerAssignmentCodec.decodeReviewerEmployeeNos(task.getMutualCheckReviewerEmployeeNos()).stream()))
                         .distinct()
                         .toList());
         for (ReviewTaskRecord task : unfinishedTasks) {
@@ -113,7 +116,20 @@ public class MyTaskApplicationService {
                 reviewerWhitelistApplicationService.findDisplayNameOrDefault(task.getExpertLeaderEmployeeNo(), task.getExpertLeaderName()),
                 TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments()).stream()
                         .map(assignment -> TaskApplicationService.ReviewerAssignmentView.from(assignment, reviewerProfiles))
-                        .toList(), actions);
+                        .toList(), toMutualCheckReviewers(task.getMutualCheckReviewerEmployeeNos(), reviewerProfiles), actions);
+    }
+
+    /** 与任务列表保持一致：互检单人员返回工号、姓名和部门。 */
+    private List<TaskApplicationService.ReviewerView> toMutualCheckReviewers(String reviewerEmployeeNos,
+                                                                               Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> reviewerProfiles) {
+        Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> profiles = reviewerProfiles == null ? Map.of() : reviewerProfiles;
+        return TaskReviewerAssignmentCodec.decodeReviewerEmployeeNos(reviewerEmployeeNos).stream()
+                .map(employeeNo -> {
+                    ReviewerWhitelistApplicationService.ReviewerProfile profile = profiles.get(employeeNo);
+                    return new TaskApplicationService.ReviewerView(employeeNo,
+                            profile == null ? employeeNo : profile.reviewerName(),
+                            profile == null ? null : profile.deptName());
+                }).toList();
     }
 
     /** PCB、原理图的指定评审阶段均由设计者继续提交对应的流程动作。 */
@@ -133,35 +149,51 @@ public class MyTaskApplicationService {
 
     private void addManagementAction(ReviewTaskRecord task, String operatorEmployeeNo, EnumSet<MyTaskAction> actions) {
         TaskStatus status = TaskStatus.valueOf(task.getStatus());
-        // 不再按角色识别管理待办；只向任务记录中指定的组长展示。
-        if (!operatorEmployeeNo.equals(task.getExpertLeaderEmployeeNo())) {
-            return;
-        }
-        if (status == TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT
-                || (ReviewType.SCHEMATIC.name().equals(task.getReviewType())
-                && status == TaskStatus.SCHEMATIC_EXPERT_PENDING_ASSIGNMENT)) {
+        if (isMutualCheckAssignmentOwner(task, operatorEmployeeNo)
+                || isHardwareExpertAssignmentOwner(task, operatorEmployeeNo)) {
             actions.add(MyTaskAction.ASSIGN_REVIEWERS);
         }
-        if (status == TaskStatus.PENDING_FINISH) {
+        if (status == TaskStatus.PENDING_FINISH && operatorEmployeeNo.equals(task.getExpertLeaderEmployeeNo())) {
             actions.add(MyTaskAction.FINISH_TASK);
         }
+    }
+
+    private boolean isMutualCheckAssignmentOwner(ReviewTaskRecord task, String operatorEmployeeNo) {
+        if (TaskStatus.valueOf(task.getStatus()) != TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT) {
+            return false;
+        }
+        if (ReviewType.PCB.name().equals(task.getReviewType())) {
+            return reviewerWhitelistApplicationService.hasSystemRole(operatorEmployeeNo, SystemRole.PCB_LEADER);
+        }
+        return operatorEmployeeNo.equals(task.getExpertLeaderEmployeeNo())
+                && reviewerWhitelistApplicationService.hasSystemRole(operatorEmployeeNo, SystemRole.SCHEMATIC_LEADER);
+    }
+
+    private boolean isHardwareExpertAssignmentOwner(ReviewTaskRecord task, String operatorEmployeeNo) {
+        return ReviewType.SCHEMATIC.name().equals(task.getReviewType())
+                && TaskStatus.valueOf(task.getStatus()) == TaskStatus.SCHEMATIC_EXPERT_PENDING_ASSIGNMENT
+                && reviewerWhitelistApplicationService.hasSystemRole(operatorEmployeeNo, SystemRole.HARDWARE_MANAGER);
     }
 
     public record MyTaskView(Long id, ReviewType reviewType, String taskName, String projectNo, String projectName, String designerEmployeeNo, String designerName,
                              String designName, String pcbType, LocalDate expectedCompletedDate, String expertLeaderEmployeeNo, String expertLeaderName,
                              List<ReviewRole> reviewRoles, List<TaskApplicationService.ReviewerAssignmentView> reviewerAssignments,
+                             @Schema(description = "互检单实际分配人员，字段与任务列表 mutualCheckReviewers 一致，包含工号、姓名和部门")
+                             List<TaskApplicationService.ReviewerView> mutualCheckReviewers,
                              String reviewDescription, TaskStatus status, List<MyTaskAction> actions,
                              @Schema(description = "任务创建时间，格式 yyyy-MM-dd HH:mm:ss", example = "2026-10-19 15:30:00")
                              @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime createdTime) {
         static MyTaskView from(ReviewTaskRecord record, String designerName, String expertLeaderName,
                                List<TaskApplicationService.ReviewerAssignmentView> reviewerAssignments,
+                               List<TaskApplicationService.ReviewerView> mutualCheckReviewers,
                                EnumSet<MyTaskAction> actions) {
             List<ReviewRole> reviewRoles = record.getReviewRoles() == null || record.getReviewRoles().isBlank() ? List.of()
                     : java.util.Arrays.stream(record.getReviewRoles().split(",")).map(ReviewRole::valueOf).toList();
             return new MyTaskView(record.getId(), ReviewType.valueOf(record.getReviewType()), record.getTaskName(), record.getProjectNo(), record.getProjectName(),
                     record.getDesignerEmployeeNo(), designerName, record.getDesignName(), record.getPcbType(), record.getExpectedCompletedDate(),
-                    record.getExpertLeaderEmployeeNo(), expertLeaderName, reviewRoles, List.copyOf(reviewerAssignments), record.getReviewDescription(),
-                    TaskStatus.valueOf(record.getStatus()), List.copyOf(actions), record.getCreatedAt());
+                    record.getExpertLeaderEmployeeNo(), expertLeaderName, reviewRoles, List.copyOf(reviewerAssignments),
+                    List.copyOf(mutualCheckReviewers), record.getReviewDescription(), TaskStatus.valueOf(record.getStatus()),
+                    List.copyOf(actions), record.getCreatedAt());
         }
     }
 

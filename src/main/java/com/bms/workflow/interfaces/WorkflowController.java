@@ -61,9 +61,9 @@ public class WorkflowController {
             流程文件必须按对象传递：files[0].fileCategory + files[0].file，二者表示同一个文件，不能使用分离的文件类型数组。<br/><br/>
             1. 开启工艺/结构评审：可单独传 START_PCB_STRUCTURE_REVIEW 或 START_PCB_PROCESS_REVIEW，也可同时传二者。<br/>
             2. 开启互检单分配：传 START_PCB_MATUAL_ASSIGNMENT。<br/>
-            3. 分配互检人员并开启互检：传 START_PCB_MATUAL_REVIEW + reviewerEmployeeNos。<br/>
-            4. 分配互检人员并开启互检：传 START_SCHEMATIC_MATUAL_REVIEW + reviewerEmployeeNos。<br/>
-            5. 原理图互检意见闭环后，设计者传 START_SCHEMATIC_EXPERT_ASSIGNMENT，任务进入“硬件专家分配”；随后硬件部开发经理传 START_SCHEMATIC_EXPERT_REVIEW，并以 reviewerAssignments 指定硬件、EMC 评审角色及人员，任务才进入原理图评审。<br/>
+            3. 分配 PCB 互检人员并开启互检：具备 PCB-LEADER 角色的用户传 START_PCB_MATUAL_REVIEW + reviewerEmployeeNos。<br/>
+            4. 分配原理图互检人员并开启互检：任务指定且具备 SCHEMATIC-LEADER 角色的原理图组长传 START_SCHEMATIC_MATUAL_REVIEW + reviewerEmployeeNos。<br/>
+            5. 原理图创建任务时已分配 EMC 专家。互检意见闭环后，设计者传 START_SCHEMATIC_EXPERT_ASSIGNMENT，任务进入“硬件专家分配”；随后具备 HARDWARE-MANAGER 角色的用户传 START_SCHEMATIC_EXPERT_REVIEW，并以 reviewerAssignments 指定硬件评审人员，任务才进入原理图评审。<br/>
             6. 设计者推进流程时只校验指定来源意见：开启 PCB 工艺/结构评审校验 PCB_REVIEW；开启 PCB 互检单分配校验 PCB_PROCESS_REVIEW、PCB_STRUCTURE_REVIEW；PCB 进入待结束校验互检意见；原理图进入硬件专家分配校验互检意见，进入待结束校验 SCHEMATIC_REVIEW。<br/>
             7. 相关意见闭环后，设计者重新上传终版文件并传 PENDING_FINISH，任务进入待结束；组长传 FINISH 结束任务。<br/>
             
@@ -77,7 +77,7 @@ public class WorkflowController {
     }
 
     @GetMapping("/workflow/assignable-reviewers")
-    @Operation(summary = "按评审类型查询可选专家", description = "PCB任务返回 EMC、PCB 评审白名单；原理图任务返回硬件、EMC 评审白名单，供硬件部开发经理在互检结束后分配。每人一条，whitelistRoles 为该人员全部有效白名单角色。")
+    @Operation(summary = "按评审类型查询可选专家", description = "PCB任务返回 EMC、PCB 评审白名单；原理图任务返回硬件评审白名单，供硬件部开发经理在互检结束后分配。每人一条，whitelistRoles 为该人员全部有效白名单角色。")
     ApiResponse<List<ReviewerWhitelistApplicationService.AssignableReviewerView>> listAssignableReviewers(
             @RequestParam @Schema(description = "PCB 或 SCHEMATIC", requiredMode = Schema.RequiredMode.REQUIRED) ReviewType reviewType,
             HttpServletRequest servletRequest) {
@@ -177,9 +177,9 @@ public class WorkflowController {
         }
     }
 
-    @Schema(description = "原理图评审角色及硬件部开发经理指定的专家")
+    @Schema(description = "原理图硬件评审角色及硬件部开发经理指定的专家")
     public static class TransitionReviewerAssignmentRequest {
-        @Schema(description = "评审角色，仅支持 HARDWARE_EXPERT、EMC_EXPERT", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(description = "评审角色，仅支持 HARDWARE_EXPERT", requiredMode = Schema.RequiredMode.REQUIRED)
         @jakarta.validation.constraints.NotNull
         private ReviewRole reviewRole;
         @Schema(description = "该角色下的专家企业工号，至少一人", requiredMode = Schema.RequiredMode.REQUIRED)

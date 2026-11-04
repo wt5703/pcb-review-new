@@ -13,7 +13,7 @@ import java.util.List;
 @Mapper
 public interface ReviewerWhitelistMapper {
     String PERSON_COLUMNS = "p.id, p.employee_no AS employeeNo, p.display_name AS displayName, p.email, p.mobile, "
-            + "p.department_name AS departmentName, p.created_by_employee_no AS createdByEmployeeNo, p.created_at AS createdAt, "
+            + "p.department_name AS departmentName, p.`roles` AS roles, p.created_by_employee_no AS createdByEmployeeNo, p.created_at AS createdAt, "
             + "p.deleted, p.deleted_by_employee_no AS deletedByEmployeeNo, p.deleted_at AS deletedAt ";
 
     @Select("SELECT " + PERSON_COLUMNS + ", r.review_role AS reviewRole FROM reviewer_whitelist p JOIN reviewer_whitelist_role r ON r.employee_no=p.employee_no "
@@ -44,14 +44,14 @@ public interface ReviewerWhitelistMapper {
     @Select("SELECT " + PERSON_COLUMNS + "FROM reviewer_whitelist p WHERE p.id=#{id} AND p.deleted=FALSE FOR UPDATE")
     ReviewerWhitelistRecord lockActiveById(long id);
 
-    @Insert("INSERT INTO reviewer_whitelist (employee_no, display_name, email, mobile, department_name, created_by_employee_no) VALUES (#{employeeNo}, #{displayName}, #{email}, #{mobile}, #{departmentName}, #{createdByEmployeeNo})")
+    @Insert("INSERT INTO reviewer_whitelist (employee_no, display_name, email, mobile, department_name, `roles`, created_by_employee_no) VALUES (#{employeeNo}, #{displayName}, #{email}, #{mobile}, #{departmentName}, #{roles}, #{createdByEmployeeNo})")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(ReviewerWhitelistRecord record);
 
-    @Update("UPDATE reviewer_whitelist SET deleted=FALSE, deleted_by_employee_no=NULL, deleted_at=NULL, display_name=#{displayName}, email=#{email}, mobile=#{mobile}, department_name=#{departmentName} WHERE id=#{id} AND deleted=TRUE")
+    @Update("UPDATE reviewer_whitelist SET deleted=FALSE, deleted_by_employee_no=NULL, deleted_at=NULL, display_name=#{displayName}, email=#{email}, mobile=#{mobile}, department_name=#{departmentName}, `roles`=#{roles} WHERE id=#{id} AND deleted=TRUE")
     int restore(ReviewerWhitelistRecord record);
 
-    @Update("UPDATE reviewer_whitelist SET display_name=#{displayName}, email=#{email}, mobile=#{mobile}, department_name=#{departmentName} WHERE id=#{id} AND deleted=FALSE")
+    @Update("UPDATE reviewer_whitelist SET display_name=#{displayName}, email=#{email}, mobile=#{mobile}, department_name=#{departmentName}, `roles`=#{roles} WHERE id=#{id} AND deleted=FALSE")
     int updateProfile(ReviewerWhitelistRecord record);
 
     @Insert("INSERT INTO reviewer_whitelist_role (employee_no, review_role, created_by_employee_no) VALUES (#{employeeNo}, #{reviewRole}, #{operatorEmployeeNo}) "

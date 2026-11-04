@@ -190,7 +190,7 @@ class TaskCheckItemApplicationServiceTest {
     }
 
     @Test
-    void shouldSaveFailedCheckItemAsDraftWithoutPublishingOpinion() {
+    void shouldSaveFailedCheckItemAsDraftWithoutCommentOrRichText() {
         ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
         TaskCheckItemRecord checkItem = item(51L, 31L);
         when(taskMapper.findById(1001L)).thenReturn(task);
@@ -202,13 +202,15 @@ class TaskCheckItemApplicationServiceTest {
                 .thenReturn(new UserCenterUserProfileClient.UserProfile("BMS001", "王工", null, null, null));
 
         List<TaskCheckItemApplicationService.CheckItemView> result = service.saveBatch(1001L,
-                List.of(new TaskCheckItemApplicationService.SubmitBatchItemCommand(51L, CheckResult.FAIL, "线距不足", "<p>线距不足</p>")),
+                List.of(new TaskCheckItemApplicationService.SubmitBatchItemCommand(51L, CheckResult.FAIL, null, null)),
                 "BMS001", "王工");
 
         ArgumentCaptor<ReviewOpinionRecord> captor = ArgumentCaptor.forClass(ReviewOpinionRecord.class);
         verify(opinionMapper).insert(captor.capture());
         assertThat(captor.getValue().isDraft()).isTrue();
         assertThat(captor.getValue().getStatus()).isEqualTo("PENDING_REPLY");
+        assertThat(captor.getValue().getComment()).isEmpty();
+        assertThat(captor.getValue().getRichText()).isEmpty();
         assertThat(checkItem.getStatus()).isEqualTo("SAVED");
         assertThat(result.get(0).opinion().status()).isEqualTo(com.bms.review.domain.OpinionStatus.PENDING_REPLY);
     }

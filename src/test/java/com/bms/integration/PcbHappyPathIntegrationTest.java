@@ -35,10 +35,12 @@ class PcbHappyPathIntegrationTest {
     @Test
     void shouldCompletePcbTaskFromCreationToImmutableArchive() throws Exception {
         long taskId = createAndSubmitTask();
+        submitNoOpinion(taskId, "PCB_REVIEW", "BMS003");
         registerLatestPcbFile(taskId);
 
         transition(taskId, "START_PCB_MATUAL_ASSIGNMENT", "BMS010", "DESIGNER");
         assignAndTransition(taskId, "START_PCB_MATUAL_REVIEW", "BMS006", "BMS001", "PCB_LEADER");
+        submitNoOpinion(taskId, "MUTUAL_CHECK_ITEM", "BMS006");
 
         // 互检结束后由设计者重新上传终版，才能进入待结束。
         mockMvc.perform(multipart("/files/upload")
@@ -73,7 +75,7 @@ class PcbHappyPathIntegrationTest {
         pending.setFileSize(8L); pending.setMd5("happy-path-md5"); pending.setResourcePath("company-pcb-p1"); pending.setUploadedByEmployeeNo("BMS010");
         reviewFileMapper.insert(pending);
         String taskRequest = """
-                {"reviewType":"PCB","taskName":"PCB 全链路验收","projectName":"BMS","designerId":10,"designName":"BMS-P1","pcbType":"BMU","files":["c778c14e-6f1a-4f4f-9f11-100000000004"]}
+                {"reviewType":"PCB","taskName":"PCB 全链路验收","projectName":"BMS","designerId":10,"designName":"BMS-P1","pcbType":"BMU","reviewRoles":["PCB_EXPERT"],"reviewerAssignments":[{"reviewRole":"PCB_EXPERT","reviewerEmployeeNos":["BMS003"]}],"files":["c778c14e-6f1a-4f4f-9f11-100000000004"]}
                 """;
         MvcResult result = mockMvc.perform(post("/tasks/submit").contentType(MediaType.APPLICATION_JSON).content(taskRequest)
                         .header("userId", "BMS010")
@@ -97,6 +99,15 @@ class PcbHappyPathIntegrationTest {
                         .header("userId", employeeNo)
                         .header("userName", "测试用户")
                         .param("actions", action))
+                .andExpect(status().isOk());
+    }
+
+    private void submitNoOpinion(long taskId, String sourceType, String employeeNo) throws Exception {
+        mockMvc.perform(post("/tasks/{taskId}/opinions/no-opinion", taskId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sourceType\":\"" + sourceType + "\"}")
+                        .header("userId", employeeNo)
+                        .header("userName", "测试用户"))
                 .andExpect(status().isOk());
     }
 

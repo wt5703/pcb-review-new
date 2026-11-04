@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 /**
  * @author 王涛
  * @date 2026-09-22
- * @description 白名单人员资料；reviewRole 用于关联查询时承载单个角色，不属于人员主表字段。
+ * @description 白名单人员资料；roles 保存用户中心中 PCB 评审工具的系统角色编码，reviewRole 用于关联查询时承载单个白名单角色。
  */
 public class ReviewerWhitelistRecord {
     private Long id;
@@ -20,6 +20,7 @@ public class ReviewerWhitelistRecord {
     private String email;
     private String mobile;
     private String departmentName;
+    private String roles;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -45,4 +46,6 @@ public class ReviewerWhitelistRecord {
     public void setMobile(String mobile) { this.mobile = mobile; }
     public String getDepartmentName() { return departmentName; }
     public void setDepartmentName(String departmentName) { this.departmentName = departmentName; }
+    public String getRoles() { return roles; }
+    public void setRoles(String roles) { this.roles = roles; }
 }

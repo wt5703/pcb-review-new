@@ -7,6 +7,7 @@ import com.bms.review.infrastructure.ReviewerWhitelistRecord;
 import com.bms.review.infrastructure.AssignableReviewerRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Set;
@@ -51,6 +52,21 @@ class ReviewerWhitelistApplicationServiceTest {
         assertThat(result.createdCount()).isEqualTo(6);
         verify(whitelistMapper, times(6)).insert(any());
         verify(whitelistMapper, times(6)).addOrRestoreRole(any(), any(), any());
+    }
+
+    @Test
+    void shouldPersistPcbSystemRolesWhenAddingWhitelistPerson() {
+        when(userProfileClient.getByEmployeeNo("BMS002")).thenReturn(
+                new UserCenterUserProfileClient.UserProfile("BMS002", "张三", "zhangsan@leapmotor.com", null, "BMS硬件开发部",
+                        List.of("PCB-LEADER", "PLAIN-USER", "ADMIN")));
+        when(whitelistMapper.findAll()).thenReturn(List.of());
+
+        service.add(List.of(new ReviewerWhitelistApplicationService.RoleEmployeeNos(
+                ReviewerWhitelistRole.EMC_EXPERT, List.of("BMS002"))), "BMS001");
+
+        ArgumentCaptor<ReviewerWhitelistRecord> captor = ArgumentCaptor.forClass(ReviewerWhitelistRecord.class);
+        verify(whitelistMapper).insert(captor.capture());
+        assertThat(captor.getValue().getRoles()).isEqualTo("PCB-LEADER,PLAIN-USER,ADMIN");
     }
 
     @Test
@@ -101,6 +117,7 @@ class ReviewerWhitelistApplicationServiceTest {
     @Test
     void shouldPagePeopleAndIncludeAllRoles() {
         ReviewerWhitelistRecord hardware = person(1L, "BMS002", "HARDWARE_EXPERT");
+        hardware.setRoles("PCB-LEADER,PLAIN-USER");
         ReviewerWhitelistRecord emc = person(1L, "BMS002", "EMC_EXPERT");
         when(whitelistMapper.countByKeyword("")).thenReturn(2L);
         when(whitelistMapper.findPageByKeyword("", 0, 1)).thenReturn(List.of(hardware));
@@ -109,6 +126,7 @@ class ReviewerWhitelistApplicationServiceTest {
         assertThat(page.total()).isEqualTo(2);
         assertThat(page.items()).hasSize(1);
         assertThat(page.items().get(0).reviewRoles()).containsExactlyInAnyOrder(ReviewerWhitelistRole.HARDWARE_EXPERT, ReviewerWhitelistRole.EMC_EXPERT);
+        assertThat(page.items().get(0).roles()).containsExactly("PCB-LEADER", "PLAIN-USER");
     }
 
 

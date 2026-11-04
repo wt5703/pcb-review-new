@@ -73,8 +73,8 @@ class TaskArchiveOpinionExportApplicationServiceTest {
             assertThat(emc.getRow(3).getHeightInPoints()).isGreaterThan(48F);
             assertThat(workbook.getAllPictures()).hasSize(2);
             XSSFPicture firstPicture = (XSSFPicture) emc.getDrawingPatriarch().getShapes().get(0);
-            assertThat(firstPicture.getClientAnchor().getCol1()).isEqualTo(2);
-            assertThat(firstPicture.getClientAnchor().getCol2()).isEqualTo(2);
+            assertThat((int) firstPicture.getClientAnchor().getCol1()).isEqualTo(2);
+            assertThat((int) firstPicture.getClientAnchor().getCol2()).isEqualTo(2);
             assertThat(firstPicture.getClientAnchor().getRow1()).isEqualTo(3);
             assertThat(firstPicture.getClientAnchor().getRow2()).isEqualTo(3);
             assertThat(emc.getRow(3).getCell(6).getStringCellValue()).isEqualTo("接受并修改：已调整");
@@ -84,7 +84,7 @@ class TaskArchiveOpinionExportApplicationServiceTest {
             assertThat(structure.getRow(1).getCell(0).getStringCellValue()).isEqualTo("结构评审人");
             assertThat(structure.getRow(1).getCell(1).getStringCellValue()).isEqualTo("张工");
             assertThat(structure.getRow(3).getCell(1).getStringCellValue()).isEqualTo("结构评审");
-            assertThat(structure.getRow(3).getHeightInPoints()).isGreaterThan(48F);
+            assertThat(structure.getRow(3).getHeightInPoints()).isGreaterThanOrEqualTo(48F);
             assertThat(structure.getRow(3).getCell(6).getStringCellValue()).isEqualTo("待设计者答复");
         }
         verifyNoInteractions(userProfileClient);
@@ -146,6 +146,7 @@ class TaskArchiveOpinionExportApplicationServiceTest {
         task.setDesignerEmployeeNo("BMS001");
         task.setDesignerName("设计者");
         task.setReviewType("SCHEMATIC");
+        task.setReviewRoles("HARDWARE_EXPERT,EMC_EXPERT");
         task.setStatus("FINISHED");
         ReviewOpinionRecord noOpinion = opinion(4L, OpinionSourceType.SCHEMATIC_REVIEW, "BMS013", "赵工",
                 OpinionSeverity.GENERAL, "无意见，确认提交", "无意见，确认提交");

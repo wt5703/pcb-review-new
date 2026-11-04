@@ -72,7 +72,7 @@ public class CheckItemController {
     }
 
     @PutMapping("/batch/save")
-    @Operation(summary = "保存互检单", description = "暂存当前填写的检查项。FAIL（不合格）会保存为草稿意见，仅互检人可见，不会进入设计者答复页面；正式调用批量提交接口后才发布意见。")
+    @Operation(summary = "保存互检单", description = "暂存当前填写的检查项。保存时不校验 comment 和 richText 是否为空；FAIL（不合格）会保存为草稿意见，仅互检人可见，不会进入设计者答复页面；正式调用批量提交接口后才发布意见。")
     ApiResponse<List<TaskCheckItemApplicationService.CheckItemView>> saveBatch(@PathVariable long taskId,
                                                                                  @Valid @RequestBody SubmitCheckItemsRequest request,
                                                                                  @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
@@ -96,6 +96,6 @@ public class CheckItemController {
     @Schema(description = "互检单中的单条检查项结果")
     record BatchCheckItemRequest(@Schema(description = "任务检查项实例 ID", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull Long itemId,
                                  @Schema(description = "检查结果：PASS 合格、FAIL 不合格、NC", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull CheckResult result,
-                                 @Schema(description = "用户填写的文字意见；仅 FAIL 时必填，NC 可为空") String comment,
-                                 @Schema(description = "富文本补充说明，可包含文字和内嵌 data URI 图片；后端以字符串保存并回显") String richText) { }
+                                 @Schema(description = "用户填写的文字意见；批量保存时可为空，正式提交时仅 FAIL 必填") String comment,
+                                 @Schema(description = "富文本补充说明，可包含文字和内嵌 data URI 图片；批量保存时可为空") String richText) { }
 }

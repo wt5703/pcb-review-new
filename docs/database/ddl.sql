@@ -178,6 +178,7 @@ CREATE TABLE reviewer_whitelist (
     email VARCHAR(200),
     mobile VARCHAR(32),
     department_name VARCHAR(100),
+    `roles` VARCHAR(500),
     created_by_employee_no VARCHAR(64) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted BOOLEAN NOT NULL DEFAULT FALSE,

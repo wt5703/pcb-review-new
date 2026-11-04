@@ -2,6 +2,7 @@ package com.bms.task.application;
 
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
+import com.bms.identity.domain.SystemRole;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.task.domain.MyTaskAction;
 import com.bms.task.domain.ReviewType;
@@ -66,6 +67,28 @@ class MyTaskApplicationServiceTest {
     }
 
     @Test
+    void shouldIncludeMutualCheckReviewersWithEmployeeNoNameAndDepartment() {
+        ReviewTaskRecord task = task(1L, "BMS010", TaskStatus.MUTUAL_CHECK_REVIEWING);
+        task.setMutualCheckReviewerEmployeeNos("BMS201,BMS202");
+        when(taskMapper.findAllUnfinished()).thenReturn(List.of(task));
+        when(assignmentAccessMapper.isCurrentTaskProcessor(1L, "BMS201")).thenReturn(true);
+        when(reviewerWhitelistApplicationService.findReviewerProfilesByEmployeeNos(List.of("BMS201", "BMS202")))
+                .thenReturn(Map.of(
+                        "BMS201", new ReviewerWhitelistApplicationService.ReviewerProfile("互检甲", "硬件部"),
+                        "BMS202", new ReviewerWhitelistApplicationService.ReviewerProfile("互检乙", "EMC部")));
+
+        List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS201");
+
+        assertThat(tasks).singleElement().satisfies(item -> assertThat(item.mutualCheckReviewers())
+                .extracting(TaskApplicationService.ReviewerView::employeeNo,
+                        TaskApplicationService.ReviewerView::reviewerName,
+                        TaskApplicationService.ReviewerView::deptName)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("BMS201", "互检甲", "硬件部"),
+                        org.assertj.core.groups.Tuple.tuple("BMS202", "互检乙", "EMC部")));
+    }
+
+    @Test
     void shouldNotReturnTaskAfterReviewerCompletesCurrentStage() {
         when(taskMapper.findAllUnfinished()).thenReturn(
                 List.of(task(1L, "BMS010", TaskStatus.PCB_EXPERT_REVIEWING)));
@@ -113,12 +136,38 @@ class MyTaskApplicationServiceTest {
         ReviewTaskRecord task = task(1L, "BMS010", TaskStatus.SCHEMATIC_EXPERT_PENDING_ASSIGNMENT);
         task.setReviewType(ReviewType.SCHEMATIC.name());
         when(taskMapper.findAllUnfinished()).thenReturn(List.of(task));
-        when(assignmentAccessMapper.isCurrentTaskProcessor(1L, "BMS001")).thenReturn(true);
+        when(reviewerWhitelistApplicationService.hasSystemRole("BMS001", SystemRole.HARDWARE_MANAGER)).thenReturn(true);
 
         List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS001");
 
         assertThat(tasks).singleElement().satisfies(item ->
                 assertThat(item.actions()).containsExactly(MyTaskAction.ASSIGN_REVIEWERS));
+    }
+
+    @Test
+    void shouldAssignPcbMutualCheckTaskToEveryPcbLeader() {
+        ReviewTaskRecord task = task(1L, "BMS010", TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT);
+        when(taskMapper.findAllUnfinished()).thenReturn(List.of(task));
+        when(reviewerWhitelistApplicationService.hasSystemRole("BMS088", SystemRole.PCB_LEADER)).thenReturn(true);
+
+        List<MyTaskApplicationService.MyTaskView> tasks = service.list("BMS088");
+
+        assertThat(tasks).singleElement().satisfies(item ->
+                assertThat(item.actions()).containsExactly(MyTaskAction.ASSIGN_REVIEWERS));
+    }
+
+    @Test
+    void shouldAssignSchematicMutualCheckTaskOnlyToSpecifiedSchematicLeader() {
+        ReviewTaskRecord task = task(1L, "BMS010", TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT);
+        task.setReviewType(ReviewType.SCHEMATIC.name());
+        task.setExpertLeaderEmployeeNo("BMS001");
+        when(taskMapper.findAllUnfinished()).thenReturn(List.of(task));
+        when(reviewerWhitelistApplicationService.hasSystemRole("BMS001", SystemRole.SCHEMATIC_LEADER)).thenReturn(true);
+        when(reviewerWhitelistApplicationService.hasSystemRole("BMS002", SystemRole.SCHEMATIC_LEADER)).thenReturn(true);
+
+        assertThat(service.list("BMS001")).singleElement().satisfies(item ->
+                assertThat(item.actions()).containsExactly(MyTaskAction.ASSIGN_REVIEWERS));
+        assertThat(service.list("BMS002")).isEmpty();
     }
 
     @Test
