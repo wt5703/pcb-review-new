@@ -604,7 +604,7 @@ public class TaskApplicationService {
         }
         List<String> employeeNos = task.reviewerAssignments().stream()
                 .filter(assignment -> assignment.reviewRole() == ReviewRole.PCB_EXPERT
-                        || assignment.reviewRole() == ReviewRole.EMC_EXPERT)
+                        || assignment.reviewRole() == ReviewRole.EMC_EXPERT || assignment.reviewRole()==ReviewRole.HARDWARE_EXPERT)
                 .flatMap(assignment -> assignment.reviewerEmployeeNos().stream())
                 .distinct()
                 .toList();

@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.validation.annotation.Validated;
 
+import java.nio.charset.StandardCharsets;
+
 /**
  * @author 王涛
  * @date 2026-09-18
@@ -60,7 +62,7 @@ public class TaskArchiveController {
     }
 
     private String attachmentFileName(String fileName) {
-        return ContentDisposition.attachment().filename(fileName).build().toString();
+        return ContentDisposition.attachment().filename(fileName, StandardCharsets.UTF_8).build().toString();
     }
 
     private String traceId(HttpServletRequest request) { return request.getAttribute(TraceIdFilter.TRACE_ID_ATTRIBUTE).toString(); }
