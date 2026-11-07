@@ -17,7 +17,7 @@ public interface TaskCheckItemMapper {
     @Select("SELECT COALESCE(MAX(id), 0) + 1 FROM task_check_item")
     long nextId();
 
-    @Insert("INSERT INTO task_check_item (id, task_id, item_id, parent_id, sort_no, status) "
+    @Insert("INSERT INTO task_check_item (id, task_id, item_id, parent_id, sort_no, check_status) "
             + "VALUES (#{id}, #{taskId}, #{itemId}, #{parentId}, #{sortNo}, #{status})")
     int insert(TaskCheckItemRecord record);
 
@@ -26,14 +26,14 @@ public interface TaskCheckItemMapper {
     int refreshTemplateSnapshot(TaskCheckItemRecord record);
 
     @Select("SELECT id, task_id AS taskId, item_id AS itemId, parent_id AS parentId, sort_no AS sortNo, "
-            + "check_result AS checkResult, comment, rich_text AS richText, status FROM task_check_item WHERE task_id=#{taskId} ORDER BY sort_no, id")
+            + "check_result AS checkResult, check_comment AS comment, rich_text AS richText, check_status AS status FROM task_check_item WHERE task_id=#{taskId} ORDER BY sort_no, id")
     List<TaskCheckItemRecord> findByTaskId(long taskId);
 
     @Select("SELECT id, task_id AS taskId, item_id AS itemId, parent_id AS parentId, sort_no AS sortNo, "
-            + "check_result AS checkResult, comment, rich_text AS richText, status FROM task_check_item WHERE task_id=#{taskId} AND id=#{id}")
+            + "check_result AS checkResult, check_comment AS comment, rich_text AS richText, check_status AS status FROM task_check_item WHERE task_id=#{taskId} AND id=#{id}")
     TaskCheckItemRecord findByTaskIdAndId(long taskId, long id);
 
-    @Update("UPDATE task_check_item SET check_result=#{checkResult}, comment=#{comment}, rich_text=#{richText}, status=#{status}, "
+    @Update("UPDATE task_check_item SET check_result=#{checkResult}, check_comment=#{comment}, rich_text=#{richText}, check_status=#{status}, "
             + "updated_at=CURRENT_TIMESTAMP WHERE id=#{id} AND task_id=#{taskId}")
     int submit(TaskCheckItemRecord record);
 }

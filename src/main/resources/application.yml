@@ -3,15 +3,14 @@ spring:
     name: pcb-review
   datasource:
     # 默认沿用原 application-mysql.yml 的 MySQL 配置；部署环境可用环境变量覆盖。
-    url: ${SPRING_DATASOURCE_URL:${PCB_REVIEW_DB_URL:jdbc:mysql://10.195.135.149:32217/pcb?useUnicode=true&serverTimezone=Asia/Shanghai}}
-    username: ${SPRING_DATASOURCE_USERNAME:${PCB_REVIEW_DB_USERNAME:root}}
-    password: ${SPRING_DATASOURCE_PASSWORD:${PCB_REVIEW_DB_PASSWORD:qwer1234}}
+    url: ${SPRING_DATASOURCE_URL:${PCB_REVIEW_DB_URL:jdbc:mysql://zt-bms-prod-mysql80.leapmotor.com:3308/bms_platform?useUnicode=true&serverTimezone=Asia/Shanghai}}
+    username: ${SPRING_DATASOURCE_USERNAME:${PCB_REVIEW_DB_USERNAME:bms_platform}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${PCB_REVIEW_DB_PASSWORD:g7_PCcMwO7CfSB9B}}
     driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:${PCB_REVIEW_DB_DRIVER_CLASS_NAME:com.mysql.cj.jdbc.Driver}}
   jackson:
     default-property-inclusion: non_null
   servlet:
     multipart:
-      # 工艺图、结构图通常为压缩包
       max-file-size: 200MB
       max-request-size: 210MB
   cloud:
@@ -20,7 +19,7 @@ spring:
         server-addr: 10.195.135.149:31595
         username: nacos
         password: nacos
-        namespace: test
+        namespace: public
   mail:
     host: smtp.leapmotor.com
     username: bms_alg@leapmotor.com
@@ -39,13 +38,10 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 resource-service:
-  # 公司资源服务基础地址及上传、下载路径均由环境变量覆盖，业务代码不固化公司接口地址。
-  # 运行环境默认调用真实资源服务，确保邮件附件下载到原始二进制内容；测试配置单独开启 Mock。
   api-prefix: ${RESOURCE_SERVICE_API_PREFIX:http://10.195.135.149:30860/leapmotor/pm/resource}
   upload-path: ${RESOURCE_SERVICE_UPLOAD_PATH:/upload}
   download-path: ${RESOURCE_SERVICE_DOWNLOAD_PATH:/download}
-  dir-path: ${RESOURCE_SERVICE_DIR_PATH:/user/bms_platform/pcb_review/test1}
+  dir-path: ${RESOURCE_SERVICE_DIR_PATH:/user/bms_platform/pcb_review/pro}
   mock-enabled: ${RESOURCE_SERVICE_MOCK_ENABLED:false}
 user-center:
-  # 白名单展示资料以员工工号从公司用户中心获取；开发环境默认不访问内网并展示员工工号。
   user-profile-url-template: ${USER_CENTER_USER_PROFILE_URL_TEMPLATE:http://10.195.135.149:30167/leapenergy/portal/user/{employee}}

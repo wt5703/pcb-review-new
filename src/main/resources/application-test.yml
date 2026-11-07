@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: pcb-review
+  datasource:
+    # 初始内容与测试环境保持一致；部署时由环境变量覆盖。
+    url: ${SPRING_DATASOURCE_URL:${PCB_REVIEW_DB_URL:jdbc:mysql://10.195.135.149:32217/pcb?useUnicode=true&serverTimezone=Asia/Shanghai}}
+    username: ${SPRING_DATASOURCE_USERNAME:${PCB_REVIEW_DB_USERNAME:root}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${PCB_REVIEW_DB_PASSWORD:qwer1234}}
+    driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:${PCB_REVIEW_DB_DRIVER_CLASS_NAME:com.mysql.cj.jdbc.Driver}}
+  jackson:
+    default-property-inclusion: non_null
+  servlet:
+    multipart:
+      max-file-size: 200MB
+      max-request-size: 210MB
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 10.195.135.149:31595
+        username: nacos
+        password: nacos
+        namespace: test
+  mail:
+    host: smtp.leapmotor.com
+    username: bms_alg@leapmotor.com
+server:
+  servlet:
+    context-path: /leapmotor/pcb_review
+    encoding:
+      charset: UTF-8
+      force: true
+logging:
+  level:
+    com.bms: INFO
+springdoc:
+  api-docs:
+    path: /openapi.json
+  swagger-ui:
+    path: /swagger-ui.html
+resource-service:
+  api-prefix: ${RESOURCE_SERVICE_API_PREFIX:http://10.195.135.149:30860/leapmotor/pm/resource}
+  upload-path: ${RESOURCE_SERVICE_UPLOAD_PATH:/upload}
+  download-path: ${RESOURCE_SERVICE_DOWNLOAD_PATH:/download}
+  dir-path: ${RESOURCE_SERVICE_DIR_PATH:/user/bms_platform/pcb_review/test1}
+  mock-enabled: ${RESOURCE_SERVICE_MOCK_ENABLED:false}
+user-center:
+  user-profile-url-template: ${USER_CENTER_USER_PROFILE_URL_TEMPLATE:http://10.195.135.149:30167/leapenergy/portal/user/{employee}}

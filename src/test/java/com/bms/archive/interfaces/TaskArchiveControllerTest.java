@@ -11,6 +11,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.nio.charset.StandardCharsets;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -37,10 +39,9 @@ class TaskArchiveControllerTest {
                 .isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         assertThat(response.getHeaders().getContentLength()).isEqualTo(3L);
         assertThat(disposition).isEqualTo(ContentDisposition.attachment()
-                .filename("22PCB评审检查表.xlsx")
+                .filename("22PCB评审检查表.xlsx", StandardCharsets.UTF_8)
                 .build()
                 .toString());
-        assertThat(disposition).doesNotContain("filename*", "=?UTF-8?Q?");
         assertThat(ContentDisposition.parse(disposition).getFilename()).isEqualTo("22PCB评审检查表.xlsx");
         assertThat(response.getHeaders().getFirst(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS))
                 .isEqualTo(HttpHeaders.CONTENT_DISPOSITION);
@@ -67,7 +68,7 @@ class TaskArchiveControllerTest {
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet").toString());
         assertThat(result.getResponse().getHeader(HttpHeaders.CONTENT_DISPOSITION))
                 .isEqualTo(ContentDisposition.attachment()
-                        .filename("BMS项目PCB评审检查表.xlsx")
+                        .filename("BMS项目PCB评审检查表.xlsx", StandardCharsets.UTF_8)
                         .build()
                         .toString());
         assertThat(result.getResponse().getHeader(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS))

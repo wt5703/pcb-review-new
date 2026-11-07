@@ -14,24 +14,24 @@ import java.util.List;
  */
 @Mapper
 public interface OutboxEventMapper {
-    @Insert("INSERT INTO outbox_event (event_type, aggregate_type, aggregate_id, payload, status) "
+    @Insert("INSERT INTO outbox_event (event_type, aggregate_type, aggregate_id, payload, event_status) "
             + "VALUES (#{eventType}, #{aggregateType}, #{aggregateId}, #{payload}, #{status})")
     int insert(OutboxEventRecord record);
 
-    @Select("SELECT id, event_type AS eventType, aggregate_type AS aggregateType, aggregate_id AS aggregateId, payload, status, retry_count AS retryCount "
-            + "FROM outbox_event WHERE status IN ('PENDING', 'FAILED') AND retry_count < #{maxRetries} ORDER BY id LIMIT #{limit}")
+    @Select("SELECT id, event_type AS eventType, aggregate_type AS aggregateType, aggregate_id AS aggregateId, payload, event_status AS status, retry_count AS retryCount "
+            + "FROM outbox_event WHERE event_status IN ('PENDING', 'FAILED') AND retry_count < #{maxRetries} ORDER BY id LIMIT #{limit}")
     List<OutboxEventEntity> findDispatchable(int limit, int maxRetries);
 
-    @Update("UPDATE outbox_event SET status='PROCESSING' WHERE id=#{id} AND status IN ('PENDING', 'FAILED')")
+    @Update("UPDATE outbox_event SET event_status='PROCESSING' WHERE id=#{id} AND event_status IN ('PENDING', 'FAILED')")
     int claimForDispatch(long id);
 
-    @Update("UPDATE outbox_event SET status='PUBLISHED', published_at=CURRENT_TIMESTAMP WHERE id=#{id} AND status='PROCESSING'")
+    @Update("UPDATE outbox_event SET event_status='PUBLISHED', published_at=CURRENT_TIMESTAMP WHERE id=#{id} AND event_status='PROCESSING'")
     int markPublished(long id);
 
-    @Update("UPDATE outbox_event SET status='FAILED', retry_count=retry_count+1 WHERE id=#{id} AND status='PROCESSING'")
+    @Update("UPDATE outbox_event SET event_status='FAILED', retry_count=retry_count+1 WHERE id=#{id} AND event_status='PROCESSING'")
     int markFailed(long id);
 
-    @Select("SELECT id, event_type AS eventType, aggregate_type AS aggregateType, aggregate_id AS aggregateId, payload, status, retry_count AS retryCount "
+    @Select("SELECT id, event_type AS eventType, aggregate_type AS aggregateType, aggregate_id AS aggregateId, payload, event_status AS status, retry_count AS retryCount "
             + "FROM outbox_event WHERE aggregate_type=#{aggregateType} AND aggregate_id=#{aggregateId} ORDER BY id")
     List<OutboxEventEntity> findByAggregate(String aggregateType, long aggregateId);
 }

@@ -11,7 +11,7 @@ CREATE TABLE review_task (
     designer_name VARCHAR(100) NOT NULL DEFAULT '',
     design_name VARCHAR(200) NOT NULL,
     pcb_type VARCHAR(64),
-    status VARCHAR(64) NOT NULL,
+    task_status VARCHAR(64) NOT NULL,
     initial_file_ids VARCHAR(1000) NOT NULL,
     expected_completed_date DATE,
     expert_leader_employee_no VARCHAR(64),
@@ -24,10 +24,10 @@ CREATE TABLE review_task (
     version BIGINT NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_review_task_query (review_type, status, designer_employee_no),
+    INDEX idx_review_task_query (review_type, task_status, designer_employee_no),
     INDEX idx_review_task_project_no (project_no),
     INDEX idx_review_task_designer_name (designer_name)
-);
+) COMMENT='评审任务主表';
 
 CREATE TABLE review_opinion (
     id BIGINT PRIMARY KEY,
@@ -37,16 +37,16 @@ CREATE TABLE review_opinion (
     severity VARCHAR(32) NOT NULL,
     is_no_opinion BOOLEAN NOT NULL DEFAULT FALSE,
     is_draft BOOLEAN NOT NULL DEFAULT FALSE,
-    comment LONGTEXT NOT NULL,
+    opinion_comment LONGTEXT,
     rich_text_content LONGTEXT,
     raised_by_employee_no VARCHAR(64) NOT NULL,
     raised_by_name VARCHAR(100) NOT NULL,
-    status VARCHAR(64) NOT NULL,
+    opinion_status VARCHAR(64) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_review_opinion_task_status (task_id, status, raised_by_employee_no),
+    INDEX idx_review_opinion_task_status (task_id, opinion_status, raised_by_employee_no),
     INDEX idx_review_opinion_task_draft (task_id, is_draft)
-);
+) COMMENT='评审意见表';
 
 CREATE TABLE review_file (
     id BIGINT PRIMARY KEY,
@@ -64,7 +64,7 @@ CREATE TABLE review_file (
     uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_review_file_latest (task_id, file_category, is_latest),
     INDEX idx_review_file_owner (uploaded_by_employee_no, uploaded_at)
-);
+) COMMENT='评审文件表';
 
 CREATE TABLE opinion_reply (
     id BIGINT PRIMARY KEY,
@@ -74,20 +74,20 @@ CREATE TABLE opinion_reply (
     replied_by_employee_no VARCHAR(64) NOT NULL,
     reply_no INTEGER NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (opinion_id, reply_no),
+    UNIQUE KEY uk_opinion_reply_no (opinion_id, reply_no),
     INDEX idx_opinion_reply_opinion (opinion_id, reply_no)
-);
+) COMMENT='意见答复表';
 
 CREATE TABLE opinion_confirmation (
     id BIGINT PRIMARY KEY,
     opinion_id BIGINT NOT NULL,
     reply_id BIGINT NOT NULL,
     passed BOOLEAN NOT NULL,
-    comment VARCHAR(2000),
+    confirmation_comment VARCHAR(2000),
     confirmed_by_employee_no VARCHAR(64) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_opinion_confirmation_opinion (opinion_id, created_at)
-);
+) COMMENT='意见确认表';
 
 CREATE TABLE check_item_template (
     id BIGINT PRIMARY KEY,
@@ -102,7 +102,7 @@ CREATE TABLE check_item_template (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_check_template_type_enabled (review_type, enabled, sort_no),
     INDEX idx_check_template_parent (parent_id, sort_no)
-);
+) COMMENT='检查项模板表';
 
 CREATE TABLE task_check_item (
     id BIGINT PRIMARY KEY,
@@ -111,26 +111,26 @@ CREATE TABLE task_check_item (
     parent_id BIGINT,
     sort_no INTEGER NOT NULL DEFAULT 0,
     check_result VARCHAR(32),
-    comment VARCHAR(2000),
+    check_comment VARCHAR(2000),
     rich_text LONGTEXT,
-    status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+    check_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (task_id, item_id),
+    UNIQUE KEY uk_task_check_item (task_id, item_id),
     INDEX idx_task_check_item_task (task_id, sort_no),
     INDEX idx_task_check_item_parent (task_id, parent_id, sort_no)
-);
+) COMMENT='任务检查项实例表';
 
 CREATE TABLE task_flow_record (
     id BIGINT PRIMARY KEY,
     task_id BIGINT NOT NULL,
-    action VARCHAR(64) NOT NULL,
+    action_code VARCHAR(64) NOT NULL,
     action_name VARCHAR(100) NOT NULL,
     operate_employee_no VARCHAR(64) NOT NULL,
-    comment VARCHAR(2000),
+    flow_comment VARCHAR(2000),
     create_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_task_flow_record_task (task_id, create_at)
-);
+) COMMENT='任务流程流转记录表';
 
 CREATE TABLE outbox_event (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -138,38 +138,38 @@ CREATE TABLE outbox_event (
     aggregate_type VARCHAR(64) NOT NULL,
     aggregate_id BIGINT NOT NULL,
     payload VARCHAR(4000) NOT NULL,
-    status VARCHAR(32) NOT NULL,
+    event_status VARCHAR(32) NOT NULL,
     retry_count INT NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     published_at TIMESTAMP NULL,
-    INDEX idx_outbox_event_status_created (status, created_at)
-);
+    INDEX idx_outbox_event_status_created (event_status, created_at)
+) COMMENT='本地Outbox事件表';
 
 CREATE TABLE notification_send_record (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     outbox_event_id BIGINT NOT NULL,
     task_id BIGINT,
     event_type VARCHAR(64) NOT NULL,
-    recipient TEXT NOT NULL,
+    recipient TEXT,
     carbon_copies TEXT,
     attachments TEXT,
-    subject VARCHAR(500),
+    mail_subject VARCHAR(500),
     template_code VARCHAR(128) NOT NULL,
     delivery_status VARCHAR(32) NOT NULL,
     failure_reason VARCHAR(2000),
     attempted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_notification_send_record_outbox (outbox_event_id, attempted_at),
     INDEX idx_notification_send_record_task (task_id, attempted_at)
-);
+) COMMENT='通知发送记录表';
 
 CREATE TABLE task_archive_snapshot (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     task_id BIGINT NOT NULL UNIQUE,
-    file_snapshot TEXT NOT NULL,
-    flow_snapshot TEXT NOT NULL,
-    notification_snapshot TEXT NOT NULL,
+    file_snapshot TEXT,
+    flow_snapshot TEXT,
+    notification_snapshot TEXT,
     archived_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+) COMMENT='任务归档快照表';
 
 CREATE TABLE reviewer_whitelist (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -185,7 +185,7 @@ CREATE TABLE reviewer_whitelist (
     deleted_by_employee_no VARCHAR(64),
     deleted_at TIMESTAMP,
     UNIQUE KEY uk_reviewer_whitelist_employee (employee_no)
-);
+) COMMENT='评审人员白名单表';
 
 CREATE TABLE reviewer_whitelist_role (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -197,8 +197,5 @@ CREATE TABLE reviewer_whitelist_role (
     deleted_by_employee_no VARCHAR(64),
     deleted_at TIMESTAMP,
     UNIQUE KEY uk_whitelist_role_employee (employee_no, review_role),
-    INDEX idx_whitelist_role_role_employee (review_role, employee_no),
-    CONSTRAINT fk_whitelist_role_employee FOREIGN KEY (employee_no) REFERENCES reviewer_whitelist(employee_no)
-);
--- 请勿在此文件维护结构副本，避免历史人员字段和实际部署结构不一致。
--- 初始化数据库时先执行 V1__ddl.sql，再执行 V2__init.sql。
+    INDEX idx_whitelist_role_role_employee (review_role, employee_no)
+) COMMENT='白名单人员评审角色表';

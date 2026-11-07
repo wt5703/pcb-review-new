@@ -75,7 +75,7 @@ class WorkflowControllerIntegrationTest {
         task.setStatus(TaskStatus.PCB_EXPERT_REVIEWING.name());
         task.setReviewRoles("PROCESS_EXPERT");
         taskMapper.insert(task);
-        jdbcTemplate.update("INSERT INTO review_opinion (id, task_id, source_type, severity, is_no_opinion, comment, raised_by_employee_no, raised_by_name, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        jdbcTemplate.update("INSERT INTO review_opinion (id, task_id, source_type, severity, is_no_opinion, opinion_comment, raised_by_employee_no, raised_by_name, opinion_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 8306L, taskId, "PCB_REVIEW", "GENERAL", true, "无意见", "BMS001", "组长", "CONFIRMED_PASS");
         fileMapper.insert(file(taskId, 8304L, "PCB_PROCESS_REVIEW"));
         fileMapper.insert(file(taskId, 8305L, "PCB_STRUCTURE_REVIEW"));

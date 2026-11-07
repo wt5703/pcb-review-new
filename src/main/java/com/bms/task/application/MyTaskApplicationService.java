@@ -142,7 +142,8 @@ public class MyTaskApplicationService {
         if ((ReviewType.SCHEMATIC.name().equals(task.getReviewType())
                 && (status == TaskStatus.MUTUAL_CHECK_REVIEWING || status == TaskStatus.SCHEMATIC_REVIEWING))
                 || (ReviewType.PCB.name().equals(task.getReviewType())
-                && (status == TaskStatus.PCB_EXPERT_REVIEWING || status == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING))) {
+                && (status == TaskStatus.PCB_EXPERT_REVIEWING || status == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING
+                || status==TaskStatus.MUTUAL_CHECK_REVIEWING))) {
             actions.add(MyTaskAction.SUBMIT_WORKFLOW);
         }
     }
