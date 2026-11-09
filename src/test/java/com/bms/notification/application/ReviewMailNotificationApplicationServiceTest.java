@@ -59,7 +59,8 @@ class ReviewMailNotificationApplicationServiceTest {
                 "http://10.195.135.149:31792/myTodo");
         assertThat(message.recipients()).extracting(MailMessage.MailRecipient::email)
                 .containsExactly("wang@bms.example.com", "liu@bms.example.com");
-        assertThat(message.carbonCopies()).isEmpty();
+        assertThat(message.carbonCopies()).extracting(MailMessage.MailRecipient::email)
+                .containsExactly("BMS-hard@leapmotor.com");
         assertThat(message.attachments()).extracting(MailMessage.MailAttachment::fileName).containsExactly("初版PCB.zip");
     }
 
@@ -109,22 +110,14 @@ class ReviewMailNotificationApplicationServiceTest {
     }
 
     @Test
-    void shouldBuildCarbonCopiesFromWhitelistRolesWhenDepartmentIsEmpty() throws Exception {
+    void shouldCarbonCopyTheHardwareDepartmentMailbox() throws Exception {
         when(whitelistMapper.findActiveByEmployeeNo("BMS001")).thenReturn(user(1L, "BMS001", "王鹏飞", "wang@bms.example.com"));
         when(whitelistMapper.findActiveByEmployeeNo("BMS002")).thenReturn(user(2L, "BMS002", "刘满红", "liu@bms.example.com"));
-        when(whitelistMapper.findAll()).thenReturn(List.of(
-                userWithRole(1L, "BMS001", "王鹏飞", "wang@bms.example.com", ReviewRole.PCB_EXPERT),
-                userWithRole(2L, "BMS002", "刘满红", "liu@bms.example.com", ReviewRole.EMC_EXPERT),
-                userWithRole(3L, "BMS003", "张工", "zhang@bms.example.com", ReviewRole.HARDWARE_EXPERT),
-                userWithRole(4L, "BMS004", "工艺工", "process@bms.example.com", ReviewRole.PROCESS_EXPERT),
-                userWithRole(5L, "BMS005", "兼任工艺", "both@bms.example.com", ReviewRole.PCB_EXPERT),
-                userWithRole(5L, "BMS005", "兼任工艺", "both@bms.example.com", ReviewRole.PROCESS_EXPERT)));
-
         service.enqueueTaskCreated(task(10L, "PCB", "BMS", "PCB_EXPERT:BMS001;EMC_EXPERT:BMS002"));
 
         MailMessage message = payload();
         assertThat(message.carbonCopies()).extracting(MailMessage.MailRecipient::email)
-                .containsExactly("zhang@bms.example.com");
+                .containsExactly("BMS-hard@leapmotor.com");
     }
 
     @Test
@@ -142,6 +135,7 @@ class ReviewMailNotificationApplicationServiceTest {
         assertThat(message.subject()).isEqualTo("BMS工艺评审与结构评审");
         assertThat(message.content()).contains("附件是BMS工艺评审与结构评审文件，请进行工艺评审与结构评审",
                 "http://10.195.135.149:31792/myTodo");
+        assertThat(message.carbonCopies()).isEmpty();
         assertThat(message.attachments()).extracting(MailMessage.MailAttachment::fileName).containsExactly("工艺.zip", "结构.zip");
     }
 
@@ -157,6 +151,7 @@ class ReviewMailNotificationApplicationServiceTest {
         MailMessage message = payload();
         assertThat(message.subject()).isEqualTo("BMS结构评审");
         assertThat(message.recipients()).extracting(MailMessage.MailRecipient::email).containsExactly("chen@bms.example.com");
+        assertThat(message.carbonCopies()).isEmpty();
         assertThat(message.attachments()).extracting(MailMessage.MailAttachment::fileName).containsExactly("结构.zip");
     }
 
@@ -187,12 +182,6 @@ class ReviewMailNotificationApplicationServiceTest {
     private ReviewerWhitelistRecord user(long id, String employeeNo, String name, String email) {
         ReviewerWhitelistRecord record = new ReviewerWhitelistRecord();
         record.setId(id); record.setEmployeeNo(employeeNo); record.setDisplayName(name); record.setEmail(email);
-        return record;
-    }
-
-    private ReviewerWhitelistRecord userWithRole(long id, String employeeNo, String name, String email, ReviewRole role) {
-        ReviewerWhitelistRecord record = user(id, employeeNo, name, email);
-        record.setReviewRole(role.name());
         return record;
     }
 

@@ -44,4 +44,6 @@ resource-service:
   dir-path: ${RESOURCE_SERVICE_DIR_PATH:/user/bms_platform/pcb_review/test1}
   mock-enabled: ${RESOURCE_SERVICE_MOCK_ENABLED:false}
 user-center:
-  user-profile-url-template: ${USER_CENTER_USER_PROFILE_URL_TEMPLATE:http://10.195.135.149:30167/leapenergy/portal/user/{employee}}
+  service-name: ${USER_CENTER_SERVICE_NAME:lpenergy-portal-server}
+  api-prefix: ${USER_CENTER_API_PREFIX:/leapenergy/portal}
+  user-profile-path: ${USER_CENTER_USER_PROFILE_PATH:/user/{employeeNo}}

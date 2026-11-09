@@ -22,10 +22,8 @@ import org.springframework.stereotype.Service;
 
 import java.util.Collection;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -37,6 +35,8 @@ import java.util.stream.Collectors;
 @Service
 public class ReviewMailNotificationApplicationService {
     public static final String REVIEW_MAIL_EVENT = "REVIEW_MAIL";
+    private static final MailMessage.MailRecipient HARDWARE_DEPARTMENT_CC =
+            new MailMessage.MailRecipient("BMS硬件部", "BMS-hard@leapmotor.com");
     private static final Logger log = LoggerFactory.getLogger(ReviewMailNotificationApplicationService.class);
 
     private final OutboxEventMapper outboxEventMapper;
@@ -144,7 +144,7 @@ public class ReviewMailNotificationApplicationService {
         Map<String, String> templateVariables = new LinkedHashMap<>(variables);
         templateVariables.put("recipientNames", recipientNames(recipients));
         String content = mailTemplateService.render(type, templateVariables);
-        MailMessage message = new MailMessage(type.name(), subject, content, recipients, carbonCopies(recipients), attachments);
+        MailMessage message = new MailMessage(type.name(), subject, content, recipients, carbonCopies(type), attachments);
         try {
             outboxEventMapper.insert(new OutboxEventRecord(REVIEW_MAIL_EVENT, "REVIEW_TASK", taskId,
                     objectMapper.writeValueAsString(message), "PENDING"));
@@ -154,27 +154,12 @@ public class ReviewMailNotificationApplicationService {
         }
     }
 
-    /** CC 为白名单中具备硬件、PCB 或 EMC 角色的人员，排除任何工艺/结构专家及已在 To 中的人员。 */
-    private List<MailMessage.MailRecipient> carbonCopies(List<MailMessage.MailRecipient> recipients) {
-        Set<String> toEmails = recipients.stream().map(MailMessage.MailRecipient::email).map(this::emailKey).collect(Collectors.toSet());
-        Map<String, WhitelistPerson> people = new LinkedHashMap<>();
-        List<ReviewerWhitelistRecord> whitelist = whitelistMapper.findAll();
-        for (ReviewerWhitelistRecord record : whitelist == null ? List.<ReviewerWhitelistRecord>of() : whitelist) {
-            if (record.getEmployeeNo() == null || record.getEmployeeNo().isBlank()) {
-                continue;
-            }
-            WhitelistPerson person = people.computeIfAbsent(record.getEmployeeNo(), ignored -> new WhitelistPerson(record));
-            person.roles.add(record.getReviewRole());
-        }
-        return people.values().stream()
-                .filter(WhitelistPerson::isHardwareDeveloper)
-                .filter(person -> !person.hasOptionalReviewRole())
-                .map(WhitelistPerson::toRecipient)
-                .filter(recipient -> recipient.email() != null && !recipient.email().isBlank())
-                .filter(recipient -> !toEmails.contains(emailKey(recipient.email())))
-                .collect(Collectors.toMap(recipient -> emailKey(recipient.email()), recipient -> recipient,
-                        (first, ignored) -> first, LinkedHashMap::new))
-                .values().stream().toList();
+    /**
+     * 需要抄送的评审邮件统一抄送 BMS 硬件部公共邮箱。
+     * 工艺、结构评审仅通知本阶段实际评审人，不抄送整个硬件部。
+     */
+    private List<MailMessage.MailRecipient> carbonCopies(ReviewMailType type) {
+        return type == ReviewMailType.PCB_OPTIONAL_REVIEW ? List.of() : List.of(HARDWARE_DEPARTMENT_CC);
     }
 
     private List<TaskReviewerAssignment> assignments(ReviewTaskRecord task) {
@@ -255,20 +240,4 @@ public class ReviewMailNotificationApplicationService {
 
     private String emailKey(String email) { return email.trim().toLowerCase(java.util.Locale.ROOT); }
 
-    private static final class WhitelistPerson {
-        private final ReviewerWhitelistRecord record;
-        private final Set<String> roles = new LinkedHashSet<>();
-
-        private WhitelistPerson(ReviewerWhitelistRecord record) { this.record = record; }
-        private boolean isHardwareDeveloper() {
-            // 公司用户接口的部门字段可能为空，不能据此导致 CC 丢失；白名单评审角色才是稳定依据。
-            return roles.contains(ReviewRole.HARDWARE_EXPERT.name())
-                    || roles.contains(ReviewRole.PCB_EXPERT.name())
-                    || roles.contains(ReviewRole.EMC_EXPERT.name());
-        }
-        private boolean hasOptionalReviewRole() {
-            return roles.contains(ReviewRole.PROCESS_EXPERT.name()) || roles.contains(ReviewRole.STRUCTURE_EXPERT.name());
-        }
-        private MailMessage.MailRecipient toRecipient() { return new MailMessage.MailRecipient(record.getDisplayName(), record.getEmail()); }
-    }
 }

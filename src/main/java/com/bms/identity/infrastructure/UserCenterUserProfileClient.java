@@ -1,15 +1,11 @@
 package com.bms.identity.infrastructure;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -21,32 +17,18 @@ import java.util.stream.Collectors;
 @Component
 public class UserCenterUserProfileClient {
     static final String PCB_APPLICATION_CODE = "LEAPENERGY_PCB";
-    private final RestClient restClient;
-    private final String profileUrlTemplate;
+    private final UserCenterFeignClient userCenterFeignClient;
 
-    public UserCenterUserProfileClient(
-            @Value("${user-center.user-profile-url-template}") String profileUrlTemplate) {
-        this.restClient = RestClient.create();
-        this.profileUrlTemplate = profileUrlTemplate;
+    public UserCenterUserProfileClient(UserCenterFeignClient userCenterFeignClient) {
+        this.userCenterFeignClient = userCenterFeignClient;
     }
 
     public UserProfile getByEmployeeNo(String employeeNo) {
-        return getByEmployeeNo(employeeNo, profileUrlTemplate);
-    }
-
-    private UserProfile getByEmployeeNo(String employeeNo, String urlTemplate) {
         if (employeeNo == null || employeeNo.isBlank()) {
             return UserProfile.empty(employeeNo);
         }
-        if (urlTemplate == null || urlTemplate.isBlank()) {
-            return mockOrEmpty(employeeNo);
-        }
         try {
-            UserCenterResponse response = restClient.get()
-                    .uri(urlTemplate, employeeNo)
-                    .headers(this::forwardAuthorization)
-                    .retrieve()
-                    .body(UserCenterResponse.class);
+            UserCenterResponse response = userCenterFeignClient.getByEmployeeNo(employeeNo);
             if (response == null || response.code() != 0 || response.data() == null) {
                 return mockOrEmpty(employeeNo);
             }
@@ -70,15 +52,6 @@ public class UserCenterUserProfileClient {
 
     private UserProfile mockOrEmpty(String employeeNo) {
         return UserProfile.empty(employeeNo);
-    }
-
-    private void forwardAuthorization(HttpHeaders headers) {
-        Optional.ofNullable(org.springframework.web.context.request.RequestContextHolder.getRequestAttributes())
-                .filter(attributes -> attributes instanceof org.springframework.web.context.request.ServletRequestAttributes)
-                .map(attributes -> ((org.springframework.web.context.request.ServletRequestAttributes) attributes).getRequest())
-                .map(request -> request.getHeader(HttpHeaders.AUTHORIZATION))
-                .filter(value -> !value.isBlank())
-                .ifPresent(value -> headers.set(HttpHeaders.AUTHORIZATION, value));
     }
 
     private String displayName(String name, String employeeNo) {

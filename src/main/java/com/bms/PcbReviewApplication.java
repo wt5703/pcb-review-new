@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.time.LocalDateTime;
@@ -17,6 +18,7 @@ import java.time.format.DateTimeFormatter;
 
 
 @SpringBootApplication
+@EnableFeignClients(basePackages = "com.bms.identity.infrastructure")
 @EnableScheduling
 public class PcbReviewApplication {
     private static final Logger log = LoggerFactory.getLogger(PcbReviewApplication.class);
