@@ -1,6 +1,8 @@
 package com.bms.task.application;
 
 import com.bms.file.application.FileApplicationService;
+import com.bms.file.infrastructure.ReviewFileMapper;
+import com.bms.file.infrastructure.ReviewFileRecord;
 import com.bms.identity.domain.SystemRole;
 import com.bms.notification.application.ReviewMailNotificationApplicationService;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
@@ -50,8 +52,9 @@ class TaskApplicationServiceTest {
     private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService = mock(ReviewerWhitelistApplicationService.class);
     private final ReviewMailNotificationApplicationService reviewMailNotificationApplicationService = mock(ReviewMailNotificationApplicationService.class);
     private final FileApplicationService fileApplicationService = mock(FileApplicationService.class);
+    private final ReviewFileMapper reviewFileMapper = mock(ReviewFileMapper.class);
     private final TaskApplicationService service = new TaskApplicationService(taskMapper, flowMapper, reviewerWhitelistApplicationService,
-            reviewMailNotificationApplicationService, fileApplicationService);
+            reviewMailNotificationApplicationService, fileApplicationService, reviewFileMapper);
 
     @BeforeEach
     void setUpWhitelistNames() {
@@ -258,7 +261,7 @@ class TaskApplicationServiceTest {
                         "BMS104", new ReviewerWhitelistApplicationService.ReviewerProfile("工艺专家", "制造部"),
                         "BMS105", new ReviewerWhitelistApplicationService.ReviewerProfile("结构专家", "结构部")));
 
-        TaskApplicationService.TaskView detail = service.getTaskDetail(101L);
+        TaskApplicationService.TaskView detail = service.getTaskDetail(101L, DESIGNER_NO);
 
         assertThat(detail.reviewerAssignments()).extracting(TaskApplicationService.ReviewerAssignmentView::reviewRoleName)
                 .containsExactly("硬件评审", "EMC评审", "PCB评审", "工艺评审", "结构评审");
@@ -310,8 +313,14 @@ class TaskApplicationServiceTest {
         flow.setOperateEmployeeNo(DESIGNER_NO);
         flow.setCreatedAt(LocalDateTime.of(2026, 9, 25, 10, 0));
         when(flowMapper.findByTaskId(101L)).thenReturn(List.of(flow));
+        ReviewFileRecord file = new ReviewFileRecord();
+        file.setFileId("file-uuid-101");
+        file.setFileName("BMS-P1.pcb");
+        file.setFileCategory("PCB_REVIEW");
+        file.setUploadedAt(LocalDateTime.of(2026, 10, 19, 16, 0));
+        when(reviewFileMapper.findByTaskId(101L)).thenReturn(List.of(file));
 
-        TaskApplicationService.TaskView result = service.getTaskDetail(101L);
+        TaskApplicationService.TaskView result = service.getTaskDetail(101L, DESIGNER_NO);
 
         assertThat(result.flowRecords()).singleElement().satisfies(record -> {
             assertThat(record.action()).isEqualTo("CREATE");
@@ -321,8 +330,25 @@ class TaskApplicationServiceTest {
         });
         assertThat(result.createdDate()).isEqualTo(LocalDate.of(2026, 10, 19));
         assertThat(result.createdTime()).isEqualTo(LocalDateTime.of(2026, 10, 19, 15, 30));
+        assertThat(result.files()).containsExactly(new TaskApplicationService.TaskFileView(
+                "file-uuid-101", "BMS-P1.pcb", "PCB_REVIEW", LocalDateTime.of(2026, 10, 19, 16, 0)));
         String json = new ObjectMapper().registerModule(new JavaTimeModule()).writeValueAsString(result);
-        assertThat(json).contains("\"createdTime\":\"2026-10-19 15:30:00\"");
+        assertThat(json).contains("\"createdTime\":\"2026-10-19 15:30:00\"", "\"fileId\":\"file-uuid-101\"");
+    }
+
+    @Test
+    void shouldUpdateOnlyProjectInformationAndReuploadedFilesWithoutTransitioningWorkflow() {
+        ReviewTaskRecord task = record(101L, "BMS PCB评审", TaskStatus.PCB_EXPERT_REVIEWING, 0L);
+        when(taskMapper.findById(101L)).thenReturn(task);
+        when(taskMapper.updateBasicInfo(any())).thenReturn(1);
+
+        TaskApplicationService.TaskView result = service.updateTaskBasicInfo(101L,
+                new TaskApplicationService.UpdateTaskCommand("PRJ-NEW", "新项目", List.of("file-uuid-new")), DESIGNER_NO);
+
+        assertThat(result.projectNo()).isEqualTo("PRJ-NEW");
+        assertThat(result.projectName()).isEqualTo("新项目");
+        verify(taskMapper).updateBasicInfo(task);
+        verify(fileApplicationService).replaceInitialFiles(101L, List.of("file-uuid-new"), DESIGNER_NO);
     }
 
     private void mockTaskPage(long total, List<ReviewTaskRecord> records) {

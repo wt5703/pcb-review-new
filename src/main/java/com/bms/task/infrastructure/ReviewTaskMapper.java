@@ -115,4 +115,9 @@ public interface ReviewTaskMapper {
             + "expert_leader_name=#{expertLeaderName}, review_roles=#{reviewRoles}, reviewer_assignments=#{reviewerAssignments}, assigned_reviewer_employee_nos=#{assignedReviewerEmployeeNos}, mutual_check_reviewer_employee_nos=COALESCE(#{mutualCheckReviewerEmployeeNos}, mutual_check_reviewer_employee_nos), review_description=#{reviewDescription}, updated_at=CURRENT_TIMESTAMP "
             + "WHERE id=#{id} AND task_status='DRAFT'")
     int updateDraft(ReviewTaskRecord record);
+
+    /** 任务基本信息独立修改，不改变任务状态、评审角色或流程分配。 */
+    @Update("UPDATE review_task SET project_no=#{projectNo}, project_name=#{projectName}, updated_at=CURRENT_TIMESTAMP "
+            + "WHERE id=#{id} AND task_status <> 'FINISHED'")
+    int updateBasicInfo(ReviewTaskRecord record);
 }

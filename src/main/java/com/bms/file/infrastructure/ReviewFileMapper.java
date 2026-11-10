@@ -32,6 +32,11 @@ public interface ReviewFileMapper {
 
     @Select("SELECT id, task_id AS taskId, file_category AS fileCategory, file_name AS fileName, "
             + "file_id AS fileId, file_format AS fileFormat, file_size AS fileSize, md5, resource_path AS resourcePath, is_latest AS latest, uploaded_by_employee_no AS uploadedByEmployeeNo, uploaded_at AS uploadedAt, uploaded_stage AS uploadedStage "
+            + "FROM review_file WHERE task_id=#{taskId} ORDER BY uploaded_at DESC, id DESC")
+    java.util.List<ReviewFileRecord> findByTaskId(long taskId);
+
+    @Select("SELECT id, task_id AS taskId, file_category AS fileCategory, file_name AS fileName, "
+            + "file_id AS fileId, file_format AS fileFormat, file_size AS fileSize, md5, resource_path AS resourcePath, is_latest AS latest, uploaded_by_employee_no AS uploadedByEmployeeNo, uploaded_at AS uploadedAt, uploaded_stage AS uploadedStage "
             + "FROM review_file WHERE task_id=#{taskId} AND file_category=#{fileCategory} AND is_latest=TRUE ORDER BY uploaded_at DESC, id DESC")
     java.util.List<ReviewFileRecord> findLatestByTaskIdAndCategory(long taskId, String fileCategory);
 

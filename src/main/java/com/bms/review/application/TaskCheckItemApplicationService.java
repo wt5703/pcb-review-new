@@ -4,7 +4,6 @@ import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
 import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import com.bms.task.application.TaskProcessorAuthorizationService;
-import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.review.domain.CheckItemStatus;
 import com.bms.review.domain.CheckResult;
 import com.bms.review.domain.OpinionStatus;
@@ -38,22 +37,22 @@ public class TaskCheckItemApplicationService {
     private final ReviewTaskMapper taskMapper;
     private final CheckItemTemplateMapper templateMapper;
     private final TaskCheckItemMapper taskCheckItemMapper;
-    private final TaskAssignmentAccessMapper assignmentAccessMapper;
     private final TaskProcessorAuthorizationService taskProcessorAuthorizationService;
     private final ReviewOpinionMapper opinionMapper;
     private final UserCenterUserProfileClient userProfileClient;
+    private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService;
 
     public TaskCheckItemApplicationService(ReviewTaskMapper taskMapper, CheckItemTemplateMapper templateMapper,
-                                           TaskCheckItemMapper taskCheckItemMapper, TaskAssignmentAccessMapper assignmentAccessMapper,
-                                           TaskProcessorAuthorizationService taskProcessorAuthorizationService, ReviewOpinionMapper opinionMapper,
-                                           UserCenterUserProfileClient userProfileClient) {
+                                           TaskCheckItemMapper taskCheckItemMapper, TaskProcessorAuthorizationService taskProcessorAuthorizationService,
+                                           ReviewOpinionMapper opinionMapper, UserCenterUserProfileClient userProfileClient,
+                                           ReviewerWhitelistApplicationService reviewerWhitelistApplicationService) {
         this.taskMapper = taskMapper;
         this.templateMapper = templateMapper;
         this.taskCheckItemMapper = taskCheckItemMapper;
-        this.assignmentAccessMapper = assignmentAccessMapper;
         this.taskProcessorAuthorizationService = taskProcessorAuthorizationService;
         this.opinionMapper = opinionMapper;
         this.userProfileClient = userProfileClient;
+        this.reviewerWhitelistApplicationService = reviewerWhitelistApplicationService;
     }
 
     @Transactional
@@ -230,10 +229,8 @@ public class TaskCheckItemApplicationService {
 
     private ReviewTaskRecord requireVisibleTask(long taskId, String operatorEmployeeNo) {
         ReviewTaskRecord task = requireTaskExists(taskId);
-        if (assignmentAccessMapper.isAssignedToTask(taskId, operatorEmployeeNo)) {
-            return task;
-        }
-        throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看该任务的互检检查项");
+        reviewerWhitelistApplicationService.requireTaskDetailAccess(operatorEmployeeNo);
+        return task;
     }
 
     private ReviewTaskRecord requireTaskExists(long taskId) {

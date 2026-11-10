@@ -47,3 +47,5 @@ user-center:
   service-name: ${USER_CENTER_SERVICE_NAME:lpenergy-portal-server}
   api-prefix: ${USER_CENTER_API_PREFIX:/leapenergy/portal}
   user-profile-path: ${USER_CENTER_USER_PROFILE_PATH:/user/{employeeNo}}
+review-mail:
+  todo-url: ${REVIEW_MAIL_TODO_URL:https://pcb-leapenergy.leapmotor.com/myTodo}

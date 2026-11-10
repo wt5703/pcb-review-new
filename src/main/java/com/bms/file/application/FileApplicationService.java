@@ -91,6 +91,46 @@ public class FileApplicationService {
         return List.copyOf(result);
     }
 
+    /**
+     * 修改任务时绑定重新上传的初始文件。每个新文件会替换同类型的当前文件，
+     * 历史记录保留但不再标记为 latest，任务流程状态不受影响。
+     */
+    @Transactional
+    public List<FileView> replaceInitialFiles(long taskId, List<String> fileIds, String operatorEmployeeNo) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            return List.of();
+        }
+        ReviewTaskRecord task = requireTask(taskId);
+        FileCategory category = initialCategory(task);
+        requireTaskAccess(taskId, operatorEmployeeNo, category, true);
+        java.util.Set<String> requestedFileIds = new java.util.LinkedHashSet<>();
+        List<ReviewFileRecord> pendingFiles = new ArrayList<>();
+        for (String fileId : fileIds) {
+            String normalizedFileId = requireFileUuid(fileId);
+            if (!requestedFileIds.add(normalizedFileId)) {
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "重新上传的文件 UUID 不能为空且不能重复");
+            }
+            ReviewFileRecord file = fileMapper.findByFileId(normalizedFileId);
+            if (file == null || !category.name().equals(file.getFileCategory()) || file.getTaskId() != null) {
+                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "重新上传的文件 UUID 不存在或文件类型不匹配");
+            }
+            if (!operatorEmployeeNo.equals(file.getUploadedByEmployeeNo())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "仅文件上传人可以将重新上传的文件关联到任务");
+            }
+            pendingFiles.add(file);
+        }
+        fileMapper.markLatestAsHistorical(taskId, category.name());
+        for (ReviewFileRecord file : pendingFiles) {
+            file.setTaskId(taskId);
+            file.setLatest(true);
+            file.setUploadedStage(task.getStatus());
+            if (fileMapper.bindToTask(file) != 1) {
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "重新上传的文件关联任务失败");
+            }
+        }
+        return pendingFiles.stream().map(FileView::from).toList();
+    }
+
     /** 上传尚未创建任务的初始文件，持久化元数据并返回前端后续保存任务唯一需要携带的 UUID。 */
     @Transactional
     public UploadedFileView uploadPendingInitialFile(MultipartFile file, FileCategory category, String operatorEmployeeNo) {

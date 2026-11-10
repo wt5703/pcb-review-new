@@ -1,6 +1,7 @@
 package com.bms.notification.application;
 
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver;
@@ -11,6 +12,9 @@ import java.util.Map;
 @Service
 public class MailTemplateService {
     private final TemplateEngine templateEngine;
+
+    @Value("${review-mail.todo-url:http://10.195.135.149:31792/myTodo}")
+    private String todoUrl = "http://10.195.135.149:31792/myTodo";
 
     public MailTemplateService() {
         ClassLoaderTemplateResolver resolver = new ClassLoaderTemplateResolver();
@@ -25,6 +29,7 @@ public class MailTemplateService {
 
     public String render(ReviewMailType type, Map<String, String> variables) {
         Context context = new Context(java.util.Locale.CHINA);
+        context.setVariable("todoUrl", todoUrl);
         variables.forEach(context::setVariable);
         return templateEngine.process(type.templateName(), context).trim();
     }

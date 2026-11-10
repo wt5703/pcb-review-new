@@ -4,7 +4,6 @@ import com.bms.common.BusinessException;
 import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import com.bms.review.domain.OpinionSourceType;
 import com.bms.task.application.TaskProcessorAuthorizationService;
-import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.review.domain.CheckResult;
 import com.bms.review.infrastructure.CheckItemTemplateMapper;
 import com.bms.review.infrastructure.CheckItemTemplateRecord;
@@ -40,16 +39,15 @@ class TaskCheckItemApplicationServiceTest {
     private final ReviewTaskMapper taskMapper = mock(ReviewTaskMapper.class);
     private final CheckItemTemplateMapper templateMapper = mock(CheckItemTemplateMapper.class);
     private final TaskCheckItemMapper taskCheckItemMapper = mock(TaskCheckItemMapper.class);
-    private final TaskAssignmentAccessMapper assignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
     private final TaskProcessorAuthorizationService taskProcessorAuthorizationService = mock(TaskProcessorAuthorizationService.class);
     private final ReviewOpinionMapper opinionMapper = mock(ReviewOpinionMapper.class);
     private final UserCenterUserProfileClient userProfileClient = mock(UserCenterUserProfileClient.class);
+    private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService = mock(ReviewerWhitelistApplicationService.class);
     private final TaskCheckItemApplicationService service = new TaskCheckItemApplicationService(taskMapper, templateMapper,
-            taskCheckItemMapper, assignmentAccessMapper, taskProcessorAuthorizationService, opinionMapper, userProfileClient);
+            taskCheckItemMapper, taskProcessorAuthorizationService, opinionMapper, userProfileClient, reviewerWhitelistApplicationService);
 
     @Test
     void shouldMaterializeCurrentTemplateForActiveTask() {
-        when(assignmentAccessMapper.isAssignedToTask(1001L, "BMS001")).thenReturn(true);
         ReviewTaskRecord task = task(TaskStatus.MUTUAL_CHECK_REVIEWING);
         CheckItemTemplateRecord template = template(31L, "线距检查");
         TaskCheckItemRecord materialized = item(51L, 31L);
@@ -244,7 +242,6 @@ class TaskCheckItemApplicationServiceTest {
 
     @Test
     void shouldKeepExistingSnapshotWhenTaskIsFinished() {
-        when(assignmentAccessMapper.isAssignedToTask(1001L, "BMS001")).thenReturn(true);
         ReviewTaskRecord task = task(TaskStatus.FINISHED);
         TaskCheckItemRecord category = item(41L, 30L);
         category.setParentId(null);

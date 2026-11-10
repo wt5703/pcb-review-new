@@ -2,7 +2,7 @@ package com.bms.review.application;
 
 import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import com.bms.task.application.TaskProcessorAuthorizationService;
-import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
+import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.OpinionSeverity;
 import com.bms.review.domain.OpinionSourceType;
 import com.bms.review.domain.OpinionStatus;
@@ -40,12 +40,12 @@ class OpinionApplicationServiceTest {
     private final ReviewOpinionMapper opinionMapper = mock(ReviewOpinionMapper.class);
     private final ReviewTaskMapper taskMapper = mock(ReviewTaskMapper.class);
     private final TaskCheckItemMapper taskCheckItemMapper = mock(TaskCheckItemMapper.class);
-    private final TaskAssignmentAccessMapper assignmentAccessMapper = mock(TaskAssignmentAccessMapper.class);
     private final TaskProcessorAuthorizationService taskProcessorAuthorizationService = mock(TaskProcessorAuthorizationService.class);
     private final TaskFlowMapper flowMapper = mock(TaskFlowMapper.class);
     private final UserCenterUserProfileClient userProfileClient = mock(UserCenterUserProfileClient.class);
+    private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService = mock(ReviewerWhitelistApplicationService.class);
     private final OpinionApplicationService service = new OpinionApplicationService(opinionMapper, taskMapper, taskCheckItemMapper,
-            assignmentAccessMapper, taskProcessorAuthorizationService, flowMapper, userProfileClient);
+            taskProcessorAuthorizationService, flowMapper, userProfileClient, reviewerWhitelistApplicationService);
 
     @BeforeEach
     void mockUserProfiles() {
@@ -233,7 +233,6 @@ class OpinionApplicationServiceTest {
 
     @Test
     void shouldSummarizeOpinionsByLifecycleStatus() {
-        when(assignmentAccessMapper.isAssignedToTask(1001L, "BMS020")).thenReturn(true);
         when(taskMapper.findById(1001L)).thenReturn(task("BMS009"));
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(
                 opinion(31L, 1001L, "BMS020", OpinionStatus.PENDING_REPLY),
@@ -249,7 +248,6 @@ class OpinionApplicationServiceTest {
 
     @Test
     void shouldExcludeSavedMutualCheckDraftFromDesignerReplyList() {
-        when(assignmentAccessMapper.isAssignedToTask(1001L, "BMS020")).thenReturn(true);
         when(taskMapper.findById(1001L)).thenReturn(task("BMS009"));
         ReviewOpinionRecord savedDraft = opinion(31L, 1001L, "BMS020", OpinionStatus.PENDING_REPLY);
         savedDraft.setDraft(true);
@@ -263,7 +261,6 @@ class OpinionApplicationServiceTest {
 
     @Test
     void shouldExposeEveryDesignerReplyWithItsPairedConfirmationWhenListingOpinions() {
-        when(assignmentAccessMapper.isAssignedToTask(1001L, "BMS020")).thenReturn(true);
         ReviewOpinionRecord opinion = opinion(31L, 1001L, "BMS020", OpinionStatus.PENDING_CONFIRMATION);
         OpinionReplyRecord reply = new OpinionReplyRecord();
         reply.setId(41L);

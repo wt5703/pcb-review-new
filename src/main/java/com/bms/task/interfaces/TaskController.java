@@ -22,6 +22,7 @@ import jakarta.validation.constraints.NotNull;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -93,9 +94,22 @@ public class TaskController {
     }
 
     @GetMapping("/{taskId}")
-    @Operation(summary = "查询评审任务详情", description = "按任务 ID 返回一条任务基础信息和流程流转记录；所有用户均可查看。")
-    ApiResponse<TaskApplicationService.TaskView> detail(@PathVariable long taskId, HttpServletRequest servletRequest) {
-        return ApiResponse.ok(taskService.getTaskDetail(taskId), getTraceId(servletRequest));
+    @Operation(summary = "查询评审任务详情", description = "仅 BMS硬件开发部人员可查看。返回任务基础信息、流程记录及关联文件；关联文件包含文件名称、类型、UUID 和上传时间。")
+    ApiResponse<TaskApplicationService.TaskView> detail(@PathVariable long taskId,
+                                                         @NotBlank @RequestHeader("userId") String employeeNo,
+                                                         HttpServletRequest servletRequest) {
+        return ApiResponse.ok(taskService.getTaskDetail(taskId, employeeNo), getTraceId(servletRequest));
+    }
+
+    @PutMapping("/{taskId}")
+    @Operation(summary = "修改任务基本信息", description = "不触发流程流转。仅任务设计者可修改项目编号、项目名称和重新上传的初始文件；files 仅传本次新上传文件的 UUID，系统会将同类型旧文件标记为历史版本。")
+    ApiResponse<TaskApplicationService.TaskView> updateBasicInfo(@PathVariable long taskId,
+                                                                  @Valid @RequestBody UpdateTaskRequest request,
+                                                                  @NotBlank @RequestHeader("userId") String employeeNo,
+                                                                  HttpServletRequest servletRequest) {
+        return ApiResponse.ok(taskService.updateTaskBasicInfo(taskId,
+                new TaskApplicationService.UpdateTaskCommand(request.projectNo(), request.projectName(), request.files()), employeeNo),
+                getTraceId(servletRequest));
     }
 
     @GetMapping("/my")
@@ -182,4 +196,10 @@ public class TaskController {
     record ReviewerAssignmentRequest(
             @Schema(description = "评审角色", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull ReviewRole reviewRole,
             @Schema(description = "该角色下的白名单专家企业工号，至少一人", requiredMode = Schema.RequiredMode.REQUIRED) List<@NotBlank String> reviewerEmployeeNos) { }
+
+    @Schema(description = "修改任务基本信息请求；不允许修改任务名称、设计者、评审角色或流程状态")
+    record UpdateTaskRequest(
+            @Schema(description = "项目编号，可为空") String projectNo,
+            @Schema(description = "项目名称，可为空") String projectName,
+            @Schema(description = "本次重新上传文件的 UUID 列表；只传新文件，同类型旧文件会保留为历史版本") List<@NotBlank String> files) { }
 }

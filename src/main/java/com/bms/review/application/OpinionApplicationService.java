@@ -4,7 +4,6 @@ import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
 import com.bms.identity.infrastructure.UserCenterUserProfileClient;
 import com.bms.task.application.TaskProcessorAuthorizationService;
-import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.review.domain.OpinionSourceType;
 import com.bms.review.domain.OpinionSeverity;
 import com.bms.review.domain.OpinionStatus;
@@ -42,22 +41,23 @@ public class OpinionApplicationService {
     private final ReviewOpinionMapper opinionMapper;
     private final ReviewTaskMapper taskMapper;
     private final TaskCheckItemMapper taskCheckItemMapper;
-    private final TaskAssignmentAccessMapper assignmentAccessMapper;
     private final TaskProcessorAuthorizationService taskProcessorAuthorizationService;
     private final TaskFlowMapper flowMapper;
     private final UserCenterUserProfileClient userProfileClient;
+    private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService;
 
     @Autowired
     public OpinionApplicationService(ReviewOpinionMapper opinionMapper, ReviewTaskMapper taskMapper, TaskCheckItemMapper taskCheckItemMapper,
-                                     TaskAssignmentAccessMapper assignmentAccessMapper, TaskProcessorAuthorizationService taskProcessorAuthorizationService,
-                                     TaskFlowMapper flowMapper, UserCenterUserProfileClient userProfileClient) {
+                                     TaskProcessorAuthorizationService taskProcessorAuthorizationService, TaskFlowMapper flowMapper,
+                                     UserCenterUserProfileClient userProfileClient,
+                                     ReviewerWhitelistApplicationService reviewerWhitelistApplicationService) {
         this.opinionMapper = opinionMapper;
         this.taskMapper = taskMapper;
         this.taskCheckItemMapper = taskCheckItemMapper;
-        this.assignmentAccessMapper = assignmentAccessMapper;
         this.taskProcessorAuthorizationService = taskProcessorAuthorizationService;
         this.flowMapper = flowMapper;
         this.userProfileClient = userProfileClient;
+        this.reviewerWhitelistApplicationService = reviewerWhitelistApplicationService;
     }
 
     /**
@@ -422,11 +422,8 @@ public class OpinionApplicationService {
     }
 
     private void requireOpenOrFinishedTaskVisible(long taskId, String operatorEmployeeNo) {
-        ReviewTaskRecord task = requireTask(taskId);
-        if (!assignmentAccessMapper.isAssignedToTask(taskId, operatorEmployeeNo)
-                && !task.getDesignerEmployeeNo().equals(operatorEmployeeNo)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看该任务的评审意见");
-        }
+        requireTask(taskId);
+        reviewerWhitelistApplicationService.requireTaskDetailAccess(operatorEmployeeNo);
     }
 
     private ReviewTaskRecord requireTask(long taskId) {

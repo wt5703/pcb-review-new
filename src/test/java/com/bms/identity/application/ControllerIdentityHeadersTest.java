@@ -22,7 +22,7 @@ class ControllerIdentityHeadersTest {
                 "DictionaryController.taskOptions", "WorkflowController.listAssignableReviewers",
                 "WorkflowController.listMutualCheckReviewers", "ReviewerWhitelistController.list",
                 "ReviewerWhitelistController.people", "CheckItemTemplateController.checkExistence",
-                "TaskController.list", "TaskController.detail",
+                "TaskController.list",
                 "TaskArchiveController.exportOpinions", "TaskArchiveController.get",
                 "CheckItemTemplateController.importWorkbook", "CheckItemTemplateController.get",
                 "CheckItemTemplateController.create", "CheckItemTemplateController.createItem",

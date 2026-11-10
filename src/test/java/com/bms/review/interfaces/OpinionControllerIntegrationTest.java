@@ -104,7 +104,7 @@ class OpinionControllerIntegrationTest {
 
         // 确认提交后才释放评审人的待办，由任务设计者继续查看汇总。
         mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)
-                        .header("userId", "BMS020")
+                        .header("userId", "BMS999")
                         .header("userName", "测试用户"))
                 .andExpect(status().isForbidden());
 

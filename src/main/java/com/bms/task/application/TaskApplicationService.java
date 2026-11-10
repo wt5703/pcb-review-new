@@ -3,6 +3,8 @@ package com.bms.task.application;
 import com.bms.common.BusinessException;
 import com.bms.common.ErrorCode;
 import com.bms.file.application.FileApplicationService;
+import com.bms.file.infrastructure.ReviewFileMapper;
+import com.bms.file.infrastructure.ReviewFileRecord;
 import com.bms.identity.domain.SystemRole;
 import com.bms.notification.application.ReviewMailNotificationApplicationService;
 import com.bms.task.domain.ReviewTask;
@@ -46,17 +48,19 @@ public class TaskApplicationService {
     private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService;
     private final ReviewMailNotificationApplicationService reviewMailNotificationApplicationService;
     private final FileApplicationService fileApplicationService;
+    private final ReviewFileMapper reviewFileMapper;
 
     @Autowired
     public TaskApplicationService(ReviewTaskMapper taskMapper, TaskFlowMapper flowMapper,
                                   ReviewerWhitelistApplicationService reviewerWhitelistApplicationService,
                                   ReviewMailNotificationApplicationService reviewMailNotificationApplicationService,
-                                  FileApplicationService fileApplicationService) {
+                                  FileApplicationService fileApplicationService, ReviewFileMapper reviewFileMapper) {
         this.taskMapper = taskMapper;
         this.flowMapper = flowMapper;
         this.reviewerWhitelistApplicationService = reviewerWhitelistApplicationService;
         this.reviewMailNotificationApplicationService = reviewMailNotificationApplicationService;
         this.fileApplicationService = fileApplicationService;
+        this.reviewFileMapper = reviewFileMapper;
     }
 
     /**
@@ -98,14 +102,16 @@ public class TaskApplicationService {
         return toTaskSummary(task);
     }
 
-    /** 所有用户均可读取任务详情；详情附带可追溯的流程操作记录。 */
-    public TaskView getTaskDetail(long taskId) {
+    /** 仅 BMS 硬件开发部人员可读取任务详情；详情附带流程操作记录与任务文件。 */
+    public TaskView getTaskDetail(long taskId, String operatorEmployeeNo) {
+        reviewerWhitelistApplicationService.requireTaskDetailAccess(operatorEmployeeNo);
         ReviewTaskRecord taskRecord = loadTaskRecord(taskId);
         ReviewTask task = restoreTask(taskRecord);
         List<TaskFlowRecordView> flowRecords = flowMapper.findByTaskId(taskId).stream()
                 .map(this::toTaskFlowRecordView)
                 .toList();
-        return toTaskDetailView(task, taskRecord.getMutualCheckReviewerEmployeeNos(), flowRecords, taskRecord.getCreatedAt());
+        return toTaskDetailView(task, taskRecord.getMutualCheckReviewerEmployeeNos(), flowRecords, taskRecord.getCreatedAt(),
+                taskFiles(taskId));
     }
 
     /** 返回全部符合筛选条件的任务；任务列表不按当前用户做数据隔离。 */
@@ -130,6 +136,23 @@ public class TaskApplicationService {
                 .map(record -> toTaskListItem(record, reviewerProfiles))
                 .toList();
         return new TaskPage(total, validQuery.pageNum(), validQuery.pageSize(), items);
+    }
+
+    /** 仅更新项目编号、项目名称和重新上传的初始文件，不触发任务流程流转。 */
+    @Transactional
+    public TaskView updateTaskBasicInfo(long taskId, UpdateTaskCommand command, String operatorEmployeeNo) {
+        ReviewTaskRecord taskRecord = loadTaskRecord(taskId);
+        requireDesignerPermission(taskRecord.getDesignerEmployeeNo(), operatorEmployeeNo, "修改");
+        if (TaskStatus.FINISHED.name().equals(taskRecord.getStatus())) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许修改基本信息或重新上传文件");
+        }
+        taskRecord.setProjectNo(command.projectNo());
+        taskRecord.setProjectName(command.projectName());
+        if (taskMapper.updateBasicInfo(taskRecord) != 1) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "任务已结束或不存在，无法修改");
+        }
+        fileApplicationService.replaceInitialFiles(taskId, command.files(), operatorEmployeeNo);
+        return toTaskSummary(restoreTask(taskRecord));
     }
 
     /** 新建一条尚未派发的任务草稿。 */
@@ -223,7 +246,7 @@ public class TaskApplicationService {
     }
 
     private TaskView toTaskDetailView(ReviewTask task, String mutualCheckReviewerEmployeeNos, List<TaskFlowRecordView> flowRecords,
-                                      java.time.LocalDateTime createdAt) {
+                                      java.time.LocalDateTime createdAt, List<TaskFileView> files) {
         List<String> reviewerEmployeeNos = task.reviewerAssignments().stream()
                 .flatMap(assignment -> assignment.reviewerEmployeeNos().stream())
                 .collect(Collectors.collectingAndThen(Collectors.toCollection(java.util.LinkedHashSet::new), List::copyOf));
@@ -235,7 +258,12 @@ public class TaskApplicationService {
         return TaskView.from(task, task.designerName(),
                 lookupEmployeeName(task.expertLeaderEmployeeNo(), task.expertLeaderName()), flowRecords,
                 createdAt == null ? null : createdAt.toLocalDate(), createdAt, reviewerProfiles == null ? Map.of() : reviewerProfiles,
-                toReviewerViews(mutualCheckReviewerEmployeeNos, reviewerProfiles));
+                toReviewerViews(mutualCheckReviewerEmployeeNos, reviewerProfiles), files);
+    }
+
+    private List<TaskFileView> taskFiles(long taskId) {
+        List<ReviewFileRecord> files = reviewFileMapper.findByTaskId(taskId);
+        return files == null ? List.of() : files.stream().map(TaskFileView::from).toList();
     }
 
     private Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> findReviewerProfiles(List<ReviewTaskRecord> records) {
@@ -390,6 +418,12 @@ public class TaskApplicationService {
         }
     }
 
+    public record UpdateTaskCommand(String projectNo, String projectName, List<String> files) {
+        public UpdateTaskCommand {
+            files = files == null ? List.of() : List.copyOf(files);
+        }
+    }
+
     public record TaskView(Long id, ReviewType reviewType, String taskName, String projectNo, String projectName, String designerEmployeeNo, String designerName,
                            String designName, String pcbType, LocalDate expectedCompletedDate, String expertLeaderEmployeeNo, String expertLeaderName,
                            List<ReviewRole> reviewRoles, List<ReviewerAssignmentView> reviewerAssignments, String reviewDescription, String status,
@@ -398,7 +432,8 @@ public class TaskApplicationService {
                            @Schema(description = "任务创建日期，格式 yyyy-MM-dd", example = "2026-10-19")
                            @JsonInclude(JsonInclude.Include.NON_NULL) @JsonFormat(pattern = "yyyy-MM-dd") LocalDate createdDate,
                            @Schema(description = "任务创建时间，任务详情和任务列表返回，格式 yyyy-MM-dd HH:mm:ss", example = "2026-10-19 15:30:00")
-                           @JsonInclude(JsonInclude.Include.NON_NULL) @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss") java.time.LocalDateTime createdTime) {
+                           @JsonInclude(JsonInclude.Include.NON_NULL) @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss") java.time.LocalDateTime createdTime,
+                           @Schema(description = "任务关联文件，仅任务详情返回；包含文件名称、文件类型、文件 UUID 和上传时间") List<TaskFileView> files) {
         static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords) {
             return from(task, designerName, expertLeaderName, flowRecords, (LocalDate) null);
         }
@@ -429,11 +464,20 @@ public class TaskApplicationService {
                                      LocalDate createdDate, java.time.LocalDateTime createdTime,
                                      Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> reviewerProfiles,
                                      List<ReviewerView> mutualCheckReviewers) {
+            return from(task, designerName, expertLeaderName, flowRecords, createdDate, createdTime, reviewerProfiles,
+                    mutualCheckReviewers, List.of());
+        }
+
+        private static TaskView from(ReviewTask task, String designerName, String expertLeaderName, List<TaskFlowRecordView> flowRecords,
+                                     LocalDate createdDate, java.time.LocalDateTime createdTime,
+                                     Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> reviewerProfiles,
+                                     List<ReviewerView> mutualCheckReviewers, List<TaskFileView> files) {
             return new TaskView(task.id(), task.reviewType(), task.taskName(), task.projectNo(), task.projectName(), task.designerEmployeeNo(), designerName,
                     task.designName(), task.pcbType(), task.expectedCompletedDate(), task.expertLeaderEmployeeNo(), expertLeaderName,
                     task.reviewRoles(), task.reviewerAssignments().stream()
                     .map(assignment -> ReviewerAssignmentView.from(assignment, reviewerProfiles)).toList(),
-                    task.reviewDescription(), task.status().name(), List.copyOf(mutualCheckReviewers), List.copyOf(flowRecords), createdDate, createdTime);
+                    task.reviewDescription(), task.status().name(), List.copyOf(mutualCheckReviewers), List.copyOf(flowRecords), createdDate, createdTime,
+                    List.copyOf(files));
         }
     }
 
@@ -469,6 +513,16 @@ public class TaskApplicationService {
     public record ReviewerView(@Schema(description = "评审人工号") String employeeNo,
                                @Schema(description = "评审人姓名") String reviewerName,
                                @Schema(description = "评审人部门，取白名单资料中的 deptName") String deptName) { }
+
+    public record TaskFileView(@Schema(description = "文件 UUID") String fileId,
+                               @Schema(description = "文件名称") String fileName,
+                               @Schema(description = "文件类型") String fileCategory,
+                               @Schema(description = "上传时间", example = "2026-10-19 15:30:00")
+                               @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss") java.time.LocalDateTime uploadedAt) {
+        static TaskFileView from(ReviewFileRecord record) {
+            return new TaskFileView(record.getFileId(), record.getFileName(), record.getFileCategory(), record.getUploadedAt());
+        }
+    }
 
     /** 任务详情中的流程审计记录；邮件投递记录不属于任务详情返回范围。 */
     public record TaskFlowRecordView(Long id, String action, String actionName, String operatorEmployeeNo, String operatorName,
