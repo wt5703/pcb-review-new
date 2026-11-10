@@ -11,6 +11,7 @@ RUN tar -zxf pcb-review-1.0-SNAPSHOT.tar.gz \
     && chmod +x ./startup.sh \
     && test -f ./pcb-review-1.0-SNAPSHOT.jar \
     && test -f ./application.yml \
+    && test -f ./application-test.yml \
     && test -f ./startup.sh
 
 EXPOSE 8080

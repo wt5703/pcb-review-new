@@ -23,6 +23,14 @@
             <destName>application.yml</destName>
         </file>
 
+
+        <!-- 外部 application-test.yml -->
+        <file>
+            <source>src/main/resources/application-test.yml</source>
+            <outputDirectory>/</outputDirectory>
+            <destName>application-test.yml</destName>
+        </file>
+
         <!-- 启动脚本 -->
         <file>
             <source>docker/startup.sh</source>
