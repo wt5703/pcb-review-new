@@ -31,6 +31,8 @@ class PcbHappyPathIntegrationTest {
     private MockMvc mockMvc;
     @Autowired
     private ReviewFileMapper reviewFileMapper;
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @Test
     void shouldCompletePcbTaskFromCreationToImmutableArchive() throws Exception {
@@ -50,14 +52,17 @@ class PcbHappyPathIntegrationTest {
                         .header("userId", "BMS010").header("userName", "测试用户"))
                 .andExpect(status().isOk());
         transition(taskId, "PENDING_FINISH", "BMS010", "DESIGNER");
+        jdbcTemplate.update("UPDATE reviewer_whitelist SET roles=? WHERE employee_no=?", "PCB-LEADER", "BMS001");
+        jdbcTemplate.update("UPDATE reviewer_whitelist SET roles=? WHERE employee_no=?", "HARDWARE-MANAGER", "BMS002");
         transition(taskId, "FINISH", "BMS001", "PCB_LEADER");
+        transition(taskId, "FINISH", "BMS002", "HARDWARE_MANAGER");
 
         mockMvc.perform(get("/tasks/{taskId}/archive", taskId)
                         .header("userId", "BMS010")
                         .header("userName", "测试用户"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.flowNodes").isArray())
-                .andExpect(jsonPath("$.data.flowNodes.length()").value(5));
+                .andExpect(jsonPath("$.data.flowNodes.length()").value(6));
 
         mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("userId", "BMS001")

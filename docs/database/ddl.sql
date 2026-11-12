@@ -2,7 +2,7 @@
 -- 每张表的索引均内嵌在对应 CREATE TABLE 语句中，避免将建表和索引拆成独立 SQL 块。
 
 CREATE TABLE review_task (
-    id BIGINT PRIMARY KEY,
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
     review_type VARCHAR(32) NOT NULL,
     task_name VARCHAR(200) NOT NULL,
     project_no VARCHAR(100) NOT NULL DEFAULT '',
@@ -93,7 +93,7 @@ CREATE TABLE check_item_template (
     id BIGINT PRIMARY KEY,
     review_type VARCHAR(32) NOT NULL,
     parent_id BIGINT,
-    item_name VARCHAR(500) NOT NULL,
+    item_name TEXT NOT NULL,
     item_rich_text MEDIUMTEXT,
     sort_no INTEGER NOT NULL DEFAULT 1,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -128,6 +128,10 @@ CREATE TABLE task_flow_record (
     action_name VARCHAR(100) NOT NULL,
     operate_employee_no VARCHAR(64) NOT NULL,
     flow_comment VARCHAR(2000),
+    from_status VARCHAR(64),
+    to_status VARCHAR(64),
+    next_operator_employee_nos TEXT,
+    approval_role VARCHAR(64),
     create_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_task_flow_record_task (task_id, create_at)
 ) COMMENT='任务流程流转记录表';
@@ -142,7 +146,8 @@ CREATE TABLE outbox_event (
     retry_count INT NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     published_at TIMESTAMP NULL,
-    INDEX idx_outbox_event_status_created (event_status, created_at)
+    INDEX idx_outbox_event_status_created (event_status, created_at),
+    INDEX idx_outbox_event_aggregate (aggregate_type, aggregate_id)
 ) COMMENT='本地Outbox事件表';
 
 CREATE TABLE notification_send_record (

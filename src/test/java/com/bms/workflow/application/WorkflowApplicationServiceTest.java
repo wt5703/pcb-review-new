@@ -62,6 +62,8 @@ class WorkflowApplicationServiceTest {
     @BeforeEach
     void allowActiveReviewerPersistence() {
         when(taskMapper.updateAssignedReviewerEmployeeNos(any())).thenReturn(1);
+        when(reviewerWhitelistApplicationService.findSystemRoleEmployeeNos(SystemRole.PCB_LEADER)).thenReturn(List.of("BMS001"));
+        when(reviewerWhitelistApplicationService.findSystemRoleEmployeeNos(SystemRole.HARDWARE_MANAGER)).thenReturn(List.of("BMS002"));
     }
 
     @Test
@@ -187,6 +189,12 @@ class WorkflowApplicationServiceTest {
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of());
         when(taskMapper.update(any())).thenReturn(1);
         when(flowMapper.nextId()).thenReturn(2L);
+
+        TaskFlowRecord confirmation = new TaskFlowRecord();
+        confirmation.setAction(WorkflowAction.FINISH_CONFIRM.name());
+        confirmation.setApprovalRole(SystemRole.HARDWARE_MANAGER.code());
+        confirmation.setOperateEmployeeNo("BMS002");
+        when(flowMapper.findByTaskId(1001L)).thenReturn(List.of(confirmation));
 
         WorkflowApplicationService.WorkflowView view = service.transition(1001L, WorkflowAction.FINISH, "评审结束",
                 "BMS001");
@@ -318,6 +326,8 @@ class WorkflowApplicationServiceTest {
         when(fileMapper.findLatestByTaskIdAndCategory(1001L, "SCHEMATIC_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
         when(taskMapper.update(any())).thenReturn(1);
         when(taskMapper.updateAssignedReviewerEmployeeNos(any())).thenReturn(1);
+        when(reviewerWhitelistApplicationService.findSystemRoleEmployeeNos(SystemRole.PCB_LEADER)).thenReturn(List.of("BMS001"));
+        when(reviewerWhitelistApplicationService.findSystemRoleEmployeeNos(SystemRole.HARDWARE_MANAGER)).thenReturn(List.of("BMS002"));
         when(flowMapper.nextId()).thenReturn(3L);
         when(reviewerWhitelistApplicationService.hasSystemRole("BMS010", SystemRole.HARDWARE_MANAGER)).thenReturn(true);
 

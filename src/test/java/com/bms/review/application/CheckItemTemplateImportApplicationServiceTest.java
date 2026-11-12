@@ -27,7 +27,7 @@ class CheckItemTemplateImportApplicationServiceTest {
 
     @Test
     void shouldSplitLineStartedParenthesizedNumbersWithoutBreakingDecimals() throws Exception {
-        when(templateMapper.nextId()).thenReturn(10L, 11L, 12L, 13L, 14L, 15L);
+        when(templateMapper.nextId()).thenReturn(10L, 11L, 12L, 13L, 14L, 15L, 16L);
 
         CheckItemTemplateApplicationService.ImportResult result = service.importWorkbook(workbookBytes(
                         "螺丝孔",
@@ -42,13 +42,15 @@ class CheckItemTemplateImportApplicationServiceTest {
         verify(templateMapper, atLeastOnce()).insert(records.capture());
         List<CheckItemTemplateRecord> inserted = records.getAllValues();
 
-        assertThat(result.totalRows()).isEqualTo(6);
-        assertThat(inserted.get(0).getItemName()).isEqualTo("螺丝孔");
+        assertThat(result.totalRows()).isEqualTo(7);
+        assertThat(inserted.get(0).getItemName()).isEqualTo("检查项模板");
+        assertThat(inserted.get(1).getItemName()).isEqualTo("螺丝孔");
+        assertThat(inserted.get(1).getParentId()).isEqualTo(10L);
         assertThat(inserted.get(0).getReviewType()).isEqualTo(ReviewType.SCHEMATIC.name());
         assertThat(inserted.get(0).getParentId()).isNull();
         assertThat(inserted.get(0).getSortNo()).isEqualTo(1);
-        assertThat(inserted.stream().skip(1).toList()).allSatisfy(record -> assertThat(record.getParentId()).isEqualTo(10L));
-        assertThat(inserted.stream().skip(1).map(CheckItemTemplateRecord::getSortNo).toList()).containsExactly(1, 2, 3, 4, 5);
+        assertThat(inserted.stream().skip(2).toList()).allSatisfy(record -> assertThat(record.getParentId()).isEqualTo(11L));
+        assertThat(inserted.stream().skip(2).map(CheckItemTemplateRecord::getSortNo).toList()).containsExactly(1, 2, 3, 4, 5);
         assertThat(inserted).extracting(CheckItemTemplateRecord::getItemName).contains(
                 "孔边缘与线间距＞15mil",
                 "如800v高压螺丝孔隔离间距pad到shape禁步区≥10mm",
@@ -75,12 +77,12 @@ class CheckItemTemplateImportApplicationServiceTest {
         existing.setId(1L);
         when(templateMapper.findAll(ReviewType.PCB.name())).thenReturn(List.of(existing));
         when(templateMapper.disableEnabledByReviewType(ReviewType.PCB.name())).thenReturn(1);
-        when(templateMapper.nextId()).thenReturn(10L, 11L);
+        when(templateMapper.nextId()).thenReturn(10L, 11L, 12L);
 
         CheckItemTemplateApplicationService.ImportResult result = service.importWorkbook(
                 workbookBytes("新类别", "新检查项"), ReviewType.PCB, true);
 
-        assertThat(result.createdCount()).isEqualTo(2);
+        assertThat(result.createdCount()).isEqualTo(3);
         assertThat(result.replacedCount()).isEqualTo(1);
         verify(templateMapper).disableEnabledByReviewType(ReviewType.PCB.name());
     }
@@ -95,9 +97,35 @@ class CheckItemTemplateImportApplicationServiceTest {
 
         ArgumentCaptor<CheckItemTemplateRecord> records = ArgumentCaptor.forClass(CheckItemTemplateRecord.class);
         verify(templateMapper, atLeastOnce()).insert(records.capture());
-        assertThat(result.totalRows()).isEqualTo(3);
+        assertThat(result.totalRows()).isEqualTo(4);
         assertThat(records.getAllValues()).extracting(CheckItemTemplateRecord::getItemName).containsExactly(
-                "时钟", "时钟/数据走线是否等长、远离干扰，隔离带是否保持净空", "时钟线不要跨分割区域");
+                "检查项模板", "时钟", "时钟/数据走线是否等长、远离干扰，隔离带是否保持净空", "时钟线不要跨分割区域");
+    }
+
+    @Test
+    void shouldKeepSheetsSeparateAndAllowAnEmptySheet() throws Exception {
+        when(templateMapper.nextId()).thenReturn(10L, 11L, 12L, 13L, 14L, 15L, 16L);
+        byte[] bytes;
+        try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            for (String name : List.of("BMU", "BSU")) {
+                var sheet = workbook.createSheet(name);
+                var header = sheet.createRow(0);
+                header.createCell(0).setCellValue("检查项类别");
+                header.createCell(1).setCellValue("检查内容");
+                var row = sheet.createRow(1);
+                row.createCell(0).setCellValue("连接器");
+                row.createCell(1).setCellValue("检查安装位置");
+            }
+            workbook.createSheet("分流器");
+            workbook.write(output);
+            bytes = output.toByteArray();
+        }
+
+        assertThat(service.importWorkbook(bytes, ReviewType.SCHEMATIC).createdCount()).isEqualTo(7);
+        ArgumentCaptor<CheckItemTemplateRecord> records = ArgumentCaptor.forClass(CheckItemTemplateRecord.class);
+        verify(templateMapper, atLeastOnce()).insert(records.capture());
+        assertThat(records.getAllValues()).extracting(CheckItemTemplateRecord::getParentId)
+                .containsExactly(null, 10L, 11L, null, 13L, 14L, null);
     }
 
     private byte[] workbookBytes(String category, String items) throws Exception {

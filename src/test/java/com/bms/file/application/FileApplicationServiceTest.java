@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,6 +39,7 @@ class FileApplicationServiceTest {
     @Test
     void shouldRegisterEachUploadedFileIndependently() {
         when(fileMapper.nextId()).thenReturn(101L, 102L);
+        when(fileMapper.insert(any(ReviewFileRecord.class))).thenReturn(1);
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
         when(resourceServiceClient.upload(any(MultipartFile.class), anyString()))
                 .thenReturn(new ResourceServiceClient.StoredResource("/company/BMS.pcb", "/company/BMS.pcb"));
@@ -135,6 +137,32 @@ class FileApplicationServiceTest {
         service.unbindFile(1L, fileId, "10");
 
         verify(fileMapper).markAsLatest(1L, 101L);
+    }
+
+    @Test
+    void replacesInitialFilesWithRetainedAndNewFiles() {
+        ReviewFileRecord b = record(102L, "b");
+        ReviewFileRecord c = record(103L, "c");
+        ReviewFileRecord d = record(104L, "d");
+        d.setTaskId(null);
+        d.setLatest(false);
+        when(taskMapper.findById(1L)).thenReturn(taskRecord());
+        when(fileMapper.findByFileId("c778c14e-6f1a-4f4f-9f11-100000000102")).thenReturn(b);
+        when(fileMapper.findByFileId("c778c14e-6f1a-4f4f-9f11-100000000103")).thenReturn(c);
+        when(fileMapper.findByFileId("c778c14e-6f1a-4f4f-9f11-100000000104")).thenReturn(d);
+        when(fileMapper.bindToTask(d)).thenReturn(1);
+
+        assertThat(service.replaceInitialFiles(1L, List.of("c778c14e-6f1a-4f4f-9f11-100000000102", "c778c14e-6f1a-4f4f-9f11-100000000103", "c778c14e-6f1a-4f4f-9f11-100000000104"), "10"))
+                .extracting(FileApplicationService.FileView::id)
+                .containsExactly(102L, 103L, 104L);
+
+        verify(fileMapper).markOmittedInitialFilesAsHistorical(1L, FileCategory.PCB_REVIEW.name(),
+                List.of(102L, 103L, 104L));
+        verify(fileMapper).bindToTask(d);
+        org.mockito.Mockito.verifyNoMoreInteractions(
+                org.mockito.Mockito.ignoreStubs(fileMapper));
+        assertThat(d.getTaskId()).isEqualTo(1L);
+        assertThat(d.getLatest()).isTrue();
     }
 
     private ReviewFileRecord record(long id, String md5) {

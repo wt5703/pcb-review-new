@@ -40,49 +40,56 @@ public class TaskCheckItemApplicationService {
     private final TaskProcessorAuthorizationService taskProcessorAuthorizationService;
     private final ReviewOpinionMapper opinionMapper;
     private final UserCenterUserProfileClient userProfileClient;
-    private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService;
 
     public TaskCheckItemApplicationService(ReviewTaskMapper taskMapper, CheckItemTemplateMapper templateMapper,
                                            TaskCheckItemMapper taskCheckItemMapper, TaskProcessorAuthorizationService taskProcessorAuthorizationService,
-                                           ReviewOpinionMapper opinionMapper, UserCenterUserProfileClient userProfileClient,
-                                           ReviewerWhitelistApplicationService reviewerWhitelistApplicationService) {
+                                           ReviewOpinionMapper opinionMapper, UserCenterUserProfileClient userProfileClient) {
         this.taskMapper = taskMapper;
         this.templateMapper = templateMapper;
         this.taskCheckItemMapper = taskCheckItemMapper;
         this.taskProcessorAuthorizationService = taskProcessorAuthorizationService;
         this.opinionMapper = opinionMapper;
         this.userProfileClient = userProfileClient;
-        this.reviewerWhitelistApplicationService = reviewerWhitelistApplicationService;
     }
 
     @Transactional
-    public List<CheckItemCategoryView> list(long taskId, String operatorEmployeeNo) {
-        ReviewTaskRecord task = requireVisibleTask(taskId, operatorEmployeeNo);
-        List<CheckItemTemplateRecord> templates = materializeSingleTemplateIfActive(task);
+    public List<CheckItemCategoryView> list(long taskId) {
+        taskMapper.lockById(taskId);
+        ReviewTaskRecord task = requireTaskExists(taskId);
         List<TaskCheckItemRecord> records = taskCheckItemMapper.findByTaskId(taskId);
-        if (!isFinished(task)) {
-            Set<Long> activeTemplateIds = templates.stream().map(CheckItemTemplateRecord::getId).collect(java.util.stream.Collectors.toSet());
-            records = records.stream().filter(record -> activeTemplateIds.contains(record.getItemId())).toList();
+        List<CheckItemTemplateRecord> templates;
+        if (records.isEmpty() && !isFinished(task)) {
+            templates = materializeTemplate(task);
+            records = taskCheckItemMapper.findByTaskId(taskId);
+        } else {
+            templates = records.isEmpty() ? List.of()
+                    : templateMapper.findByIds(records.stream().map(TaskCheckItemRecord::getItemId).distinct().toList());
         }
-        Map<Long, CheckItemTemplateRecord> templatesByItemId = templatesByItemId(records, templates, isFinished(task));
-        Map<Long, List<TaskCheckItemRecord>> itemsByParentId = records.stream()
-                .filter(record -> record.getParentId() != null)
+        Map<Long, CheckItemTemplateRecord> templatesByItemId = templates.stream()
+                .collect(java.util.stream.Collectors.toMap(CheckItemTemplateRecord::getId, template -> template));
+        Map<Long, List<TaskCheckItemRecord>> itemsByParentId = records.stream().filter(record -> record.getParentId() != null)
                 .collect(java.util.stream.Collectors.groupingBy(TaskCheckItemRecord::getParentId));
-        return records.stream()
-                .filter(record -> record.getParentId() == null)
-                .sorted(java.util.Comparator.comparing(TaskCheckItemRecord::getSortNo))
+        return records.stream().filter(record -> record.getParentId() == null)
+                .sorted(java.util.Comparator.comparing(TaskCheckItemRecord::getSortNo).thenComparing(TaskCheckItemRecord::getId))
                 .map(category -> new CheckItemCategoryView(new CheckItemCategoryInfo(category.getId(),
                         itemNameOf(category, templatesByItemId), category.getSortNo()),
-                        itemsByParentId.getOrDefault(category.getId(), List.of()).stream()
-                                .sorted(java.util.Comparator.comparing(TaskCheckItemRecord::getSortNo))
-                                .map(item -> CheckItemListItemView.from(item, templateOf(item, templatesByItemId)))
-                                .toList()))
+                        childItems(category.getId(), itemsByParentId, templatesByItemId)))
+                .toList();
+    }
+
+    private List<CheckItemListItemView> childItems(long parentId, Map<Long, List<TaskCheckItemRecord>> itemsByParentId,
+                                                   Map<Long, CheckItemTemplateRecord> templatesByItemId) {
+        return itemsByParentId.getOrDefault(parentId, List.of()).stream()
+                .sorted(java.util.Comparator.comparing(TaskCheckItemRecord::getSortNo).thenComparing(TaskCheckItemRecord::getId))
+                .map(item -> CheckItemListItemView.from(item, templateOf(item, templatesByItemId),
+                        childItems(item.getId(), itemsByParentId, templatesByItemId)))
                 .toList();
     }
 
     @Transactional
     public CheckItemView submit(long taskId, long itemId, SubmitCheckItemCommand command, String operatorEmployeeNo, String operatorName) {
         // 1. 只校验任务状态与当前节点处理权限；提交时绝不重新同步互检单模板。
+        taskMapper.lockById(taskId);
         ReviewTaskRecord task = requireTaskExists(taskId);
         if (isFinished(task)) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许修改检查项");
@@ -138,8 +145,9 @@ public class TaskCheckItemApplicationService {
     private List<CheckItemView> writeBatch(long taskId, List<SubmitBatchItemCommand> commands,
                                            String operatorEmployeeNo, String operatorName, boolean draft) {
         // 1. 批量提交同样只处理既有任务快照，不在保存过程中读取或同步模板。
+        taskMapper.lockById(taskId);
         ReviewTaskRecord task = requireTaskExists(taskId);
-        if (isFinished(task)) { throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许修改检查项"); }
+        if (isFinished(task)) { throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "当前任务状态不允许修改检查项"); }
         taskProcessorAuthorizationService.requireCurrentTaskProcessor(taskId, operatorEmployeeNo);
         if (commands == null || commands.isEmpty()) { throw new BusinessException(ErrorCode.VALIDATION_ERROR, "互检单至少需要提交一条检查项结果"); }
 
@@ -151,7 +159,9 @@ public class TaskCheckItemApplicationService {
             TaskCheckItemRecord record = taskCheckItemMapper.findByTaskIdAndId(taskId, command.itemId());
             if (record == null) { throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务"); }
             requireLeafCheckItem(record);
-            validateBatchCommand(command, draft);
+            if (!draft) {
+                validateResult(command.result(), command.comment());
+            }
 
             // 3. 结论与同源意见保持一致：保存时 FAIL 仅写草稿，提交时才发布为设计者可答复的意见。
             ReviewOpinionRecord opinion = command.result() == CheckResult.FAIL
@@ -161,7 +171,7 @@ public class TaskCheckItemApplicationService {
             }
 
             // 4. 持久化当前任务检查项的结论和说明，不影响同任务的其他子项。
-            record.setCheckResult(command.result().name()); record.setComment(command.comment()); record.setRichText(command.richText());
+            record.setCheckResult(command.result() == null ? null : command.result().name()); record.setComment(command.comment()); record.setRichText(command.richText());
             record.setStatus(draft ? CheckItemStatus.SAVED.name() : CheckItemStatus.COMPLETED.name());
             if (taskCheckItemMapper.submit(record) != 1) { throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在或不属于当前任务"); }
             views.add(toCheckItemView(record, opinion, itemNameOf(record)));
@@ -171,66 +181,35 @@ public class TaskCheckItemApplicationService {
 
     @Transactional
     public void materializeActiveTaskItems(long taskId) {
+        taskMapper.lockById(taskId);
         ReviewTaskRecord task = requireTaskExists(taskId);
-        if (!isFinished(task)) {
-            materializeSingleTemplateIfActive(task);
+        if (!isFinished(task) && taskCheckItemMapper.findByTaskId(taskId).isEmpty()) {
+            materializeTemplate(task);
         }
     }
 
-    /**
-     * 任务只会从其 PCB 或原理图类型对应的一套模板生成检查项快照，
-     * 不提供模板 ID 选择，也不允许混入另一种评审类型的检查项。
-     */
-    private List<CheckItemTemplateRecord> materializeSingleTemplateIfActive(ReviewTaskRecord task) {
-        if (isFinished(task)) {
-            return List.of();
-        }
+    /** 已有任务快照继续引用原模板记录，重新导入只影响之后生成的快照。 */
+    private List<CheckItemTemplateRecord> materializeTemplate(ReviewTaskRecord task) {
         List<CheckItemTemplateRecord> templates = templateMapper.findEnabledByReviewType(task.getReviewType());
-        Map<Long, TaskCheckItemRecord> existing = new HashMap<>();
-        for (TaskCheckItemRecord item : taskCheckItemMapper.findByTaskId(task.getId())) {
-            existing.put(item.getItemId(), item);
-        }
-        Map<Long, CheckItemTemplateRecord> templateById = templates.stream()
-                .collect(java.util.stream.Collectors.toMap(CheckItemTemplateRecord::getId, template -> template, (left, right) -> left));
-        for (CheckItemTemplateRecord template : templates.stream().filter(item -> item.getParentId() == null).toList()) {
-            materializeSnapshot(task.getId(), template, null, existing);
-        }
-        for (CheckItemTemplateRecord template : templates.stream().filter(item -> item.getParentId() != null).toList()) {
-            CheckItemTemplateRecord parentTemplate = templateById.get(template.getParentId());
-            TaskCheckItemRecord parent = parentTemplate == null ? null : existing.get(parentTemplate.getId());
-            materializeSnapshot(task.getId(), template, parent == null ? null : parent.getId(), existing);
-        }
+        Map<Long, List<CheckItemTemplateRecord>> childrenByParentId = templates.stream().filter(item -> item.getParentId() != null)
+                .collect(java.util.stream.Collectors.groupingBy(CheckItemTemplateRecord::getParentId));
+        templates.stream().filter(item -> item.getParentId() == null)
+                .forEach(root -> materializeSnapshot(task.getId(), root, null, childrenByParentId));
         return templates;
     }
 
-    private void materializeSnapshot(long taskId, CheckItemTemplateRecord template, Long parentId, Map<Long, TaskCheckItemRecord> existing) {
-        TaskCheckItemRecord snapshot = snapshotOf(taskId, template, parentId);
-        TaskCheckItemRecord current = existing.get(template.getId());
-        if (current != null) {
-            snapshot.setId(current.getId());
-            snapshot.setStatus(current.getStatus());
-            taskCheckItemMapper.refreshTemplateSnapshot(snapshot);
-        } else {
-            snapshot.setId(taskCheckItemMapper.nextId());
-            snapshot.setStatus(CheckItemStatus.PENDING.name());
-            taskCheckItemMapper.insert(snapshot);
-        }
-        existing.put(template.getId(), snapshot);
-    }
-
-    private TaskCheckItemRecord snapshotOf(long taskId, CheckItemTemplateRecord template, Long parentId) {
+    private void materializeSnapshot(long taskId, CheckItemTemplateRecord template, Long parentId,
+                                     Map<Long, List<CheckItemTemplateRecord>> childrenByParentId) {
         TaskCheckItemRecord item = new TaskCheckItemRecord();
+        item.setId(taskCheckItemMapper.nextId());
         item.setTaskId(taskId);
         item.setItemId(template.getId());
         item.setParentId(parentId);
         item.setSortNo(template.getSortNo());
-        return item;
-    }
-
-    private ReviewTaskRecord requireVisibleTask(long taskId, String operatorEmployeeNo) {
-        ReviewTaskRecord task = requireTaskExists(taskId);
-        reviewerWhitelistApplicationService.requireTaskDetailAccess(operatorEmployeeNo);
-        return task;
+        item.setStatus(CheckItemStatus.PENDING.name());
+        taskCheckItemMapper.insert(item);
+        childrenByParentId.getOrDefault(template.getId(), List.of())
+                .forEach(child -> materializeSnapshot(taskId, child, item.getId(), childrenByParentId));
     }
 
     private ReviewTaskRecord requireTaskExists(long taskId) {
@@ -242,7 +221,7 @@ public class TaskCheckItemApplicationService {
     }
 
     private boolean isFinished(ReviewTaskRecord task) {
-        return TaskStatus.FINISHED.name().equals(task.getStatus());
+        return TaskStatus.isClosed(task.getStatus());
     }
 
     private void validateCommand(SubmitCheckItemCommand command) {
@@ -256,17 +235,8 @@ public class TaskCheckItemApplicationService {
     }
 
     private void requireLeafCheckItem(TaskCheckItemRecord record) {
-        if (record.getParentId() == null) {
+        if (record.getParentId() == null || taskCheckItemMapper.hasChildren(record.getTaskId(), record.getId())) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "互检类别不能直接提交，必须提交其下检查项");
-        }
-    }
-
-    private void validateBatchCommand(SubmitBatchItemCommand command, boolean draft) {
-        if (command.result() == null) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "检查结果不能为空");
-        }
-        if (!draft) {
-            validateResult(command.result(), command.comment());
         }
     }
 
@@ -345,19 +315,6 @@ public class TaskCheckItemApplicationService {
                 || OpinionStatus.WITHDRAWN.name().equals(opinion.getStatus());
     }
 
-    private Map<Long, CheckItemTemplateRecord> templatesByItemId(List<TaskCheckItemRecord> records,
-                                                                    List<CheckItemTemplateRecord> activeTemplates,
-                                                                    boolean finished) {
-        if (records.isEmpty()) {
-            return Map.of();
-        }
-        List<CheckItemTemplateRecord> source = finished
-                ? templateMapper.findByIds(records.stream().map(TaskCheckItemRecord::getItemId).distinct().toList())
-                : activeTemplates;
-        return source.stream().collect(java.util.stream.Collectors.toMap(CheckItemTemplateRecord::getId,
-                template -> template, (left, right) -> left));
-    }
-
     private String itemNameOf(TaskCheckItemRecord record) {
         CheckItemTemplateRecord template = templateMapper.findById(record.getItemId());
         if (template == null) {
@@ -387,11 +344,13 @@ public class TaskCheckItemApplicationService {
      * 互检单查询子项：检查结论、文字意见和富文本只存在于可空 opinion 内，避免把同一信息平铺在 items 中。
      * 模板富文本不属于任务检查项列表响应，页面只使用检查项名称。
      */
-    public record CheckItemListItemView(Long id, String itemName, int sortNo, CheckItemListOpinionView opinion) {
-        static CheckItemListItemView from(TaskCheckItemRecord record, CheckItemTemplateRecord template) {
+    public record CheckItemListItemView(Long id, String itemName, int sortNo, CheckItemListOpinionView opinion,
+                                        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_EMPTY)
+                                        List<CheckItemListItemView> items) {
+        static CheckItemListItemView from(TaskCheckItemRecord record, CheckItemTemplateRecord template, List<CheckItemListItemView> items) {
             CheckItemListOpinionView opinion = record.getCheckResult() == null ? null
                     : new CheckItemListOpinionView(CheckResult.valueOf(record.getCheckResult()), record.getComment(), record.getRichText());
-            return new CheckItemListItemView(record.getId(), template.getItemName(), record.getSortNo(), opinion);
+            return new CheckItemListItemView(record.getId(), template.getItemName(), record.getSortNo(), opinion, items);
         }
     }
     public record CheckItemListOpinionView(CheckResult result, String comment, String richText) { }

@@ -10,6 +10,7 @@ package com.bms.task.domain;
 public enum TaskStatus {
     /** 草稿：任务已保存，尚未正式提交。 */
     DRAFT("草稿"),
+    PENDING_INITIATION("待发起"),
     /** 专家评审：PCB 任务正在进行专家意见评审。 */
     PCB_EXPERT_REVIEWING("专家评审"),
     /** 工艺/结构评审：PCB 任务正在进行工艺和/或结构评审。 */
@@ -25,12 +26,26 @@ public enum TaskStatus {
     /** 待结束：设计者已提交终版文件，等待组长结束任务。 */
     PENDING_FINISH("待结束"),
     /** 结束：任务流程已结束并可归档。 */
-    FINISHED("结束");
+    FINISHED("结束"),
+    TERMINATED("终止");
 
     private final String displayName;
 
     TaskStatus(String displayName) {
         this.displayName = displayName;
+    }
+
+    public boolean canWithdraw(ReviewType reviewType, boolean hasReviewOpinions) {
+        return !hasReviewOpinions && (reviewType == ReviewType.PCB && this == PCB_EXPERT_REVIEWING
+                || reviewType == ReviewType.SCHEMATIC && this == MUTUAL_CHECK_PENDING_ASSIGNMENT);
+    }
+
+    public boolean isPendingSubmission() {
+        return this == DRAFT || this == PENDING_INITIATION;
+    }
+
+    public static boolean isClosed(String status) {
+        return FINISHED.name().equals(status) || TERMINATED.name().equals(status);
     }
 
     public String displayName() {

@@ -104,6 +104,7 @@ class MyTaskApplicationServiceTest {
 
     @Test
     void shouldIncludeDesignerReplyAndLeaderFinishActions() {
+        when(reviewerWhitelistApplicationService.hasSystemRole("BMS001", SystemRole.PCB_LEADER)).thenReturn(true);
         when(taskMapper.findAllUnfinished()).thenReturn(
                 List.of(task(1L, "BMS010", TaskStatus.MUTUAL_CHECK_REVIEWING), task(2L, "BMS099", TaskStatus.MUTUAL_CHECK_REVIEWING)),
                 List.of(task(2L, "BMS099", TaskStatus.PENDING_FINISH)));

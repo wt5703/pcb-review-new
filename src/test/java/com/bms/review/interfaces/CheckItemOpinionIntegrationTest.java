@@ -32,6 +32,8 @@ class CheckItemOpinionIntegrationTest {
     private MockMvc mockMvc;
     @Autowired
     private ReviewTaskMapper taskMapper;
+    @Autowired
+    private com.bms.review.application.CheckItemTemplateApplicationService templateService;
 
     @Test
     void shouldCompleteFailedCheckItemWithOpinionInOneBatchSubmission() throws Exception {
@@ -151,6 +153,46 @@ class CheckItemOpinionIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.category.itemName").value("暂未配置子项的大类"))
                 .andExpect(jsonPath("$.data.items").isEmpty());
+    }
+
+    @Test
+    void shouldKeepOldSnapshotAndMaterializeNewThreeLevelChecklist() throws Exception {
+        taskMapper.insert(task(8501L));
+        mockMvc.perform(post("/check-item-templates").header("userId", "BMS001")
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"reviewType":"PCB","categoryName":"旧类别","items":[{"itemName":"旧检查项"}]}
+                                """))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/tasks/{taskId}/check-items", 8501L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].items[0].itemName").value("旧检查项"));
+
+        try (var workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook();
+             var bytes = new java.io.ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("通用");
+            var header = sheet.createRow(0);
+            header.createCell(0).setCellValue("类别");
+            header.createCell(1).setCellValue("检查项");
+            var row = sheet.createRow(1);
+            row.createCell(0).setCellValue("新类别");
+            row.createCell(1).setCellValue("新检查项");
+            workbook.createSheet("高压板");
+            workbook.write(bytes);
+            templateService.importWorkbook(bytes.toByteArray(), ReviewType.PCB, true);
+        }
+
+        mockMvc.perform(get("/tasks/{taskId}/check-items", 8501L))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].category.itemName").value("旧类别"))
+                .andExpect(jsonPath("$.data[0].items[0].itemName").value("旧检查项"));
+        taskMapper.insert(task(8502L));
+        mockMvc.perform(get("/tasks/{taskId}/check-items", 8502L).header("userId", "BMS020"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].category.itemName").value("通用"))
+                .andExpect(jsonPath("$.data[0].items[0].itemName").value("新类别"))
+                .andExpect(jsonPath("$.data[0].items[0].items[0].itemName").value("新检查项"))
+                .andExpect(jsonPath("$.data[1].category.itemName").value("高压板"))
+                .andExpect(jsonPath("$.data[1].items").isEmpty());
     }
 
     private ReviewTaskRecord task(long taskId) {

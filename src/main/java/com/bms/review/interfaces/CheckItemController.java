@@ -4,6 +4,7 @@ import com.bms.common.ApiResponse;
 import com.bms.common.TraceIdFilter;
 import com.bms.review.application.TaskCheckItemApplicationService;
 import com.bms.review.domain.CheckResult;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -43,10 +44,9 @@ public class CheckItemController {
     }
 
     @GetMapping
-    @Operation(summary = "查询任务互检单详情", description = "任务的互检单详情")
-    ApiResponse<List<TaskCheckItemApplicationService.CheckItemCategoryView>> list(@PathVariable long taskId,
-                                                                                    @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
-        return ApiResponse.ok(taskCheckItemApplicationService.list(taskId, employeeNo), traceId(servletRequest));
+    @Operation(summary = "查询任务互检单详情", description = "新模板按工作表、类别、检查项三级返回，子节点位于 items；已有任务快照保留原有层级与检查项 ID。")
+    ApiResponse<List<TaskCheckItemApplicationService.CheckItemCategoryView>> list(@PathVariable long taskId, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(taskCheckItemApplicationService.list(taskId), traceId(servletRequest));
     }
 
     @PutMapping("/{itemId}")
@@ -74,7 +74,7 @@ public class CheckItemController {
     @PutMapping("/batch/save")
     @Operation(summary = "保存互检单", description = "暂存当前填写的检查项。保存时不校验 comment 和 richText 是否为空；FAIL（不合格）会保存为草稿意见，仅互检人可见，不会进入设计者答复页面；正式调用批量提交接口后才发布意见。")
     ApiResponse<List<TaskCheckItemApplicationService.CheckItemView>> saveBatch(@PathVariable long taskId,
-                                                                                 @Valid @RequestBody SubmitCheckItemsRequest request,
+                                                                                 @Valid @RequestBody SaveCheckItemsRequest request,
                                                                                  @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
         userName = decode(userName, StandardCharsets.UTF_8);
         return ApiResponse.ok(taskCheckItemApplicationService.saveBatch(taskId, request.items().stream()
@@ -98,4 +98,13 @@ public class CheckItemController {
                                  @Schema(description = "检查结果：PASS 合格、FAIL 不合格、NC", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull CheckResult result,
                                  @Schema(description = "用户填写的文字意见；批量保存时可为空，正式提交时仅 FAIL 必填") String comment,
                                  @Schema(description = "富文本补充说明，可包含文字和内嵌 data URI 图片；批量保存时可为空") String richText) { }
+    @Schema(description = "整张互检单批量暂存请求")
+    record SaveCheckItemsRequest(@NotEmpty List<@Valid SaveCheckItemRequest> items) { }
+
+    record SaveCheckItemRequest(@NotNull Long itemId,
+                                @Schema(description = "检查结果：PASS、FAIL、NC，未选择时可为空")
+                                @JsonDeserialize(using = CheckItemJacksonConfiguration.DraftCheckResultDeserializer.class)
+                                CheckResult result,
+                                String comment,
+                                String richText) { }
 }

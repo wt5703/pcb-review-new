@@ -51,7 +51,14 @@ class OpenApiIntegrationTest {
         mockMvc.perform(get("/openapi.json"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.info.title").value("PCB评审平台后端 API"))
-                .andExpect(jsonPath("$.paths['/tasks']").exists());
+                .andExpect(jsonPath("$.paths['/tasks']").exists())
+                .andExpect(jsonPath("$.paths['/tasks/{taskId}/workflow/withdraw'].post").exists())
+                .andExpect(jsonPath("$.paths['/tasks/{taskId}/workflow/terminate'].post").exists())
+                .andExpect(jsonPath("$.paths['/tasks/{taskId}/workflow/return'].post").exists())
+                .andExpect(jsonPath("$.paths['/tasks/{taskId}/workflow/return-targets'].get").exists())
+                .andExpect(jsonPath("$.paths['/tasks/{taskId}/flow-records'].get").exists())
+                .andExpect(jsonPath("$.paths['/tasks/{taskId}'].delete").exists())
+                .andExpect(jsonPath("$.paths['/files/upload/batch'].post").exists());
     }
 
     @Test
@@ -69,10 +76,10 @@ class OpenApiIntegrationTest {
                 .andExpect(jsonPath("$.data.reviewRoles[*].code").value(org.hamcrest.Matchers.contains(
                         "HARDWARE_EXPERT", "EMC_EXPERT", "PCB_EXPERT", "PROCESS_EXPERT", "STRUCTURE_EXPERT")))
                 .andExpect(jsonPath("$.data.taskStatuses[*].code").value(org.hamcrest.Matchers.contains(
-                        "DRAFT", "PCB_EXPERT_REVIEWING", "PCB_PROCESS_STRUCTURE_REVIEWING",
+                        "DRAFT", "PENDING_INITIATION", "PCB_EXPERT_REVIEWING", "PCB_PROCESS_STRUCTURE_REVIEWING",
                         "MUTUAL_CHECK_PENDING_ASSIGNMENT", "MUTUAL_CHECK_REVIEWING",
-                        "SCHEMATIC_EXPERT_PENDING_ASSIGNMENT", "SCHEMATIC_REVIEWING", "PENDING_FINISH", "FINISHED")))
+                        "SCHEMATIC_EXPERT_PENDING_ASSIGNMENT", "SCHEMATIC_REVIEWING", "PENDING_FINISH", "FINISHED", "TERMINATED")))
                 .andExpect(jsonPath("$.data.taskStatuses[*].name").value(org.hamcrest.Matchers.contains(
-                        "草稿", "专家评审", "工艺/结构评审", "互检单待分配", "互检单评审", "硬件专家分配", "原理图评审", "待结束", "结束")));
+                        "草稿", "待发起", "专家评审", "工艺/结构评审", "互检单待分配", "互检单评审", "硬件专家分配", "原理图评审", "待结束", "结束", "终止")));
     }
 }

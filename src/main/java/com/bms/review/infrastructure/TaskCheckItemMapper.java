@@ -33,6 +33,9 @@ public interface TaskCheckItemMapper {
             + "check_result AS checkResult, check_comment AS comment, rich_text AS richText, check_status AS status FROM task_check_item WHERE task_id=#{taskId} AND id=#{id}")
     TaskCheckItemRecord findByTaskIdAndId(long taskId, long id);
 
+    @Select("SELECT EXISTS (SELECT 1 FROM task_check_item WHERE task_id=#{taskId} AND parent_id=#{parentId})")
+    boolean hasChildren(Long taskId, long parentId);
+
     @Update("UPDATE task_check_item SET check_result=#{checkResult}, check_comment=#{comment}, rich_text=#{richText}, check_status=#{status}, "
             + "updated_at=CURRENT_TIMESTAMP WHERE id=#{id} AND task_id=#{taskId}")
     int submit(TaskCheckItemRecord record);

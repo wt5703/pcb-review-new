@@ -28,6 +28,8 @@ class TaskControllerIntegrationTest {
     private MockMvc mockMvc;
     @Autowired
     private ReviewFileMapper reviewFileMapper;
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @Test
     void shouldReturnWorkbenchTaskStatisticsForCurrentUser() throws Exception {
@@ -152,9 +154,7 @@ class TaskControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.pageNum").value(2))
                 .andExpect(jsonPath("$.data.items.length()").value(0));
 
-        mockMvc.perform(get("/tasks/{taskId}", taskId)
-                        .header("userId", "BMS010")
-                        .header("userName", "测试用户"))
+        mockMvc.perform(get("/tasks/{taskId}", taskId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(taskId))
                 .andExpect(jsonPath("$.data.taskName").value("REST-BMS PCB评审（已编辑）"))
@@ -174,6 +174,50 @@ class TaskControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.designerEmployeeNo").value("BMS010"))
                 .andExpect(jsonPath("$.data.designerName").value("设计师张三"));
+    }
+
+    @Test
+    void shouldUploadMultipleLatestFilesAndDeleteTaskDataOnlyForDesigner() throws Exception {
+        String response = mockMvc.perform(post("/tasks/save").contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reviewType":"PCB","taskName":"批量文件任务","projectName":"BMS","designName":"BMS-P1",
+                                 "pcbType":"BMU","reviewRoles":["PCB_EXPERT"],
+                                 "reviewerAssignments":[{"reviewRole":"PCB_EXPERT","reviewerEmployeeNos":["BMS003"]}]}
+                                """)
+                        .header("userId", "BMS010").header("userName", "设计者"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        long taskId = ((Number) com.jayway.jsonpath.JsonPath.read(response, "$.data.id")).longValue();
+        var first = new org.springframework.mock.web.MockMultipartFile("files", "A.pcb", "application/octet-stream", new byte[]{1});
+        var second = new org.springframework.mock.web.MockMultipartFile("files", "B.pcb", "application/octet-stream", new byte[]{2});
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart("/files/upload/batch")
+                        .file(first).file(second).param("taskId", String.valueOf(taskId)).param("fileCategory", "PCB_REVIEW")
+                        .header("userId", "BMS010"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(2));
+        org.assertj.core.api.Assertions.assertThat(reviewFileMapper.findLatestByTaskId(taskId))
+                .extracting(ReviewFileRecord::getFileName).containsExactly("A.pcb", "B.pcb");
+
+        jdbcTemplate.update("UPDATE review_task SET task_status=? WHERE id=?", "PCB_EXPERT_REVIEWING", taskId);
+        mockMvc.perform(get("/tasks").param("taskId", String.valueOf(taskId))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].designerAction").value("WITHDRAW"));
+        jdbcTemplate.update("INSERT INTO review_opinion (id, task_id, source_type, severity, raised_by_employee_no, raised_by_name, opinion_status) "
+                + "VALUES (10001, ?, 'PCB_REVIEW', 'GENERAL', 'BMS003', '专家', 'PENDING_REPLY')", taskId);
+        jdbcTemplate.update("INSERT INTO task_flow_record (id, task_id, action_code, action_name, operate_employee_no) "
+                + "VALUES (10001, ?, 'CREATE', '创建任务', 'BMS010')", taskId);
+        mockMvc.perform(get("/tasks").param("taskId", String.valueOf(taskId))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].designerAction").value("TERMINATE"));
+        jdbcTemplate.update("UPDATE review_task SET task_status=? WHERE id=?", "FINISHED", taskId);
+        mockMvc.perform(get("/tasks").param("taskId", String.valueOf(taskId))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].designerAction").value("NONE"));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/tasks/{taskId}", taskId)
+                        .header("userId", "BMS003")).andExpect(status().isForbidden());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/tasks/{taskId}", taskId)
+                        .header("userId", "BMS010")).andExpect(status().isOk());
+        for (String table : java.util.List.of("review_file", "review_opinion", "task_flow_record")) {
+            org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + table + " WHERE task_id=?", Integer.class, taskId)).isZero();
+        }
+        mockMvc.perform(get("/tasks/{taskId}", taskId).header("userId", "BMS010")).andExpect(status().isNotFound());
     }
 
     private ReviewFileRecord pending(String fileId, String fileName, long fileSize, String resourcePath) {

@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotEmpty;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +23,8 @@ import org.springframework.validation.annotation.Validated;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
 
 /**
  * @author 王涛
@@ -50,6 +53,16 @@ public class FileController {
         }
         FileApplicationService.FileView storedFile = fileApplicationService.upload(taskId, fileCategory, multipartFile, employeeNo);
         return ApiResponse.ok(new UploadFileView(storedFile.fileId(), storedFile.id(), storedFile.fileName(), storedFile.fileSize(), storedFile.category()), traceId(servletRequest));
+    }
+
+    @PostMapping(value = "/files/upload/batch", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "批量上传任务文件", description = "传 taskId、fileCategory 及多个同名 files 文件字段。整批上传成功后绑定任务，同类型原有最新文件转为历史，本批文件均为最新。")
+    ApiResponse<List<UploadFileView>> uploadBatch(@RequestParam long taskId,
+            @RequestPart("files") @NotEmpty List<MultipartFile> files, @RequestParam FileCategory fileCategory,
+            @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
+        List<UploadFileView> uploaded = fileApplicationService.uploadBatch(taskId, fileCategory, files, employeeNo).stream()
+                .map(file -> new UploadFileView(file.fileId(), file.id(), file.fileName(), file.fileSize(), file.category())).toList();
+        return ApiResponse.ok(uploaded, traceId(servletRequest));
     }
 
     @PostMapping("/files/download")

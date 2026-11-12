@@ -29,6 +29,8 @@ public class ReviewTaskRecord {
     private String reviewDescription;
     private String status;
     private String initialFileIds;
+    private boolean hasReviewOpinions;
+    private boolean finishApprovalInitialized;
     private Long version;
     private LocalDateTime createdAt;
 
@@ -70,6 +72,10 @@ public class ReviewTaskRecord {
     public void setStatus(String status) { this.status = status; }
     public String getInitialFileIds() { return initialFileIds; }
     public void setInitialFileIds(String initialFileIds) { this.initialFileIds = initialFileIds; }
+    public boolean isHasReviewOpinions() { return hasReviewOpinions; }
+    public void setHasReviewOpinions(boolean hasReviewOpinions) { this.hasReviewOpinions = hasReviewOpinions; }
+    public boolean isFinishApprovalInitialized() { return finishApprovalInitialized; }
+    public void setFinishApprovalInitialized(boolean finishApprovalInitialized) { this.finishApprovalInitialized = finishApprovalInitialized; }
     public Long getVersion() { return version; }
     public void setVersion(Long version) { this.version = version; }
     public LocalDateTime getCreatedAt() { return createdAt; }

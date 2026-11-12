@@ -28,6 +28,6 @@ class ReviewTaskMapperTest {
         Select select = ReviewTaskMapper.class.getMethod("findAllUnfinished").getAnnotation(Select.class);
 
         assertThat(String.join(" ", select.value()))
-                .contains("created_at AS createdAt", "WHERE task_status <> 'FINISHED' ORDER BY id DESC");
+                .contains("created_at AS createdAt", "WHERE task_status NOT IN ('FINISHED', 'TERMINATED') ORDER BY id DESC");
     }
 }

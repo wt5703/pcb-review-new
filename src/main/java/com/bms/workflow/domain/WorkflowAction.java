@@ -16,7 +16,11 @@ public enum WorkflowAction {
     START_SCHEMATIC_EXPERT_REVIEW("开启原理图专家评审"),
     /** 设计者提交终版并将任务流转至待结束；与同名的任务状态分别表示动作和结果。 */
     PENDING_FINISH("进入待结束"),
-    FINISH("结束任务");
+    FINISH("结束任务"),
+    FINISH_CONFIRM("确认结束"),
+    WITHDRAW("撤回任务"),
+    TERMINATE("终止任务"),
+    RETURN("退回任务");
 
     private final String actionName;
 

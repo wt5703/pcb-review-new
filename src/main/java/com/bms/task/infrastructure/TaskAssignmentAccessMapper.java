@@ -15,7 +15,7 @@ public interface TaskAssignmentAccessMapper {
             + "THEN TRUE ELSE FALSE END")
     boolean isAssignedToTask(long taskId, String employeeNo);
 
-    @Select("SELECT CASE WHEN EXISTS (SELECT 1 FROM review_task WHERE id=#{taskId} AND task_status <> 'FINISHED' "
+    @Select("SELECT CASE WHEN EXISTS (SELECT 1 FROM review_task WHERE id=#{taskId} AND task_status NOT IN ('FINISHED', 'TERMINATED', 'PENDING_INITIATION', 'PENDING_FINISH') "
             + "AND CONCAT(',', COALESCE(assigned_reviewer_employee_nos, ''), ',') LIKE CONCAT('%,', #{employeeNo}, ',%')) "
             + "THEN TRUE ELSE FALSE END")
     boolean isCurrentTaskProcessor(long taskId, String employeeNo);

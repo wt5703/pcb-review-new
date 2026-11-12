@@ -1,7 +1,9 @@
 package com.bms.task.infrastructure;
 
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
@@ -16,13 +18,11 @@ import java.util.List;
  */
 @Mapper
 public interface ReviewTaskMapper {
-    @Select("SELECT COALESCE(MAX(id), 0) + 1 FROM review_task")
-    long nextId();
-
     @Insert("INSERT INTO review_task (id, review_type, task_name, project_no, project_name, designer_employee_no, designer_name, design_name, pcb_type, " +
             "expected_completed_date, expert_leader_employee_no, expert_leader_name, review_roles, reviewer_assignments, assigned_reviewer_employee_nos, mutual_check_reviewer_employee_nos, review_description, task_status, initial_file_ids, version) " +
             "VALUES (#{id}, #{reviewType}, #{taskName}, COALESCE(#{projectNo}, ''), #{projectName}, #{designerEmployeeNo}, COALESCE(#{designerName}, CONCAT('设计者#', #{designerEmployeeNo})), #{designName}, #{pcbType}, " +
             "#{expectedCompletedDate}, #{expertLeaderEmployeeNo}, #{expertLeaderName}, COALESCE(#{reviewRoles}, ''), COALESCE(#{reviewerAssignments}, ''), COALESCE(#{assignedReviewerEmployeeNos}, ''), COALESCE(#{mutualCheckReviewerEmployeeNos}, ''), #{reviewDescription}, #{status}, #{initialFileIds}, #{version})")
+    @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(ReviewTaskRecord record);
 
     @Select("SELECT id, review_type AS reviewType, task_name AS taskName, project_no AS projectNo, project_name AS projectName, designer_employee_no AS designerEmployeeNo, " +
@@ -30,6 +30,9 @@ public interface ReviewTaskMapper {
             "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, mutual_check_reviewer_employee_nos AS mutualCheckReviewerEmployeeNos, review_description AS reviewDescription, " +
             "task_status AS status, initial_file_ids AS initialFileIds, version, created_at AS createdAt FROM review_task WHERE id = #{id}")
     ReviewTaskRecord findById(long id);
+
+    @Select("SELECT id FROM review_task WHERE id=#{id} FOR UPDATE")
+    Long lockById(long id);
 
     @Select("SELECT id, review_type AS reviewType, task_name AS taskName, project_no AS projectNo, project_name AS projectName, designer_employee_no AS designerEmployeeNo, " +
             "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, " +
@@ -60,7 +63,8 @@ public interface ReviewTaskMapper {
             + "SELECT id, review_type AS reviewType, task_name AS taskName, project_no AS projectNo, project_name AS projectName, designer_employee_no AS designerEmployeeNo, "
             + "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, "
             + "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, "
-            + "assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, mutual_check_reviewer_employee_nos AS mutualCheckReviewerEmployeeNos, review_description AS reviewDescription, task_status AS status, initial_file_ids AS initialFileIds, version, created_at AS createdAt "
+            + "assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, mutual_check_reviewer_employee_nos AS mutualCheckReviewerEmployeeNos, review_description AS reviewDescription, task_status AS status, initial_file_ids AS initialFileIds, version, created_at AS createdAt, "
+            + "EXISTS (SELECT 1 FROM review_opinion o WHERE o.task_id=review_task.id AND o.is_no_opinion=FALSE) AS hasReviewOpinions "
             + "FROM review_task "
             + "<where>"
             + "<if test='taskName != null and taskName != \"\"'>AND task_name LIKE CONCAT('%', #{taskName}, '%') </if>"
@@ -84,7 +88,9 @@ public interface ReviewTaskMapper {
     @Select("SELECT id, review_type AS reviewType, task_name AS taskName, project_no AS projectNo, project_name AS projectName, designer_employee_no AS designerEmployeeNo, "
             + "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, "
             + "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, mutual_check_reviewer_employee_nos AS mutualCheckReviewerEmployeeNos, review_description AS reviewDescription, "
-            + "task_status AS status, initial_file_ids AS initialFileIds, version, created_at AS createdAt FROM review_task WHERE task_status <> 'FINISHED' ORDER BY id DESC")
+            + "task_status AS status, initial_file_ids AS initialFileIds, version, created_at AS createdAt, "
+            + "CASE WHEN task_status='PENDING_FINISH' THEN EXISTS (SELECT 1 FROM task_flow_record flow WHERE flow.task_id=review_task.id AND flow.to_status='PENDING_FINISH') ELSE FALSE END AS finishApprovalInitialized "
+            + "FROM review_task WHERE task_status NOT IN ('FINISHED', 'TERMINATED') ORDER BY id DESC")
     List<ReviewTaskRecord> findAllUnfinished();
 
     /** 工作台“本月已结束”仅统计当前设计者创建，并在指定自然月内结束的任务。 */
@@ -113,11 +119,45 @@ public interface ReviewTaskMapper {
     @Update("UPDATE review_task SET review_type=#{reviewType}, task_name=#{taskName}, project_no=#{projectNo}, project_name=#{projectName}, designer_name=#{designerName}, "
             + "design_name=#{designName}, pcb_type=#{pcbType}, expected_completed_date=#{expectedCompletedDate}, expert_leader_employee_no=#{expertLeaderEmployeeNo}, "
             + "expert_leader_name=#{expertLeaderName}, review_roles=#{reviewRoles}, reviewer_assignments=#{reviewerAssignments}, assigned_reviewer_employee_nos=#{assignedReviewerEmployeeNos}, mutual_check_reviewer_employee_nos=COALESCE(#{mutualCheckReviewerEmployeeNos}, mutual_check_reviewer_employee_nos), review_description=#{reviewDescription}, updated_at=CURRENT_TIMESTAMP "
-            + "WHERE id=#{id} AND task_status='DRAFT'")
+            + "WHERE id=#{id} AND task_status IN ('DRAFT', 'PENDING_INITIATION')")
     int updateDraft(ReviewTaskRecord record);
 
     /** 任务基本信息独立修改，不改变任务状态、评审角色或流程分配。 */
     @Update("UPDATE review_task SET project_no=#{projectNo}, project_name=#{projectName}, updated_at=CURRENT_TIMESTAMP "
-            + "WHERE id=#{id} AND task_status <> 'FINISHED'")
+            + "WHERE id=#{id} AND task_status NOT IN ('FINISHED', 'TERMINATED')")
     int updateBasicInfo(ReviewTaskRecord record);
+
+    @Select("SELECT id FROM outbox_event WHERE aggregate_type='REVIEW_TASK' AND aggregate_id=#{taskId} FOR UPDATE")
+    List<Long> lockTaskOutbox(long taskId);
+
+    @Delete("DELETE FROM notification_send_record WHERE task_id=#{taskId} OR outbox_event_id IN "
+            + "(SELECT id FROM outbox_event WHERE aggregate_type='REVIEW_TASK' AND aggregate_id=#{taskId})")
+    int deleteTaskNotifications(long taskId);
+
+    @Delete("DELETE FROM outbox_event WHERE aggregate_type='REVIEW_TASK' AND aggregate_id=#{taskId}")
+    int deleteTaskOutbox(long taskId);
+
+    @Delete("DELETE FROM opinion_reply WHERE opinion_id IN (SELECT id FROM review_opinion WHERE task_id=#{taskId})")
+    int deleteTaskOpinionReplies(long taskId);
+
+    @Delete("DELETE FROM opinion_confirmation WHERE opinion_id IN (SELECT id FROM review_opinion WHERE task_id=#{taskId})")
+    int deleteTaskOpinionConfirmations(long taskId);
+
+    @Delete("DELETE FROM review_opinion WHERE task_id=#{taskId}")
+    int deleteTaskOpinions(long taskId);
+
+    @Delete("DELETE FROM task_check_item WHERE task_id=#{taskId}")
+    int deleteTaskCheckItems(long taskId);
+
+    @Delete("DELETE FROM review_file WHERE task_id=#{taskId}")
+    int deleteTaskFileRecords(long taskId);
+
+    @Delete("DELETE FROM task_flow_record WHERE task_id=#{taskId}")
+    int deleteTaskFlowRecords(long taskId);
+
+    @Delete("DELETE FROM task_archive_snapshot WHERE task_id=#{taskId}")
+    int deleteTaskArchive(long taskId);
+
+    @Delete("DELETE FROM review_task WHERE id=#{taskId}")
+    int deleteById(long taskId);
 }

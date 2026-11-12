@@ -36,7 +36,7 @@ public final class ReviewTask {
                        String designerName, String designName, String pcbType, LocalDate expectedCompletedDate,
                        String expertLeaderEmployeeNo, String expertLeaderName, List<ReviewRole> reviewRoles,
                        List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription) {
-        this.id = Objects.requireNonNull(id);
+        this.id = id;
         this.reviewType = Objects.requireNonNull(reviewType);
         this.taskName = requireText(taskName, "任务名称不能为空");
         this.projectNo = projectNo == null ? "" : projectNo.trim();
@@ -110,7 +110,7 @@ public final class ReviewTask {
                                      String expertLeaderEmployeeNo, String expertLeaderName, List<ReviewRole> reviewRoles,
                                      List<TaskReviewerAssignment> reviewerAssignments, String reviewDescription,
                                      TaskStatus status, List<Long> initialFileIds) {
-        ReviewTask task = new ReviewTask(id, reviewType, taskName, projectNo, projectName, designerEmployeeNo, designerName, designName, pcbType,
+        ReviewTask task = new ReviewTask(Objects.requireNonNull(id), reviewType, taskName, projectNo, projectName, designerEmployeeNo, designerName, designName, pcbType,
                 expectedCompletedDate, expertLeaderEmployeeNo, expertLeaderName, reviewRoles, reviewerAssignments, reviewDescription);
         task.initialFileIds.addAll(initialFileIds);
         task.status = status;
@@ -131,7 +131,7 @@ public final class ReviewTask {
     }
 
     public void submit() {
-        if (status != TaskStatus.DRAFT) {
+        if (!status.isPendingSubmission()) {
             throw new IllegalStateException("当前任务不允许提交");
         }
         if (initialFileIds.isEmpty()) {
@@ -149,7 +149,7 @@ public final class ReviewTask {
     }
 
     public void finish() {
-        if (status == TaskStatus.DRAFT || status == TaskStatus.FINISHED) {
+        if (status.isPendingSubmission() || TaskStatus.isClosed(status.name())) {
             throw new IllegalStateException("当前任务不允许结束");
         }
         status = TaskStatus.FINISHED;
@@ -157,13 +157,13 @@ public final class ReviewTask {
 
     private void ensureEditable() {
         ensureNotFinished();
-        if (status != TaskStatus.DRAFT) {
+        if (!status.isPendingSubmission()) {
             throw new IllegalStateException("提交后的任务不能修改草稿字段");
         }
     }
 
     private void ensureNotFinished() {
-        if (status == TaskStatus.FINISHED) {
+        if (TaskStatus.isClosed(status.name())) {
             throw new IllegalStateException("已结束任务不允许修改");
         }
     }

@@ -102,8 +102,8 @@ public class OpinionController {
     @Operation(summary = "查询设计者答复页意见汇总", description = "设计者答复页面的意见汇总；sourceTypes 可使用逗号分隔多个来源，以与意见列表保持相同的阶段范围。")
     ApiResponse<OpinionApplicationService.OpinionSummary> summary(@PathVariable long taskId,
             @RequestParam(required = false) @Parameter(description = "多个意见来源，使用逗号分隔：PCB_PROCESS_REVIEW,PCB_STRUCTURE_REVIEW") List<OpinionSourceType> sourceTypes,
-            @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
-        return ApiResponse.ok(opinionApplicationService.summary(taskId, sourceTypes, employeeNo), traceId(servletRequest));
+            HttpServletRequest servletRequest) {
+        return ApiResponse.ok(opinionApplicationService.summary(taskId, sourceTypes), traceId(servletRequest));
     }
 
     @PostMapping("/opinions/{opinionId}/reply")

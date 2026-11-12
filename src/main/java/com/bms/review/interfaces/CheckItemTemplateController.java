@@ -36,7 +36,7 @@ import java.util.List;
 @RestController
 @Validated
 @RequestMapping("/check-item-templates")
-@Tag(name = "互检检查项模板", description = "按“检查项大类—检查项子类”一对多结构维护互检模板，并支持 Excel 批量导入。")
+@Tag(name = "互检检查项模板", description = "支持 Excel 按工作表、类别、检查项三级导入及查询，兼容已有两级模板。")
 public class CheckItemTemplateController {
     private final CheckItemTemplateApplicationService templateApplicationService;
 
@@ -53,7 +53,7 @@ public class CheckItemTemplateController {
     }
 
     @PostMapping(value = "/import", consumes = "multipart/form-data")
-    @Operation(summary = "Excel 批量导入互检检查项模板", description = "导入前先调用 existence 接口。存在旧模板时，只有 confirmed=true 才会逻辑停用旧模板并导入新模板；未确认会返回提示，不会改变旧模板。导入会跳过“...”等占位检查项，并自动移除行首展示序号，例如“8.检查内容”会保存为“检查内容”。")
+    @Operation(summary = "Excel 批量导入互检检查项模板", description = "导入前先调用 existence 接口。存在旧模板时，只有 confirmed=true 才会逻辑停用旧模板并导入新模板；未确认会返回提示，不会改变旧模板。工作表名作为一级分类，空工作表保留空分类。导入会跳过“...”等占位检查项，并自动移除行首展示序号，例如“8.检查内容”会保存为“检查内容”。")
     ApiResponse<CheckItemTemplateApplicationService.ImportResult> importWorkbook(@RequestPart("file") MultipartFile file,
                                                                                  @RequestParam("reviewType") @NotNull ReviewType reviewType,
                                                                                  @RequestParam(value = "confirmed", defaultValue = "false") boolean confirmed,

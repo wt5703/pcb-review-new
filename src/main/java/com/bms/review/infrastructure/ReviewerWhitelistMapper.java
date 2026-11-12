@@ -27,6 +27,9 @@ public interface ReviewerWhitelistMapper {
     @Select("SELECT " + PERSON_COLUMNS + "FROM reviewer_whitelist p WHERE p.employee_no=#{employeeNo} AND p.deleted=FALSE")
     ReviewerWhitelistRecord findActiveByEmployeeNo(String employeeNo);
 
+    @Select("SELECT " + PERSON_COLUMNS + "FROM reviewer_whitelist p WHERE p.deleted=FALSE AND p.roles IS NOT NULL ORDER BY p.id")
+    List<ReviewerWhitelistRecord> findActiveWithSystemRoles();
+
     @Select("<script>SELECT " + PERSON_COLUMNS + "FROM reviewer_whitelist p WHERE p.deleted=FALSE AND p.employee_no IN "
             + "<foreach collection='employeeNos' item='employeeNo' open='(' separator=',' close=')'>#{employeeNo}</foreach>"
             + "</script>")

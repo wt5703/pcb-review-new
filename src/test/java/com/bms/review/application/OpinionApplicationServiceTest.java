@@ -43,9 +43,8 @@ class OpinionApplicationServiceTest {
     private final TaskProcessorAuthorizationService taskProcessorAuthorizationService = mock(TaskProcessorAuthorizationService.class);
     private final TaskFlowMapper flowMapper = mock(TaskFlowMapper.class);
     private final UserCenterUserProfileClient userProfileClient = mock(UserCenterUserProfileClient.class);
-    private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService = mock(ReviewerWhitelistApplicationService.class);
     private final OpinionApplicationService service = new OpinionApplicationService(opinionMapper, taskMapper, taskCheckItemMapper,
-            taskProcessorAuthorizationService, flowMapper, userProfileClient, reviewerWhitelistApplicationService);
+            taskProcessorAuthorizationService, flowMapper, userProfileClient);
 
     @BeforeEach
     void mockUserProfiles() {
@@ -70,6 +69,19 @@ class OpinionApplicationServiceTest {
         verify(opinionMapper).insert(recordCaptor.capture());
         assertThat(recordCaptor.getValue().getComment()).isEqualTo("补充检查发现的问题");
         assertThat(recordCaptor.getValue().getRichText()).isEqualTo("<p>补充检查发现的问题</p>");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.NullAndEmptySource
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"  "})
+    void shouldRaiseOpinionWithoutRichText(String richText) {
+        when(taskMapper.findById(1001L)).thenReturn(task("BMS009"));
+        when(opinionMapper.nextOpinionId()).thenReturn(31L);
+
+        var opinion = service.raise(new OpinionApplicationService.RaiseOpinionCommand(1001L,
+                OpinionSourceType.MUTUAL_EXTRA, null, "检查说明", richText, OpinionSeverity.GENERAL), "BMS020", "BMS020");
+
+        assertThat(opinion.richText()).isEqualTo("检查说明");
     }
 
     @Test
@@ -239,7 +251,7 @@ class OpinionApplicationServiceTest {
                 opinion(32L, 1001L, "BMS020", OpinionStatus.CONFIRMED_PASS),
                 opinion(33L, 1001L, "BMS020", OpinionStatus.CONFIRMED_PASS)));
 
-        OpinionApplicationService.OpinionSummary summary = service.summary(1001L, "BMS020");
+        OpinionApplicationService.OpinionSummary summary = service.summary(1001L, List.of());
 
         assertThat(summary.total()).isEqualTo(3);
         assertThat(summary.pendingReply()).isEqualTo(1);

@@ -106,7 +106,8 @@ class OpinionControllerIntegrationTest {
         mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)
                         .header("userId", "BMS999")
                         .header("userName", "测试用户"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.confirmedPass").value(1));
 
         mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)
                         .header("userId", "BMS010")

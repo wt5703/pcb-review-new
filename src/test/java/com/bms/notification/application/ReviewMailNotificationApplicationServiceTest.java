@@ -172,6 +172,24 @@ class ReviewMailNotificationApplicationServiceTest {
         assertThat(message.attachments()).hasSize(1);
     }
 
+    @Test
+    void shouldAttachOnlyPcbDesignFilesWhenPcbTaskFinishes() throws Exception {
+        when(whitelistMapper.findActiveByEmployeeNo("BMS003"))
+                .thenReturn(user(3L, "BMS003", "PCB 专家", "pcb@bms.example.com"));
+        when(fileMapper.findLatestByTaskIdAndCategory(31L, "PCB_REVIEW"))
+                .thenReturn(List.of(file(311L, "PCB.zip", "PCB_REVIEW")));
+        when(fileMapper.findLatestByTaskIdAndCategory(31L, "PCB_PROCESS_REVIEW"))
+                .thenReturn(List.of(file(312L, "工艺.zip", "PCB_PROCESS_REVIEW")));
+        when(fileMapper.findLatestByTaskIdAndCategory(31L, "PCB_STRUCTURE_REVIEW"))
+                .thenReturn(List.of(file(313L, "结构.zip", "PCB_STRUCTURE_REVIEW")));
+
+        service.enqueueTaskFinished(task(31L, "PCB", "BMS", "PCB_EXPERT:BMS003"));
+
+        MailMessage message = payload();
+        assertThat(message.notificationType()).isEqualTo("PCB_TASK_FINISHED");
+        assertThat(message.attachments()).extracting(MailMessage.MailAttachment::fileName).containsExactly("PCB.zip");
+    }
+
     private MailMessage payload() throws Exception {
         ArgumentCaptor<OutboxEventRecord> captor = ArgumentCaptor.forClass(OutboxEventRecord.class);
         verify(outboxEventMapper).insert(captor.capture());

@@ -14,6 +14,10 @@ public class TaskFlowRecord {
     private String actionName;
     private String operateEmployeeNo;
     private String comment;
+    private String fromStatus;
+    private String toStatus;
+    private String nextOperatorEmployeeNos;
+    private String approvalRole;
     private LocalDateTime createdAt;
 
     public Long getId() { return id; }
@@ -28,6 +32,14 @@ public class TaskFlowRecord {
     public void setOperateEmployeeNo(String operateEmployeeNo) { this.operateEmployeeNo = operateEmployeeNo; }
     public String getComment() { return comment; }
     public void setComment(String comment) { this.comment = comment; }
+    public String getFromStatus() { return fromStatus; }
+    public void setFromStatus(String fromStatus) { this.fromStatus = fromStatus; }
+    public String getToStatus() { return toStatus; }
+    public void setToStatus(String toStatus) { this.toStatus = toStatus; }
+    public String getNextOperatorEmployeeNos() { return nextOperatorEmployeeNos; }
+    public void setNextOperatorEmployeeNos(String nextOperatorEmployeeNos) { this.nextOperatorEmployeeNos = nextOperatorEmployeeNos; }
+    public String getApprovalRole() { return approvalRole; }
+    public void setApprovalRole(String approvalRole) { this.approvalRole = approvalRole; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

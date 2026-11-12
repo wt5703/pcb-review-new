@@ -126,8 +126,7 @@ public class ReviewMailNotificationApplicationService {
                     assignment -> assignment.reviewRole() == ReviewRole.PCB_EXPERT
                             || assignment.reviewRole() == ReviewRole.HARDWARE_EXPERT);
             enqueue(task.getId(), ReviewMailType.PCB_TASK_FINISHED, task.getProjectName() + "PCB终版图", hardwareReceivers,
-                    latestAttachments(task.getId(), List.of(FileCategory.PCB_REVIEW, FileCategory.PCB_PROCESS_REVIEW,
-                            FileCategory.PCB_STRUCTURE_REVIEW)), Map.of("projectName", task.getProjectName()));
+                    latestAttachments(task.getId(), List.of(FileCategory.PCB_REVIEW)), Map.of("projectName", task.getProjectName()));
             return;
         }
         enqueue(task.getId(), ReviewMailType.SCHEMATIC_TASK_FINISHED, task.getProjectName() + "原理图终版", assignments(task),

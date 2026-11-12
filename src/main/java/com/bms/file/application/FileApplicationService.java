@@ -92,8 +92,7 @@ public class FileApplicationService {
     }
 
     /**
-     * 修改任务时绑定重新上传的初始文件。每个新文件会替换同类型的当前文件，
-     * 历史记录保留但不再标记为 latest，任务流程状态不受影响。
+     * 按请求中的文件列表更新任务初始文件，保留未选中文件的历史记录。
      */
     @Transactional
     public List<FileView> replaceInitialFiles(long taskId, List<String> fileIds, String operatorEmployeeNo) {
@@ -104,23 +103,36 @@ public class FileApplicationService {
         FileCategory category = initialCategory(task);
         requireTaskAccess(taskId, operatorEmployeeNo, category, true);
         java.util.Set<String> requestedFileIds = new java.util.LinkedHashSet<>();
-        List<ReviewFileRecord> pendingFiles = new ArrayList<>();
+        List<ReviewFileRecord> requestedFiles = new ArrayList<>();
         for (String fileId : fileIds) {
             String normalizedFileId = requireFileUuid(fileId);
             if (!requestedFileIds.add(normalizedFileId)) {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "重新上传的文件 UUID 不能为空且不能重复");
             }
             ReviewFileRecord file = fileMapper.findByFileId(normalizedFileId);
-            if (file == null || !category.name().equals(file.getFileCategory()) || file.getTaskId() != null) {
+            if (file == null || !category.name().equals(file.getFileCategory())) {
                 throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "重新上传的文件 UUID 不存在或文件类型不匹配");
             }
-            if (!operatorEmployeeNo.equals(file.getUploadedByEmployeeNo())) {
+            if (file.getTaskId() != null && !file.getTaskId().equals(taskId)) {
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "该文件已绑定到其他任务，不能重复关联");
+            }
+            if (file.getTaskId() == null && !operatorEmployeeNo.equals(file.getUploadedByEmployeeNo())) {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "仅文件上传人可以将重新上传的文件关联到任务");
             }
-            pendingFiles.add(file);
+            requestedFiles.add(file);
         }
-        fileMapper.markLatestAsHistorical(taskId, category.name());
-        for (ReviewFileRecord file : pendingFiles) {
+        fileMapper.markOmittedInitialFilesAsHistorical(taskId, category.name(),
+                requestedFiles.stream().map(ReviewFileRecord::getId).toList());
+        for (ReviewFileRecord file : requestedFiles) {
+            if (file.getTaskId() != null) {
+                if (!Boolean.TRUE.equals(file.getLatest())) {
+                    if (fileMapper.markAsLatest(taskId, file.getId()) != 1) {
+                        throw new BusinessException(ErrorCode.VALIDATION_ERROR, "恢复任务历史文件失败");
+                    }
+                    file.setLatest(true);
+                }
+                continue;
+            }
             file.setTaskId(taskId);
             file.setLatest(true);
             file.setUploadedStage(task.getStatus());
@@ -128,7 +140,7 @@ public class FileApplicationService {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "重新上传的文件关联任务失败");
             }
         }
-        return pendingFiles.stream().map(FileView::from).toList();
+        return requestedFiles.stream().map(FileView::from).toList();
     }
 
     /** 上传尚未创建任务的初始文件，持久化元数据并返回前端后续保存任务唯一需要携带的 UUID。 */
@@ -153,16 +165,37 @@ public class FileApplicationService {
 
     @Transactional
     public FileView upload(long taskId, FileCategory category, MultipartFile file, String operatorEmployeeNo) {
-        if (file == null || file.isEmpty() || file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "上传文件不能为空");
+        return uploadBatch(taskId, category, java.util.Collections.singletonList(file), operatorEmployeeNo).get(0);
+    }
+
+    @Transactional
+    public List<FileView> uploadBatch(long taskId, FileCategory category, List<MultipartFile> files, String operatorEmployeeNo) {
+        if (category == null || files == null || files.isEmpty()
+                || files.stream().anyMatch(file -> file == null || file.isEmpty()
+                || file.getOriginalFilename() == null || file.getOriginalFilename().isBlank())) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "文件类型和上传文件不能为空");
         }
+        taskMapper.lockById(taskId);
         ReviewTaskRecord task = requireTaskAccess(taskId, operatorEmployeeNo, category, true);
+        List<ReviewFileRecord> uploaded = files.stream()
+                .map(file -> uploadTaskFile(task, category, file, operatorEmployeeNo)).toList();
+        fileMapper.markLatestAsHistorical(taskId, category.name());
+        for (ReviewFileRecord record : uploaded) {
+            record.setId(nextId());
+            if (fileMapper.insert(record) != 1) {
+                throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_UNAVAILABLE, "保存任务文件失败");
+            }
+        }
+        return uploaded.stream().map(FileView::from).toList();
+    }
+
+    private ReviewFileRecord uploadTaskFile(ReviewTaskRecord task, FileCategory category, MultipartFile file,
+                                            String operatorEmployeeNo) {
         String md5 = md5(file);
         String fileId = UUID.randomUUID().toString();
         ResourceServiceClient.StoredResource resource = resourceServiceClient.upload(file, fileId);
         ReviewFileRecord record = new ReviewFileRecord();
-        record.setId(nextId());
-        record.setTaskId(taskId);
+        record.setTaskId(task.getId());
         record.setFileCategory(category.name());
         record.setFileName(file.getOriginalFilename());
         record.setFileFormat(fileFormat(file.getOriginalFilename()));
@@ -173,10 +206,7 @@ public class FileApplicationService {
         record.setLatest(true);
         record.setUploadedByEmployeeNo(operatorEmployeeNo);
         record.setUploadedStage(task.getStatus());
-        // 仅当资源服务上传成功后才淘汰旧版本，保证上传异常时原最新文件仍可继续下载和评审。
-        fileMapper.markLatestAsHistorical(taskId, category.name());
-        fileMapper.insert(record);
-        return FileView.from(record);
+        return record;
     }
 
     /**
@@ -202,6 +232,7 @@ public class FileApplicationService {
      */
     @Transactional
     public void unbindFile(long taskId, String fileId, String operatorEmployeeNo) {
+        taskMapper.lockById(taskId);
         String normalizedFileId = requireFileUuid(fileId);
         ReviewFileRecord file = fileMapper.findByFileId(normalizedFileId);
         if (file == null || !Long.valueOf(taskId).equals(file.getTaskId())) {
@@ -209,7 +240,7 @@ public class FileApplicationService {
         }
         ReviewTaskRecord task = requireTaskAccess(taskId, operatorEmployeeNo,
                 FileCategory.valueOf(file.getFileCategory()), false);
-        if (TaskStatus.FINISHED.name().equals(task.getStatus())) {
+        if (TaskStatus.isClosed(task.getStatus())) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许取消文件上传");
         }
         if (!operatorEmployeeNo.equals(task.getDesignerEmployeeNo())) {
@@ -224,7 +255,8 @@ public class FileApplicationService {
     }
 
     private void restorePreviousLatestFile(long taskId, ReviewFileRecord cancelledFile) {
-        if (!Boolean.TRUE.equals(cancelledFile.getLatest())) {
+        if (!Boolean.TRUE.equals(cancelledFile.getLatest())
+                || !fileMapper.findLatestByTaskIdAndCategory(taskId, cancelledFile.getFileCategory()).isEmpty()) {
             return;
         }
         ReviewFileRecord previousFile = fileMapper.findLatestHistoricalByTaskIdAndCategory(taskId,
@@ -239,7 +271,7 @@ public class FileApplicationService {
         if (task == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "任务不存在");
         }
-        if (upload && TaskStatus.FINISHED.name().equals(task.getStatus())) {
+        if (upload && TaskStatus.isClosed(task.getStatus())) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许上传新文件");
         }
         if (upload && (category == FileCategory.PCB_REVIEW || category == FileCategory.SCHEMATIC_REVIEW

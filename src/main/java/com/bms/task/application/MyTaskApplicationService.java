@@ -62,6 +62,12 @@ public class MyTaskApplicationService {
             if (isReviewingStatus(task) && assignmentAccessMapper.isCurrentTaskProcessor(task.getId(), operatorEmployeeNo)) {
                 taskActions.add(MyTaskAction.REVIEW);
             }
+            if (TaskStatus.PENDING_INITIATION.name().equals(task.getStatus())) {
+                if (operatorEmployeeNo.equals(task.getDesignerEmployeeNo())) {
+                    actions.put(task.getId(), EnumSet.of(MyTaskAction.INITIATE_TASK));
+                }
+                continue;
+            }
             if (pendingReplyTaskIds.contains(task.getId())) {
                 taskActions.add(MyTaskAction.REPLY_OPINION);
             }
@@ -154,9 +160,25 @@ public class MyTaskApplicationService {
                 || isHardwareExpertAssignmentOwner(task, operatorEmployeeNo)) {
             actions.add(MyTaskAction.ASSIGN_REVIEWERS);
         }
-        if (status == TaskStatus.PENDING_FINISH && operatorEmployeeNo.equals(task.getExpertLeaderEmployeeNo())) {
+        if (status == TaskStatus.PENDING_FINISH && isPendingFinishApprover(task, operatorEmployeeNo)) {
             actions.add(MyTaskAction.FINISH_TASK);
         }
+    }
+
+    private boolean isPendingFinishApprover(ReviewTaskRecord task, String employeeNo) {
+        List<String> active = TaskReviewerAssignmentCodec.decodeReviewerEmployeeNos(task.getAssignedReviewerEmployeeNos());
+        if (task.isFinishApprovalInitialized() || !active.isEmpty()) {
+            return active.contains(employeeNo);
+        }
+        // 兼容尚未写入确认人快照的历史待结束任务。
+        if (reviewerWhitelistApplicationService.hasSystemRole(employeeNo, SystemRole.HARDWARE_MANAGER)) {
+            return true;
+        }
+        if (ReviewType.PCB.name().equals(task.getReviewType())) {
+            return reviewerWhitelistApplicationService.hasSystemRole(employeeNo, SystemRole.PCB_LEADER);
+        }
+        return employeeNo.equals(task.getExpertLeaderEmployeeNo())
+                && reviewerWhitelistApplicationService.hasSystemRole(employeeNo, SystemRole.SCHEMATIC_LEADER);
     }
 
     private boolean isMutualCheckAssignmentOwner(ReviewTaskRecord task, String operatorEmployeeNo) {

@@ -43,6 +43,16 @@ public interface ReviewFileMapper {
     @Update("UPDATE review_file SET is_latest=FALSE WHERE task_id=#{taskId} AND file_category=#{fileCategory} AND is_latest=TRUE")
     int markLatestAsHistorical(long taskId, String fileCategory);
 
+    @Update("""
+            <script>
+            UPDATE review_file SET is_latest=FALSE
+            WHERE task_id=#{taskId} AND file_category=#{fileCategory} AND is_latest=TRUE
+              AND id NOT IN
+              <foreach collection="retainedIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+            </script>
+            """)
+    int markOmittedInitialFilesAsHistorical(long taskId, String fileCategory, java.util.List<Long> retainedIds);
+
     @Update("UPDATE review_file SET task_id=#{taskId}, file_category=#{fileCategory}, "
             + "is_latest=TRUE, uploaded_stage=#{uploadedStage} WHERE id=#{id} AND task_id IS NULL")
     int bindToTask(ReviewFileRecord record);

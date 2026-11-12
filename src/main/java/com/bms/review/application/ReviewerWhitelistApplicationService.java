@@ -24,7 +24,6 @@ import java.util.stream.Collectors;
  */
 @Service
 public class ReviewerWhitelistApplicationService {
-    public static final String BMS_HARDWARE_DEVELOPMENT_DEPARTMENT = "BMS硬件开发部";
     private static final List<ReviewerWhitelistRole> SUPPORTED_ROLE_ORDER = List.of(
             ReviewerWhitelistRole.HARDWARE_EXPERT,
             ReviewerWhitelistRole.EMC_EXPERT,
@@ -275,13 +274,11 @@ public class ReviewerWhitelistApplicationService {
         return record != null && systemRoles(record.getRoles()).contains(systemRole.code());
     }
 
-    /** 任务详情及其附属的意见、互检单仅向 BMS 硬件开发部成员开放。 */
-    public void requireTaskDetailAccess(String employeeNo) {
-        ReviewerWhitelistRecord record = employeeNo == null || employeeNo.isBlank()
-                ? null : whitelistMapper.findActiveByEmployeeNo(employeeNo);
-        if (record == null || !BMS_HARDWARE_DEVELOPMENT_DEPARTMENT.equals(record.getDepartmentName())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "无权查看任务详情，仅 BMS硬件开发部人员可查看");
-        }
+    public List<String> findSystemRoleEmployeeNos(SystemRole role) {
+        return whitelistMapper.findActiveWithSystemRoles().stream()
+                .filter(record -> systemRoles(record.getRoles()).contains(role.code()))
+                .map(ReviewerWhitelistRecord::getEmployeeNo)
+                .toList();
     }
 
     /** 暂不校验人员和角色是否属于白名单；已有人员资料仍用于返回展示信息。 */

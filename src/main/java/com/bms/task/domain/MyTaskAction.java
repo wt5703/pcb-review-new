@@ -12,5 +12,6 @@ public enum MyTaskAction {
     REPLY_OPINION,
     CONFIRM_OPINION,
     ASSIGN_REVIEWERS,
+    INITIATE_TASK,
     FINISH_TASK
 }

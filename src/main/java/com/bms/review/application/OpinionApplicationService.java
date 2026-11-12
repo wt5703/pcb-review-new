@@ -44,20 +44,17 @@ public class OpinionApplicationService {
     private final TaskProcessorAuthorizationService taskProcessorAuthorizationService;
     private final TaskFlowMapper flowMapper;
     private final UserCenterUserProfileClient userProfileClient;
-    private final ReviewerWhitelistApplicationService reviewerWhitelistApplicationService;
 
     @Autowired
     public OpinionApplicationService(ReviewOpinionMapper opinionMapper, ReviewTaskMapper taskMapper, TaskCheckItemMapper taskCheckItemMapper,
                                      TaskProcessorAuthorizationService taskProcessorAuthorizationService, TaskFlowMapper flowMapper,
-                                     UserCenterUserProfileClient userProfileClient,
-                                     ReviewerWhitelistApplicationService reviewerWhitelistApplicationService) {
+                                     UserCenterUserProfileClient userProfileClient) {
         this.opinionMapper = opinionMapper;
         this.taskMapper = taskMapper;
         this.taskCheckItemMapper = taskCheckItemMapper;
         this.taskProcessorAuthorizationService = taskProcessorAuthorizationService;
         this.flowMapper = flowMapper;
         this.userProfileClient = userProfileClient;
-        this.reviewerWhitelistApplicationService = reviewerWhitelistApplicationService;
     }
 
     /**
@@ -67,6 +64,7 @@ public class OpinionApplicationService {
      */
     @Transactional
     public OpinionView raise(RaiseOpinionCommand command, String operatorEmployeeNo, String operatorName) {
+        taskMapper.lockById(command.taskId());
         ReviewTaskRecord task = requireOpenTask(command.taskId());
         taskProcessorAuthorizationService.requireCurrentTaskProcessor(command.taskId(), operatorEmployeeNo);
         if (command.sourceType() == OpinionSourceType.MUTUAL_CHECK_ITEM
@@ -81,7 +79,8 @@ public class OpinionApplicationService {
         record.setSeverity(command.severity() == null ? OpinionSeverity.GENERAL : command.severity());
         record.setNoOpinion(false);
         requireComment(command.comment());
-        String richText = requireComment(command.richText() == null ? command.comment() : command.richText());
+        String richText = command.richText() == null || command.richText().isBlank()
+                ? command.comment() : command.richText();
         record.setComment(command.comment());
         record.setRichText(richText);
         record.setRaisedByEmployeeNo(operatorEmployeeNo);
@@ -97,14 +96,17 @@ public class OpinionApplicationService {
      */
     @Transactional
     public OpinionView submitNoOpinion(long taskId, OpinionSourceType sourceType, String operatorEmployeeNo, String operatorName) {
+        taskMapper.lockById(taskId);
         ReviewTaskRecord task = requireOpenTask(taskId);
         taskProcessorAuthorizationService.requireCurrentTaskProcessor(taskId, operatorEmployeeNo);
         if (!isReviewSubmissionAvailable(task, sourceType)) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "当前评审节点不支持确认提交");
         }
         List<ReviewOpinionRecord> reviewerOpinions = opinionsRaisedByReviewer(taskId, sourceType, operatorEmployeeNo);
-        boolean alreadyConfirmedSubmission = reviewerOpinions.stream().anyMatch(ReviewOpinionRecord::isNoOpinion);
-        if (alreadyConfirmedSubmission) {
+        ReviewOpinionRecord previousNoOpinion = reviewerOpinions.stream()
+                .filter(ReviewOpinionRecord::isNoOpinion).findFirst().orElse(null);
+        if (previousNoOpinion != null && !hasStarted(taskId, WorkflowAction.RETURN)
+                && !hasStarted(taskId, WorkflowAction.WITHDRAW)) {
             throw new BusinessException(ErrorCode.OPINION_STATUS_CONFLICT, "当前评审阶段已确认提交");
         }
 
@@ -121,6 +123,11 @@ public class OpinionApplicationService {
             // 评审意见全部确认通过后，明确由本次确认提交操作结束该专家在当前阶段的待办。
             releaseReviewerWhenCurrentStagesCompleted(taskId, operatorEmployeeNo, sourceType);
             return toView(actualOpinions.get(actualOpinions.size() - 1));
+        }
+
+        if (previousNoOpinion != null) {
+            releaseReviewerWhenCurrentStagesCompleted(taskId, operatorEmployeeNo, sourceType);
+            return toView(previousNoOpinion);
         }
 
         // 没有提出具体意见时，保存无意见记录，保证该阶段的提交结果可审计、可追溯。
@@ -247,7 +254,7 @@ public class OpinionApplicationService {
      */
     public List<OpinionView> list(long taskId, OpinionSeverity severity, OpinionStatus status, OpinionSourceType sourceType,
                                   List<OpinionSourceType> sourceTypes, String scene, String operatorEmployeeNo) {
-        requireOpenOrFinishedTaskVisible(taskId, operatorEmployeeNo);
+        requireTask(taskId);
         boolean reviewWorkspace = "REVIEW_WORKSPACE".equalsIgnoreCase(scene);
         List<OpinionSourceType> normalizedSourceTypes = sourceTypes == null ? List.of() : sourceTypes.stream().distinct().toList();
         List<ReviewOpinionRecord> records = opinionMapper.findByTaskId(taskId).stream()
@@ -286,7 +293,7 @@ public class OpinionApplicationService {
         if (normalizedPageNum < 1 || normalizedPageSize < 1 || normalizedPageSize > 100) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "意见分页参数不合法");
         }
-        requireOpenOrFinishedTaskVisible(taskId, operatorEmployeeNo);
+        requireTask(taskId);
         List<OpinionSourceType> normalizedSourceTypes = sourceTypes == null ? List.of() : sourceTypes.stream().distinct().toList();
         String raisedByEmployeeNo = "REVIEW_WORKSPACE".equalsIgnoreCase(scene) ? operatorEmployeeNo : null;
         String statusName = status == null ? null : status.name();
@@ -305,13 +312,9 @@ public class OpinionApplicationService {
 
     public List<OpinionView> list(long taskId, String operatorEmployeeNo) { return list(taskId, null, null, null, "DESIGNER_REPLY", operatorEmployeeNo); }
 
-    public OpinionSummary summary(long taskId, String operatorEmployeeNo) {
-        return summary(taskId, List.of(), operatorEmployeeNo);
-    }
-
-    public OpinionSummary summary(long taskId, List<OpinionSourceType> sourceTypes, String operatorEmployeeNo) {
+    public OpinionSummary summary(long taskId, List<OpinionSourceType> sourceTypes) {
         ReviewTaskRecord task = requireTask(taskId);
-        List<OpinionView> opinions = list(taskId, null, null, null, sourceTypes, "DESIGNER_REPLY", operatorEmployeeNo);
+        List<OpinionView> opinions = list(taskId, null, null, null, sourceTypes, "DESIGNER_REPLY", null);
         return new OpinionSummary(opinions.size(), count(opinions, OpinionStatus.PENDING_REPLY), count(opinions, OpinionStatus.PENDING_CONFIRMATION),
                 count(opinions, OpinionStatus.CONFIRMED_PASS), count(opinions, OpinionStatus.CONFIRMED_REJECTED), count(opinions, OpinionStatus.WITHDRAWN),
                 opinions.stream().filter(item -> item.status() == OpinionStatus.PENDING_CONFIRMATION || item.status() == OpinionStatus.CONFIRMED_REJECTED)
@@ -415,15 +418,10 @@ public class OpinionApplicationService {
 
     private ReviewTaskRecord requireOpenTask(long taskId) {
         ReviewTaskRecord task = requireTask(taskId);
-        if (TaskStatus.FINISHED.name().equals(task.getStatus())) {
-            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许修改意见");
+        if (TaskStatus.isClosed(task.getStatus()) || TaskStatus.PENDING_INITIATION.name().equals(task.getStatus())) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "当前任务状态不允许修改意见");
         }
         return task;
-    }
-
-    private void requireOpenOrFinishedTaskVisible(long taskId, String operatorEmployeeNo) {
-        requireTask(taskId);
-        reviewerWhitelistApplicationService.requireTaskDetailAccess(operatorEmployeeNo);
     }
 
     private ReviewTaskRecord requireTask(long taskId) {

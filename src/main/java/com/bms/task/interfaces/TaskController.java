@@ -19,6 +19,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -60,8 +61,8 @@ public class TaskController {
     }
 
     @PostMapping("/save")
-    @Operation(summary = "保存评审任务", description = "新建草稿不传 taskId，编辑已有草稿时通过 taskId 查询参数传入")
-    ApiResponse<TaskApplicationService.TaskView> saveTaskDraft(@RequestParam(required = false) @Parameter(description = "编辑已有草稿时传任务 ID；新建草稿不传") Long taskId,
+    @Operation(summary = "保存评审任务", description = "新建草稿不传 taskId，编辑草稿或待发起任务时通过 taskId 查询参数传入")
+    ApiResponse<TaskApplicationService.TaskView> saveTaskDraft(@RequestParam(required = false) @Parameter(description = "编辑草稿或待发起任务时传任务 ID；新建草稿不传") Long taskId,
                                                                 @Valid @RequestBody CreateTaskRequest request,
                                                                 @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
         userName = decode(userName, StandardCharsets.UTF_8);
@@ -69,8 +70,8 @@ public class TaskController {
     }
 
     @PostMapping("/submit")
-    @Operation(summary = "提交评审任务", description = "提交任务，任务会进入流程的下一个节点")
-    ApiResponse<TaskApplicationService.TaskView> submitTask(@RequestParam(required = false) @Parameter(description = "提交已有草稿时传任务 ID；直接新建提交不传") Long taskId,
+    @Operation(summary = "提交评审任务", description = "提交任务，任务会进入流程的初始评审节点；撤回或退回到待发起的任务可传原 taskId 重新发起")
+    ApiResponse<TaskApplicationService.TaskView> submitTask(@RequestParam(required = false) @Parameter(description = "提交草稿或待发起任务时传任务 ID；直接新建提交不传") Long taskId,
                                                              @Valid @RequestBody CreateTaskRequest request,
                                                              @NotBlank @RequestHeader("userId") String employeeNo, @NotBlank @RequestHeader("userName") String userName, HttpServletRequest servletRequest) {
         userName = decode(userName, StandardCharsets.UTF_8);
@@ -94,15 +95,27 @@ public class TaskController {
     }
 
     @GetMapping("/{taskId}")
-    @Operation(summary = "查询评审任务详情", description = "仅 BMS硬件开发部人员可查看。返回任务基础信息、流程记录及关联文件；关联文件包含文件名称、类型、UUID 和上传时间。")
-    ApiResponse<TaskApplicationService.TaskView> detail(@PathVariable long taskId,
-                                                         @NotBlank @RequestHeader("userId") String employeeNo,
-                                                         HttpServletRequest servletRequest) {
-        return ApiResponse.ok(taskService.getTaskDetail(taskId, employeeNo), getTraceId(servletRequest));
+    @Operation(summary = "查询评审任务详情", description = "返回任务基础信息、流程记录及关联文件；关联文件包含文件名称、类型、UUID 和上传时间。")
+    ApiResponse<TaskApplicationService.TaskView> detail(@PathVariable long taskId, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(taskService.getTaskDetail(taskId), getTraceId(servletRequest));
+    }
+
+    @GetMapping("/{taskId}/flow-records")
+    @Operation(summary = "查询任务流转日志", description = "按时间倒序返回操作人、操作时间、动作、原因、前后节点、下一节点处理人和当前阶段用时（秒）。历史记录缺失的快照字段可能为空。")
+    ApiResponse<List<TaskApplicationService.TaskFlowRecordView>> listFlowRecords(@PathVariable long taskId, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(taskService.listTaskFlowRecords(taskId), getTraceId(servletRequest));
+    }
+
+    @DeleteMapping("/{taskId}")
+    @Operation(summary = "删除评审任务", description = "仅任务设计者可删除本人创建的任务。同步删除任务基本信息、评审意见及其回复和确认、互检单、文件记录、流转日志、通知和归档。")
+    ApiResponse<Void> deleteTask(@PathVariable long taskId, @NotBlank @RequestHeader("userId") String employeeNo,
+                                 HttpServletRequest servletRequest) {
+        taskService.deleteTask(taskId, employeeNo);
+        return ApiResponse.ok(null, getTraceId(servletRequest));
     }
 
     @PutMapping("/{taskId}")
-    @Operation(summary = "修改任务基本信息", description = "不触发流程流转。仅任务设计者可修改项目编号、项目名称和重新上传的初始文件；files 仅传本次新上传文件的 UUID，系统会将同类型旧文件标记为历史版本。")
+    @Operation(summary = "修改任务基本信息", description = "不触发流程流转。仅任务设计者可修改项目编号、项目名称和重新上传的初始文件；files 传更新后的初始文件 UUID 列表，可同时包含已关联到当前任务的文件和新上传文件；未列出的同类型当前文件会转为历史版本。")
     ApiResponse<TaskApplicationService.TaskView> updateBasicInfo(@PathVariable long taskId,
                                                                   @Valid @RequestBody UpdateTaskRequest request,
                                                                   @NotBlank @RequestHeader("userId") String employeeNo,
@@ -201,5 +214,5 @@ public class TaskController {
     record UpdateTaskRequest(
             @Schema(description = "项目编号，可为空") String projectNo,
             @Schema(description = "项目名称，可为空") String projectName,
-            @Schema(description = "本次重新上传文件的 UUID 列表；只传新文件，同类型旧文件会保留为历史版本") List<@NotBlank String> files) { }
+            @Schema(description = "更新后的初始文件 UUID 列表，可包含当前任务旧文件及新上传文件；为空时保留现有文件") List<@NotBlank String> files) { }
 }

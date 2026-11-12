@@ -71,9 +71,16 @@ class TaskApplicationServiceTest {
         });
     }
 
+    private void assignGeneratedTaskId(long id) {
+        when(taskMapper.insert(any(ReviewTaskRecord.class))).thenAnswer(invocation -> {
+            invocation.<ReviewTaskRecord>getArgument(0).setId(id);
+            return 1;
+        });
+    }
+
     @Test
     void shouldCreateTaskWithoutProjectNameOrFlowRecord() {
-        when(taskMapper.nextId()).thenReturn(101L);
+        assignGeneratedTaskId(101L);
         when(reviewerWhitelistApplicationService.listAssignableUsers(List.of(ReviewerWhitelistRole.PCB_EXPERT)))
                 .thenReturn(List.of(assignableReviewer(DESIGNER_NO, "设计者", ReviewerWhitelistRole.PCB_EXPERT)));
 
@@ -93,7 +100,7 @@ class TaskApplicationServiceTest {
 
     @Test
     void shouldAssignSchematicEmcReviewerAtCreationAndDeferHardwareReviewerUntilManagerAssignment() {
-        when(taskMapper.nextId()).thenReturn(102L);
+        assignGeneratedTaskId(102L);
         when(reviewerWhitelistApplicationService.listAssignableUsers(List.of(ReviewerWhitelistRole.EMC_EXPERT)))
                 .thenReturn(List.of(assignableReviewer("BMS012", "EMC专家", ReviewerWhitelistRole.EMC_EXPERT)));
         when(reviewerWhitelistApplicationService.hasSystemRole(LEADER_NO, SystemRole.SCHEMATIC_LEADER)).thenReturn(true);
@@ -261,7 +268,7 @@ class TaskApplicationServiceTest {
                         "BMS104", new ReviewerWhitelistApplicationService.ReviewerProfile("工艺专家", "制造部"),
                         "BMS105", new ReviewerWhitelistApplicationService.ReviewerProfile("结构专家", "结构部")));
 
-        TaskApplicationService.TaskView detail = service.getTaskDetail(101L, DESIGNER_NO);
+        TaskApplicationService.TaskView detail = service.getTaskDetail(101L);
 
         assertThat(detail.reviewerAssignments()).extracting(TaskApplicationService.ReviewerAssignmentView::reviewRoleName)
                 .containsExactly("硬件评审", "EMC评审", "PCB评审", "工艺评审", "结构评审");
@@ -320,7 +327,7 @@ class TaskApplicationServiceTest {
         file.setUploadedAt(LocalDateTime.of(2026, 10, 19, 16, 0));
         when(reviewFileMapper.findByTaskId(101L)).thenReturn(List.of(file));
 
-        TaskApplicationService.TaskView result = service.getTaskDetail(101L, DESIGNER_NO);
+        TaskApplicationService.TaskView result = service.getTaskDetail(101L);
 
         assertThat(result.flowRecords()).singleElement().satisfies(record -> {
             assertThat(record.action()).isEqualTo("CREATE");
