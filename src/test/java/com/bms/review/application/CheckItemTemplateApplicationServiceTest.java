@@ -88,7 +88,7 @@ class CheckItemTemplateApplicationServiceTest {
     @Test
     void shouldRejectDuplicateNamesWhenCreatingItemsInBatch() {
         assertThatThrownBy(() -> service.create(new CheckItemTemplateApplicationService.CreateCategoryCommand(
-                ReviewType.PCB, "大类", List.of(
+                ReviewType.PCB, 1L, "大类", List.of(
                 new CheckItemTemplateApplicationService.CreateItemCommand("重复小项"),
                 new CheckItemTemplateApplicationService.CreateItemCommand(" 重复小项 ")))))
                 .hasMessage("同一检查项大类下不能存在同名子检查项");
@@ -96,12 +96,15 @@ class CheckItemTemplateApplicationServiceTest {
 
     @Test
     void shouldRejectDuplicateCategoryNameWhenCreatingTemplateCategory() {
-        when(templateMapper.findCategoryByReviewTypeAndName("PCB", "已有大类"))
+        CheckItemTemplateRecord root = template(1L, null, 1);
+        root.setEnabled(true);
+        when(templateMapper.findById(1L)).thenReturn(root);
+        when(templateMapper.findChildByParentIdAndName(1L, "已有大类"))
                 .thenReturn(template(100L, null, 1));
 
         assertThatThrownBy(() -> service.create(new CheckItemTemplateApplicationService.CreateCategoryCommand(
-                ReviewType.PCB, "已有大类", List.of())))
-                .hasMessage("同一评审类型下不能存在同名检查项大类");
+                ReviewType.PCB, 1L, "已有大类", List.of())))
+                .hasMessage("同一 Sheet 下不能存在同名检查项大类");
     }
 
     @Test
@@ -113,6 +116,35 @@ class CheckItemTemplateApplicationServiceTest {
 
         assertThatThrownBy(() -> service.createItem(100L, "已有小项"))
                 .hasMessage("同一检查项大类下不能存在同名子检查项");
+    }
+
+    @Test
+    void shouldCreateThreeLevelsWithSheetScopedOrdering() {
+        CheckItemTemplateRecord root = template(1L, null, 1);
+        root.setEnabled(true);
+        when(templateMapper.findById(1L)).thenReturn(root);
+        when(templateMapper.findAll("PCB")).thenReturn(List.of(template(2L, 1L, 3), template(3L, 99L, 20)));
+        when(templateMapper.nextId()).thenReturn(10L, 11L);
+        var result = service.create(new CheckItemTemplateApplicationService.CreateCategoryCommand(
+                ReviewType.PCB, 1L, "大类", List.of(new CheckItemTemplateApplicationService.CreateItemCommand("小类"))));
+        org.assertj.core.api.Assertions.assertThat(result.category().parentId()).isEqualTo(1L);
+        org.assertj.core.api.Assertions.assertThat(result.category().sortNo()).isEqualTo(4);
+        org.assertj.core.api.Assertions.assertThat(result.items().get(0).parentId()).isEqualTo(10L);
+    }
+
+    @Test
+    void shouldRejectInvalidSheetParentsWithoutWriting() {
+        for (int scenario = 0; scenario < 5; scenario++) {
+            CheckItemTemplateRecord root = template(1L, scenario == 2 ? 9L : null, 1);
+            root.setEnabled(scenario != 1);
+            if (scenario == 3) root.setReviewType("SCHEMATIC");
+            when(templateMapper.findById(1L)).thenReturn(scenario == 0 ? null : root);
+            Long parentId = scenario == 4 ? null : 1L;
+            assertThatThrownBy(() -> service.create(new CheckItemTemplateApplicationService.CreateCategoryCommand(
+                    ReviewType.PCB, parentId, "大类", List.of())))
+                    .isInstanceOf(com.bms.common.BusinessException.class);
+        }
+        verify(templateMapper, never()).insert(org.mockito.ArgumentMatchers.any());
     }
 
     private CheckItemTemplateRecord template(long id, Long parentId, int sortNo) {

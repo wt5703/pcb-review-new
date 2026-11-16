@@ -71,7 +71,7 @@ public class CheckItemTemplateController {
 
 
     @PostMapping
-    @Operation(summary = "新增检查项大类及子检查项", description = "一次新增一个检查项大类及其可选的子检查项。categoryName 必填")
+    @Operation(summary = "新增检查项大类及子检查项", description = "在 topLevelCheckItemId 指定的 Sheet 顶级节点下新增大类及其可选的多个小类。父级必须启用且与 reviewType 一致；同一 Sheet 下大类名称不可重复。categoryName 必填")
     ApiResponse<CheckItemTemplateApplicationService.TemplateCategoryView> create(@Valid @RequestBody CreateTemplateRequest request,
                                                                                  HttpServletRequest servletRequest) {
 
@@ -119,6 +119,7 @@ public class CheckItemTemplateController {
     private CheckItemTemplateApplicationService.CreateCategoryCommand toCreateCategoryCommand(CreateTemplateRequest request) {
         return new CheckItemTemplateApplicationService.CreateCategoryCommand(
                 request.reviewType(),
+                request.topLevelCheckItemId(),
                 request.categoryName(),
                 toCreateItemCommands(request.items()));
     }
@@ -134,6 +135,7 @@ public class CheckItemTemplateController {
 
     @Schema(description = "新增检查项类别请求")
     record CreateTemplateRequest(
+            @Schema(description = "Sheet 顶级检查项 ID，作为新增大类的父级；须启用且与评审类型一致", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull Long topLevelCheckItemId,
             @Schema(description = "适用评审类型", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull ReviewType reviewType,
             @Schema(description = "检查项大类名称", requiredMode = Schema.RequiredMode.REQUIRED) @NotBlank String categoryName,
             @Schema(description = "该大类包含的检查项子类；可不传或传空数组，提交顺序即展示顺序") List<@Valid TemplateItemRequest> items) {

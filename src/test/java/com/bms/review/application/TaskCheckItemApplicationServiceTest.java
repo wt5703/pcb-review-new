@@ -254,7 +254,49 @@ class TaskCheckItemApplicationServiceTest {
 
         assertThat(items).extracting(item -> item.category().itemName()).containsExactly("结束时的类别");
         assertThat(items.get(0).items()).extracting(TaskCheckItemApplicationService.CheckItemListItemView::itemName).containsExactly("结束时的线距检查");
-        verify(templateMapper, never()).findEnabledByReviewType(ReviewType.PCB.name());
+        verify(taskCheckItemMapper, never()).insert(any());
+    }
+
+    @Test
+    void shouldWrapLegacySnapshotWithFallbackRoot() {
+        when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.FINISHED));
+        TaskCheckItemRecord category = item(41L, 30L);
+        category.setParentId(null);
+        TaskCheckItemRecord child = item(51L, 31L);
+        when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of(category, child));
+        when(templateMapper.findByIds(List.of(30L, 31L))).thenReturn(List.of(template(30L, "历史大类"), template(31L, "历史小类")));
+        CheckItemTemplateRecord root = template(100L, "通用");
+        root.setParentId(null);
+        when(templateMapper.findAll(null)).thenReturn(List.of(root));
+        var result = service.list(1001L);
+        assertThat(result.get(0).category().id()).isEqualTo(100L);
+        assertThat(result.get(0).items().get(0).id()).isEqualTo(41L);
+        assertThat(result.get(0).items().get(0).items().get(0).id()).isEqualTo(51L);
+        verify(taskCheckItemMapper, never()).insert(any());
+    }
+
+    @Test
+    void shouldPreferMatchingTypeAndKeepThreeLevelSnapshots() {
+        when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.FINISHED));
+        TaskCheckItemRecord category = item(41L, 30L);
+        category.setParentId(null);
+        TaskCheckItemRecord child = item(51L, 31L);
+        when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of(category, child));
+        when(templateMapper.findByIds(List.of(30L, 31L))).thenReturn(List.of(template(30L, "大类"), template(31L, "小类")));
+        CheckItemTemplateRecord root = template(100L, "通用");
+        root.setParentId(null);
+        when(templateMapper.findEnabledByReviewType("PCB")).thenReturn(List.of(root));
+        assertThat(service.list(1001L).get(0).category().id()).isEqualTo(100L);
+        verify(templateMapper, never()).findAll(null);
+
+        TaskCheckItemRecord leaf = item(61L, 32L);
+        leaf.setParentId(51L);
+        when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of(category, child, leaf));
+        when(templateMapper.findByIds(List.of(30L, 31L, 32L))).thenReturn(List.of(template(30L, "Sheet"), template(31L, "大类"), template(32L, "小类")));
+        var result = service.list(1001L);
+        assertThat(result.get(0).category().id()).isEqualTo(41L);
+        assertThat(result.get(0).items().get(0).items().get(0).id()).isEqualTo(61L);
+        verify(taskCheckItemMapper, never()).insert(any());
     }
 
     private ReviewTaskRecord task(TaskStatus status) {

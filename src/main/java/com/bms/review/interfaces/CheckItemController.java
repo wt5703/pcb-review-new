@@ -44,7 +44,7 @@ public class CheckItemController {
     }
 
     @GetMapping
-    @Operation(summary = "查询任务互检单详情", description = "新模板按工作表、类别、检查项三级返回，子节点位于 items；已有任务快照保留原有层级与检查项 ID。")
+    @Operation(summary = "查询任务互检单详情", description = "按工作表、类别、检查项三级返回，子节点位于 items。历史两级数据包装到对应评审类型的第一个启用顶级模板下；无对应类型时取全部启用模板的第一个顶级节点，按 sortNo、id 排序。包装层 ID 为模板 ID，原大类及小类仍为任务检查项 ID，不修改历史快照。")
     ApiResponse<List<TaskCheckItemApplicationService.CheckItemCategoryView>> list(@PathVariable long taskId, HttpServletRequest servletRequest) {
         return ApiResponse.ok(taskCheckItemApplicationService.list(taskId), traceId(servletRequest));
     }

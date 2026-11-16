@@ -130,10 +130,20 @@ public class CheckItemTemplateApplicationService {
         requireName(command.categoryName(), "检查项大类名称");
         List<CreateItemCommand> requestedItems = command.items() == null ? List.of() : command.items();
         requireDistinctChildItemNames(requestedItems.stream().map(CreateItemCommand::itemName).toList());
-        if (templateMapper.findCategoryByReviewTypeAndName(command.reviewType().name(), command.categoryName().trim()) != null) {
-            throw new BusinessException(ErrorCode.DUPLICATE_REQUEST, "同一评审类型下不能存在同名检查项大类");
+        if (command.reviewType() == null || command.topLevelCheckItemId() == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "评审类型和顶级检查项 ID 不能为空");
         }
-        CheckItemTemplateRecord category = newTemplate(command.reviewType(), null, command.categoryName(), nextCategorySort(command.reviewType()), true);
+        CheckItemTemplateRecord root = templateMapper.findById(command.topLevelCheckItemId());
+        if (root == null || !Boolean.TRUE.equals(root.getEnabled())) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "Sheet 顶级检查项不存在或已停用");
+        }
+        if (root.getParentId() != null || !command.reviewType().name().equals(root.getReviewType())) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "父级必须是同一评审类型的 Sheet 顶级检查项");
+        }
+        if (templateMapper.findChildByParentIdAndName(root.getId(), command.categoryName().trim()) != null) {
+            throw new BusinessException(ErrorCode.DUPLICATE_REQUEST, "同一 Sheet 下不能存在同名检查项大类");
+        }
+        CheckItemTemplateRecord category = newTemplate(command.reviewType(), root.getId(), command.categoryName(), nextCategorySort(command.reviewType(), root.getId()), true);
         templateMapper.insert(category);
         List<TemplateView> items = new ArrayList<>();
         for (int index = 0; index < requestedItems.size(); index++) {
@@ -468,9 +478,9 @@ public class CheckItemTemplateApplicationService {
         return itemName != null && itemName.replaceAll("[\\s.。…]+", "").isBlank();
     }
 
-    private int nextCategorySort(ReviewType reviewType) {
+    private int nextCategorySort(ReviewType reviewType, long parentId) {
         List<CheckItemTemplateRecord> records = templateMapper.findAll(reviewType.name());
-        return (records == null ? List.<CheckItemTemplateRecord>of() : records).stream().filter(record -> record.getParentId() == null)
+        return (records == null ? List.<CheckItemTemplateRecord>of() : records).stream().filter(record -> Objects.equals(record.getParentId(), parentId))
                 .map(CheckItemTemplateRecord::getSortNo).filter(Objects::nonNull).max(Integer::compareTo).map(value -> value + 1).orElse(1);
     }
 
@@ -496,7 +506,7 @@ public class CheckItemTemplateApplicationService {
         if (value == null || value.isBlank()) throw new BusinessException(ErrorCode.VALIDATION_ERROR, fieldName + "不能为空");
     }
 
-    public record CreateCategoryCommand(ReviewType reviewType, String categoryName, List<CreateItemCommand> items) { }
+    public record CreateCategoryCommand(ReviewType reviewType, Long topLevelCheckItemId, String categoryName, List<CreateItemCommand> items) { }
     public record CreateItemCommand(String itemName) { }
     public record UpdateTemplateCommand(long itemId, String itemName, List<UpdateItemCommand> items,
                                         List<Long> deletedItemIds) { }

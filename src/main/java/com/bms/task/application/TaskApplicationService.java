@@ -380,7 +380,7 @@ public class TaskApplicationService {
             views.add(new TaskFlowRecordView(record.getId(), record.getAction(), record.getActionName(), record.getOperateEmployeeNo(),
                     lookupEmployeeName(record.getOperateEmployeeNo(), record.getOperateEmployeeNo()), record.getComment(),
                     record.getCreatedAt(), from, from == null ? null : from.displayName(), to, to == null ? null : to.displayName(),
-                    toReviewerViews(record.getNextOperatorEmployeeNos(), profiles), durationSeconds, record.getApprovalRole()));
+                    toReviewerViews(record.getNextOperatorEmployeeNos(), profiles), formatStageDuration(durationSeconds), record.getApprovalRole()));
             if (from != to) {
                 enteredAt = record.getCreatedAt();
             }
@@ -622,7 +622,21 @@ public class TaskApplicationService {
     public record TaskFlowRecordView(Long id, String action, String actionName, String operatorEmployeeNo, String operatorName,
                                      String comment, java.time.LocalDateTime operatedAt,
                                      TaskStatus fromStatus, String fromStatusName, TaskStatus toStatus, String toStatusName,
-                                     List<ReviewerView> nextOperators, Long stageDurationSeconds, String approvalRole) { }
+                                     List<ReviewerView> nextOperators,
+                                     @Schema(description = "阶段用时：不超过60秒显示秒；不超过1小时显示分秒；不超过24小时显示小时分秒；超过一天显示天小时分钟，舍去秒；无法计算时为空", example = "23小时59分4秒") String stageDuration,
+                                     String approvalRole) { }
+
+    static String formatStageDuration(Long seconds) {
+        if (seconds == null) return null;
+        long value = Math.max(0L, seconds);
+        if (value <= 60) return value + "秒";
+        if (value <= 3600) return value / 60 + "分" + (value % 60 == 0 ? "" : value % 60 + "秒");
+        if (value <= 86400) return value / 3600 + "小时"
+                + (value % 3600 / 60 == 0 ? "" : value % 3600 / 60 + "分")
+                + (value % 60 == 0 ? "" : value % 60 + "秒");
+        return value / 86400 + "天" + (value % 86400 / 3600 == 0 ? "" : value % 86400 / 3600 + "小时")
+                + (value % 3600 / 60 == 0 ? "" : value % 3600 / 60 + "分钟");
+    }
 
     /** 分页响应字段与前端约定为 pageNum、pageSize、total。 */
     public record TaskPage(long total, int pageNum, int pageSize, List<TaskView> items) {

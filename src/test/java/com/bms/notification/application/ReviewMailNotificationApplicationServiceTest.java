@@ -190,6 +190,27 @@ class ReviewMailNotificationApplicationServiceTest {
         assertThat(message.attachments()).extracting(MailMessage.MailAttachment::fileName).containsExactly("PCB.zip");
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"created", "optional", "finished", "schematic"})
+    void shouldCopyEmcLeadersForEveryTaskMail(String stage) throws Exception {
+        ReviewerWhitelistRecord leader = user(1L, "L1", "EMC组长", "leader@example.com");
+        leader.setRoles("OTHER, EMC-LEADER");
+        ReviewerWhitelistRecord duplicate = user(2L, "L2", "重复邮箱", "LEADER@example.com");
+        duplicate.setRoles("EMC-LEADER");
+        ReviewerWhitelistRecord other = user(3L, "L3", "其他", "other@example.com");
+        other.setRoles("EMC-LEADER-OTHER");
+        when(whitelistMapper.findActiveWithSystemRoles()).thenReturn(List.of(leader, duplicate, other));
+        ReviewTaskRecord task = task(1L, "PCB", "BMS", "PCB_EXPERT:P1;EMC_EXPERT:E1;PROCESS_EXPERT:T1");
+        switch (stage) {
+            case "created" -> service.enqueueTaskCreated(task);
+            case "optional" -> service.enqueuePcbStageReview(task, List.of(com.bms.file.domain.FileCategory.PCB_PROCESS_REVIEW));
+            case "finished" -> service.enqueueTaskFinished(task);
+            default -> { task.setReviewType("SCHEMATIC"); service.enqueueSchematicReviewStarted(task); }
+        }
+        assertThat(payload().carbonCopies()).extracting(MailMessage.MailRecipient::email)
+                .containsExactly("BMS-hard@leapmotor.com", "leader@example.com");
+    }
+
     private MailMessage payload() throws Exception {
         ArgumentCaptor<OutboxEventRecord> captor = ArgumentCaptor.forClass(OutboxEventRecord.class);
         verify(outboxEventMapper).insert(captor.capture());

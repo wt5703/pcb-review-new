@@ -69,12 +69,27 @@ public class TaskCheckItemApplicationService {
                 .collect(java.util.stream.Collectors.toMap(CheckItemTemplateRecord::getId, template -> template));
         Map<Long, List<TaskCheckItemRecord>> itemsByParentId = records.stream().filter(record -> record.getParentId() != null)
                 .collect(java.util.stream.Collectors.groupingBy(TaskCheckItemRecord::getParentId));
-        return records.stream().filter(record -> record.getParentId() == null)
+        List<CheckItemCategoryView> views = records.stream().filter(record -> record.getParentId() == null)
                 .sorted(java.util.Comparator.comparing(TaskCheckItemRecord::getSortNo).thenComparing(TaskCheckItemRecord::getId))
                 .map(category -> new CheckItemCategoryView(new CheckItemCategoryInfo(category.getId(),
                         itemNameOf(category, templatesByItemId), category.getSortNo()),
                         childItems(category.getId(), itemsByParentId, templatesByItemId)))
                 .toList();
+        boolean twoLevels = views.stream().anyMatch(view -> !view.items().isEmpty())
+                && views.stream().flatMap(view -> view.items().stream()).allMatch(item -> item.items().isEmpty());
+        if (!twoLevels) return views;
+        CheckItemTemplateRecord root = firstRoot(templateMapper.findEnabledByReviewType(task.getReviewType()));
+        if (root == null) root = firstRoot(templateMapper.findAll(null));
+        if (root == null) return views;
+        List<CheckItemListItemView> categories = views.stream().map(view -> new CheckItemListItemView(
+                view.category().id(), view.category().itemName(), view.category().sortNo(), null, view.items())).toList();
+        return List.of(new CheckItemCategoryView(new CheckItemCategoryInfo(root.getId(), root.getItemName(), root.getSortNo()), categories));
+    }
+
+    private CheckItemTemplateRecord firstRoot(List<CheckItemTemplateRecord> templates) {
+        return templates.stream().filter(item -> item.getParentId() == null)
+                .sorted(java.util.Comparator.comparing(CheckItemTemplateRecord::getSortNo)
+                        .thenComparing(CheckItemTemplateRecord::getId)).findFirst().orElse(null);
     }
 
     private List<CheckItemListItemView> childItems(long parentId, Map<Long, List<TaskCheckItemRecord>> itemsByParentId,
