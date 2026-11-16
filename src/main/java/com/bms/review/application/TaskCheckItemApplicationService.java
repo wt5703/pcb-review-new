@@ -57,6 +57,10 @@ public class TaskCheckItemApplicationService {
         taskMapper.lockById(taskId);
         ReviewTaskRecord task = requireTaskExists(taskId);
         List<TaskCheckItemRecord> records = taskCheckItemMapper.findByTaskId(taskId);
+        if (!records.isEmpty() && !isFinished(task)) {
+            synchronizeLatestTemplate(task, records);
+            records = taskCheckItemMapper.findByTaskId(taskId);
+        }
         List<CheckItemTemplateRecord> templates;
         if (records.isEmpty() && !isFinished(task)) {
             templates = materializeTemplate(task);
@@ -203,7 +207,47 @@ public class TaskCheckItemApplicationService {
         }
     }
 
-    /** 已有任务快照继续引用原模板记录，重新导入只影响之后生成的快照。 */
+    /** 同一模板 ID 复用任务记录；新模板 ID 新增，绝不按名称迁移结论。 */
+    private void synchronizeLatestTemplate(ReviewTaskRecord task, List<TaskCheckItemRecord> existing) {
+        List<CheckItemTemplateRecord> latest = templateMapper.findEnabledByReviewType(task.getReviewType());
+        Map<Long, TaskCheckItemRecord> byTemplate = existing.stream().collect(java.util.stream.Collectors.toMap(TaskCheckItemRecord::getItemId, item -> item));
+        Map<Long, TaskCheckItemRecord> byId = existing.stream().collect(java.util.stream.Collectors.toMap(TaskCheckItemRecord::getId, item -> item));
+        java.util.Set<Long> retained = new java.util.HashSet<>();
+        for (TaskCheckItemRecord item : existing) {
+            if (!CheckItemStatus.PENDING.name().equals(item.getStatus()) || item.getCheckResult() != null
+                    || item.getComment() != null && !item.getComment().isEmpty()
+                    || item.getRichText() != null && !item.getRichText().isEmpty()) {
+                TaskCheckItemRecord ancestor = item;
+                while (ancestor != null && retained.add(ancestor.getId())) ancestor = byId.get(ancestor.getParentId());
+            }
+        }
+        // 先分配所有任务 ID，再刷新父级，避免依赖模板查询顺序。
+        for (CheckItemTemplateRecord template : latest) {
+            TaskCheckItemRecord item = byTemplate.get(template.getId());
+            if (item == null) {
+                item = new TaskCheckItemRecord();
+                item.setId(taskCheckItemMapper.nextId());
+                item.setTaskId(task.getId());
+                item.setItemId(template.getId());
+                item.setSortNo(template.getSortNo());
+                item.setStatus(CheckItemStatus.PENDING.name());
+                taskCheckItemMapper.insert(item);
+                byTemplate.put(template.getId(), item);
+            }
+            retained.add(item.getId());
+        }
+        for (CheckItemTemplateRecord template : latest) {
+            TaskCheckItemRecord item = byTemplate.get(template.getId());
+            item.setParentId(template.getParentId() == null ? null : byTemplate.get(template.getParentId()).getId());
+            item.setSortNo(template.getSortNo());
+            taskCheckItemMapper.refreshTemplateSnapshot(item);
+        }
+        // 只移除未填写的过期快照；已保存项及其祖先始终保留。
+        existing.stream().filter(item -> !retained.contains(item.getId()))
+                .forEach(item -> taskCheckItemMapper.deleteUnfilledSnapshot(task.getId(), item.getId()));
+    }
+
+    /** 首次访问生成任务快照。 */
     private List<CheckItemTemplateRecord> materializeTemplate(ReviewTaskRecord task) {
         List<CheckItemTemplateRecord> templates = templateMapper.findEnabledByReviewType(task.getReviewType());
         Map<Long, List<CheckItemTemplateRecord>> childrenByParentId = templates.stream().filter(item -> item.getParentId() != null)

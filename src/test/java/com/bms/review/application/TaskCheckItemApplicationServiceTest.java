@@ -299,6 +299,36 @@ class TaskCheckItemApplicationServiceTest {
         verify(taskCheckItemMapper, never()).insert(any());
     }
 
+    @Test
+    void shouldSyncNewTemplateWithoutLosingSavedResultsOrMatchingNames() {
+        when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.MUTUAL_CHECK_REVIEWING));
+        TaskCheckItemRecord category = item(41L, 30L);
+        category.setParentId(null);
+        category.setStatus("PENDING");
+        TaskCheckItemRecord saved = item(51L, 31L);
+        saved.setStatus("SAVED");
+        saved.setCheckResult("FAIL");
+        saved.setComment("原有意见");
+        TaskCheckItemRecord obsolete = item(52L, 32L);
+        obsolete.setStatus("PENDING");
+        when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of(category, saved, obsolete));
+        when(templateMapper.findByIds(List.of(30L, 31L, 32L))).thenReturn(List.of(template(30L, "旧类"), template(31L, "同名检查"), template(32L, "过期项")));
+        CheckItemTemplateRecord newRoot = template(100L, "新模板");
+        newRoot.setParentId(null);
+        CheckItemTemplateRecord newItem = template(101L, "同名检查");
+        newItem.setParentId(100L);
+        when(templateMapper.findEnabledByReviewType("PCB")).thenReturn(List.of(newItem, newRoot));
+        when(taskCheckItemMapper.nextId()).thenReturn(200L, 201L);
+        service.list(1001L);
+        verify(taskCheckItemMapper).deleteUnfilledSnapshot(1001L, 52L);
+        verify(taskCheckItemMapper, never()).deleteUnfilledSnapshot(1001L, 51L);
+        verify(taskCheckItemMapper, never()).deleteUnfilledSnapshot(1001L, 41L);
+        verify(taskCheckItemMapper).refreshTemplateSnapshot(argThat(record -> Long.valueOf(200L).equals(record.getId())
+                && Long.valueOf(201L).equals(record.getParentId()) && record.getCheckResult() == null));
+        assertThat(saved.getComment()).isEqualTo("原有意见");
+        assertThat(saved.getCheckResult()).isEqualTo("FAIL");
+    }
+
     private ReviewTaskRecord task(TaskStatus status) {
         ReviewTaskRecord task = new ReviewTaskRecord();
         task.setId(1001L);

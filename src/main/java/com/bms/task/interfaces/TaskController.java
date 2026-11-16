@@ -2,6 +2,7 @@ package com.bms.task.interfaces;
 
 import com.bms.common.ApiResponse;
 import com.bms.common.TraceIdFilter;
+import com.bms.file.application.TaskLatestFileService;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.task.application.TaskApplicationService;
@@ -52,12 +53,23 @@ public class TaskController {
     private final TaskApplicationService taskService;
     private final MyTaskApplicationService myTaskApplicationService;
     private final ReviewerWhitelistApplicationService whitelistApplicationService;
+    private final TaskLatestFileService taskLatestFileService;
 
     public TaskController(TaskApplicationService taskService, MyTaskApplicationService myTaskApplicationService,
-                          ReviewerWhitelistApplicationService whitelistApplicationService) {
+                          ReviewerWhitelistApplicationService whitelistApplicationService, TaskLatestFileService taskLatestFileService) {
         this.taskService = taskService;
         this.myTaskApplicationService = myTaskApplicationService;
         this.whitelistApplicationService = whitelistApplicationService;
+        this.taskLatestFileService = taskLatestFileService;
+    }
+
+    @GetMapping("/{taskId}/files/latest")
+    @Operation(summary = "查询任务各阶段最新文件", description = "返回各文件类型 is_latest=true 的全部文件，包括最新批次的多个文件；未上传的类型不返回。沿用文件访问权限，仅设计者、组长和任务评审人员可访问。无文件返回空数组。")
+    ApiResponse<List<TaskLatestFileService.TaskFileView>> listLatestFiles(
+            @Parameter(description = "评审任务 ID", required = true) @PathVariable long taskId,
+            @Parameter(description = "当前用户工号", required = true) @NotBlank @RequestHeader("userId") String employeeNo,
+            HttpServletRequest servletRequest) {
+        return ApiResponse.ok(taskLatestFileService.list(taskId, employeeNo), getTraceId(servletRequest));
     }
 
     @PostMapping("/save")
