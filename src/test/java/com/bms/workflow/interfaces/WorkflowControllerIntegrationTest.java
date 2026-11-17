@@ -61,9 +61,9 @@ class WorkflowControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.toStatus").value("PENDING_FINISH"))
                 .andExpect(jsonPath("$.data.assignedReviewerEmployeeNos[0]").value("BMS002"));
         mockMvc.perform(get("/tasks/my").header("userId", "BMS001"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.data").isEmpty());
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.items").isEmpty());
         mockMvc.perform(get("/tasks/my").header("userId", "BMS002"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].actions[0]").value("FINISH_TASK"));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.items[0].actions[0]").value("FINISH_TASK"));
         mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
                         .header("userId", "BMS001").param("actions", "FINISH"))
                 .andExpect(status().isConflict());

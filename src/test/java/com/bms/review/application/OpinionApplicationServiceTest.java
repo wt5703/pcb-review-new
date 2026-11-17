@@ -54,6 +54,41 @@ class OpinionApplicationServiceTest {
         });
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {true, false})
+    void shouldOnlyMarkMutualItemPassedWhenConfirmationPasses(boolean passed) {
+        var opinion = opinion(31L, 1001L, "BMS020", OpinionStatus.PENDING_CONFIRMATION);
+        opinion.setSourceType(OpinionSourceType.MUTUAL_CHECK_ITEM);
+        opinion.setSourceItemId(71L);
+        when(opinionMapper.findById(31L)).thenReturn(opinion);
+        when(taskMapper.findById(1001L)).thenReturn(task("BMS009"));
+        OpinionReplyRecord reply = new OpinionReplyRecord(); reply.setId(41L);
+        when(opinionMapper.findLatestReply(31L)).thenReturn(reply);
+        when(opinionMapper.updateStatus(any())).thenReturn(1);
+        when(taskCheckItemMapper.markConfirmedPass(1001L, 71L)).thenReturn(1);
+        service.confirm(31L, new OpinionApplicationService.ConfirmOpinionCommand(passed, "确认"), "BMS020");
+        verify(taskCheckItemMapper, org.mockito.Mockito.times(passed ? 1 : 0)).markConfirmedPass(1001L, 71L);
+    }
+
+    @Test
+    void shouldShowReturnedExpertsAsUnsubmittedUntilTheySubmitAgain() {
+        ReviewTaskRecord task = task("BMS009");
+        task.setStatus("PCB_EXPERT_REVIEWING"); task.setReviewerAssignments("PCB_EXPERT:BMS020");
+        task.setAssignedReviewerEmployeeNos("BMS020");
+        var old = opinion(31L, 1001L, "BMS020", OpinionStatus.CONFIRMED_PASS);
+        old.setSourceType(OpinionSourceType.PCB_REVIEW);
+        var returned = new com.bms.workflow.infrastructure.TaskFlowRecord();
+        returned.setAction("RETURN"); returned.setToStatus("PCB_EXPERT_REVIEWING");
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(old));
+        when(flowMapper.findByTaskId(1001L)).thenReturn(List.of(returned));
+        when(taskMapper.updateAssignedReviewerEmployeeNos(any())).thenReturn(1);
+        assertThat(service.summary(1001L, List.of(OpinionSourceType.PCB_REVIEW)).unsubmittedReviewers()).hasSize(1);
+        service.submitNoOpinion(1001L, OpinionSourceType.PCB_REVIEW, "BMS020", "专家");
+        assertThat(service.summary(1001L, List.of(OpinionSourceType.PCB_REVIEW)).unsubmittedReviewers()).isEmpty();
+        assertThat(old.getStatus()).isEqualTo("CONFIRMED_PASS");
+    }
+
     @Test
     void shouldRaiseMutualExtraOpinion() {
         when(taskMapper.findById(1001L)).thenReturn(task("BMS009"));

@@ -160,7 +160,7 @@ public class CheckItemTemplateApplicationService {
     @Transactional
     public TemplateView createItem(long categoryId, String itemName) {
         CheckItemTemplateRecord category = templateMapper.findById(categoryId);
-        if (category == null || category.getParentId() != null || !Boolean.TRUE.equals(category.getEnabled())) {
+        if (category == null || !isCategory(category) || !Boolean.TRUE.equals(category.getEnabled())) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项大类不存在或已停用");
         }
         requireName(itemName, "检查项名称");
@@ -183,7 +183,7 @@ public class CheckItemTemplateApplicationService {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在");
         }
         requireName(command.itemName(), "检查项名称");
-        if (target.getParentId() != null) {
+        if (!isCategory(target)) {
             if ((command.items() != null && !command.items().isEmpty())
                     || (command.deletedItemIds() != null && !command.deletedItemIds().isEmpty())) {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "修改检查项小类时不能携带子项新增、修改或删除列表");
@@ -292,7 +292,7 @@ public class CheckItemTemplateApplicationService {
         if (template == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "检查项不存在");
         }
-        boolean isCategory = template.getParentId() == null;
+        boolean isCategory = isCategory(template);
         if (category == DeleteTargetCategory.CATEGORY && !isCategory) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "删除类别时只能传检查项大类 ID");
         }
@@ -302,10 +302,21 @@ public class CheckItemTemplateApplicationService {
         templateMapper.disableById(id);
         if (isCategory) {
             templateMapper.disableChildrenByParentId(id);
-            templateMapper.decrementCategorySortAfter(template.getReviewType(), template.getSortNo());
+            if (template.getParentId() == null) {
+                templateMapper.decrementCategorySortAfter(template.getReviewType(), template.getSortNo());
+            } else {
+                templateMapper.decrementSiblingItemSortAfter(template.getParentId(), template.getSortNo());
+            }
         } else {
             templateMapper.decrementSiblingItemSortAfter(template.getParentId(), template.getSortNo());
         }
+    }
+
+    /** 三级模板的大类父级为 Sheet；兼容历史根级大类。 */
+    private boolean isCategory(CheckItemTemplateRecord item) {
+        if (item.getParentId() == null) return true;
+        CheckItemTemplateRecord parent = templateMapper.findById(item.getParentId());
+        return parent != null && parent.getParentId() == null;
     }
 
     private List<ImportSheet> readSheets(byte[] workbookBytes, ReviewType reviewType) {

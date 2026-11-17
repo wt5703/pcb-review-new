@@ -1,4 +1,6 @@
-[[${recipientNames}]]你们好！
+[[${resubmissionNotice}]]
+
+[[${recipientNames}]][[${greeting}]]！
 
 附件是[[${projectName}]][[${reviewName}]]文件，请进行[[${reviewName}]]。
 

@@ -344,18 +344,35 @@ class TaskApplicationServiceTest {
     }
 
     @Test
-    void shouldUpdateOnlyProjectInformationAndReuploadedFilesWithoutTransitioningWorkflow() {
+    void shouldRequireWithdrawalBeforeUpdatingAnActiveTask() {
         ReviewTaskRecord task = record(101L, "BMS PCB评审", TaskStatus.PCB_EXPERT_REVIEWING, 0L);
         when(taskMapper.findById(101L)).thenReturn(task);
         when(taskMapper.updateBasicInfo(any())).thenReturn(1);
 
-        TaskApplicationService.TaskView result = service.updateTaskBasicInfo(101L,
-                new TaskApplicationService.UpdateTaskCommand("PRJ-NEW", "新项目", List.of("file-uuid-new")), DESIGNER_NO);
+        assertThatThrownBy(() -> service.updateTaskBasicInfo(101L,
+                new TaskApplicationService.UpdateTaskCommand("PRJ-NEW", "新项目", List.of("file-uuid-new")), DESIGNER_NO))
+                .hasMessageContaining("进行中的任务请先撤回");
+        verifyNoInteractions(fileApplicationService, reviewMailNotificationApplicationService);
+    }
 
-        assertThat(result.projectNo()).isEqualTo("PRJ-NEW");
-        assertThat(result.projectName()).isEqualTo("新项目");
-        verify(taskMapper).updateBasicInfo(task);
-        verify(fileApplicationService).replaceInitialFiles(101L, List.of("file-uuid-new"), DESIGNER_NO);
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void shouldRestartWithdrawnTaskAndOnlyMailWhenExpertsChange(boolean changed) {
+        ReviewTaskRecord task = record(101L, "PCB任务", TaskStatus.PENDING_INITIATION, 0L);
+        task.setInitialFileIds("301");
+        when(taskMapper.findById(101L)).thenReturn(task);
+        when(taskMapper.updateDraft(any())).thenReturn(1);
+        when(taskMapper.update(any())).thenReturn(1);
+        when(taskMapper.updateAssignedReviewerEmployeeNos(any())).thenReturn(1);
+        when(reviewerWhitelistApplicationService.listAssignableUsers(List.of(ReviewerWhitelistRole.PCB_EXPERT)))
+                .thenReturn(List.of(assignableReviewer("BMS011", "原专家", ReviewerWhitelistRole.PCB_EXPERT),
+                        assignableReviewer("BMS012", "新专家", ReviewerWhitelistRole.PCB_EXPERT)));
+        var result = service.updateTaskBasicInfo(101L, new TaskApplicationService.UpdateTaskCommand("NEW", "新项目", List.of(),
+                null, List.of(new TaskReviewerAssignment(ReviewRole.PCB_EXPERT, List.of(changed ? "BMS012" : "BMS011"))), null), DESIGNER_NO);
+        assertThat(result.status()).isEqualTo("PCB_EXPERT_REVIEWING");
+        verify(flowMapper).insert(any());
+        if (changed) verify(reviewMailNotificationApplicationService).enqueueTaskResubmitted(any());
+        else verifyNoInteractions(reviewMailNotificationApplicationService);
     }
 
     private void mockTaskPage(long total, List<ReviewTaskRecord> records) {

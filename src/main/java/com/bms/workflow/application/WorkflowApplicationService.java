@@ -142,7 +142,7 @@ public class WorkflowApplicationService {
 
         // 保留请求中的动作列表，用于判断执行路径并确定通知涉及哪些评审。
         List<WorkflowAction> actions = command.actions();
-        // 读取流转说明，双动作时两条日志使用同一份说明。
+        // 单动作使用传入说明，工艺结构组合使用统一日志说明。
         String comment = command.comment();
         // 单动作沿用请求携带的按工号、按角色分配信息。多动作留给下方工艺和结构组合分支。
         TransitionCommand singleCommand = actions.size() == 1
@@ -177,14 +177,15 @@ public class WorkflowApplicationService {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR,
                         "一次只能提交一个流程动作；仅 PCB 工艺评审和结构评审允许同时提交");
             }
-            // 两个动作固定先结构、后工艺。响应覆盖整批流转的起止状态。先开启结构评审，并保留整批操作的初始状态。
-            WorkflowView structure = executeTransition(taskId,
+            // 两个分支均完成校验后，只持久化一次状态、待办和日志。
+            TransitionContext structure = prepareTransition(taskId,
                     new TransitionCommand(WorkflowAction.START_PCB_STRUCTURE_REVIEW, comment, List.of()), operatorEmployeeNo);
-            // 再开启工艺评审。此时任务已进入工艺和结构阶段，会保留刚开启的结构待办。
-            WorkflowView process = executeTransition(taskId,
+            prepareTransition(taskId,
                     new TransitionCommand(WorkflowAction.START_PCB_PROCESS_REVIEW, comment, List.of()), operatorEmployeeNo);
-            // 用结构动作的起始状态和工艺动作的结束状态组装整批响应。处理人列表沿用双动作接口的空列表约定。
-            result = new WorkflowView(taskId, structure.fromStatus(), process.toStatus(), List.of());
+            TransitionContext combined = new TransitionContext(structure.task(), WorkflowAction.START_PCB_PROCESS_STRUCTURE_REVIEW,
+                    "开启工艺结构评审", operatorEmployeeNo, structure.fromStatus(), structure.plan(), List.of(), List.of());
+            persistTransition(combined);
+            result = combined.toView();
         }
 
         // 所有动作都执行成功后，再统一登记工艺或结构评审通知。
@@ -401,6 +402,9 @@ public class WorkflowApplicationService {
                 roles.add(ReviewRole.PROCESS_EXPERT);
             } else if (WorkflowAction.START_PCB_STRUCTURE_REVIEW.name().equals(record.getAction())) {
                 roles.add(ReviewRole.STRUCTURE_EXPERT);
+            } else if (WorkflowAction.START_PCB_PROCESS_STRUCTURE_REVIEW.name().equals(record.getAction())) {
+                roles.add(ReviewRole.PROCESS_EXPERT);
+                roles.add(ReviewRole.STRUCTURE_EXPERT);
             }
         }
         return List.copyOf(roles);
@@ -464,14 +468,16 @@ public class WorkflowApplicationService {
         ReviewTaskRecord task = context.task();
         Set<String> activeReviewerEmployeeNos = new LinkedHashSet<>(TaskReviewerAssignmentCodec.decodeReviewerEmployeeNos(task.getAssignedReviewerEmployeeNos()));
         switch (context.action()) {
-            case START_PCB_PROCESS_REVIEW, START_PCB_STRUCTURE_REVIEW -> {
+            case START_PCB_PROCESS_REVIEW, START_PCB_STRUCTURE_REVIEW, START_PCB_PROCESS_STRUCTURE_REVIEW -> {
                 // 首次进入工艺/结构阶段时，前序 PCB、EMC 待办已全部闭环，直接重建当前阶段人员。
                 // 后续再开启另一类评审时必须保留已开启分支的人员：同一人可能同时是 PCB/EMC 与
                 // 工艺/结构专家，按工号删除前序角色人员会误删仍在进行中的结构或工艺待办。
                 if (context.fromStatus() == TaskStatus.PCB_EXPERT_REVIEWING) {
                     activeReviewerEmployeeNos.clear();
                 }
-                activeReviewerEmployeeNos.addAll(context.action() == WorkflowAction.START_PCB_PROCESS_REVIEW
+                activeReviewerEmployeeNos.addAll(context.action() == WorkflowAction.START_PCB_PROCESS_STRUCTURE_REVIEW
+                        ? reviewerEmployeeNosForRoles(task, ReviewRole.PROCESS_EXPERT, ReviewRole.STRUCTURE_EXPERT)
+                        : context.action() == WorkflowAction.START_PCB_PROCESS_REVIEW
                         ? reviewerEmployeeNosForRoles(task, ReviewRole.PROCESS_EXPERT)
                         : reviewerEmployeeNosForRoles(task, ReviewRole.STRUCTURE_EXPERT));
             }
@@ -730,7 +736,7 @@ public class WorkflowApplicationService {
         TaskStatus current = TaskStatus.valueOf(task.getStatus());
         ReviewType reviewType = ReviewType.valueOf(task.getReviewType());
         return switch (action) {
-            case CREATE, FINISH, FINISH_CONFIRM, WITHDRAW, TERMINATE, RETURN -> throw new BusinessException(ErrorCode.VALIDATION_ERROR, "当前流程动作不能按普通节点推进");
+            case CREATE, FINISH, FINISH_CONFIRM, WITHDRAW, TERMINATE, RETURN, START_PCB_PROCESS_STRUCTURE_REVIEW -> throw new BusinessException(ErrorCode.VALIDATION_ERROR, "当前流程动作不能按普通节点推进");
             case START_PCB_STRUCTURE_REVIEW -> requireDesignerTransition(task, reviewType == ReviewType.PCB
                             && (current == TaskStatus.PCB_EXPERT_REVIEWING || current == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING),
                     TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING, operatorEmployeeNo);
@@ -871,7 +877,7 @@ public class WorkflowApplicationService {
         FileCategory category = switch (action) {
             case START_PCB_PROCESS_REVIEW -> FileCategory.PCB_PROCESS_REVIEW;
             case START_PCB_STRUCTURE_REVIEW -> FileCategory.PCB_STRUCTURE_REVIEW;
-            case START_SCHEMATIC_EXPERT_REVIEW -> FileCategory.SCHEMATIC_REVIEW;
+            case START_SCHEMATIC_EXPERT_ASSIGNMENT, START_SCHEMATIC_EXPERT_REVIEW -> FileCategory.SCHEMATIC_REVIEW;
             default -> null;
         };
         if (category != null) {
@@ -888,25 +894,14 @@ public class WorkflowApplicationService {
 
     /**
      * 要求最新文件中有设计者在当前评审节点上传的终版。
-     * 代码也比较终版与意见的更新时间，当前时间比较结果不阻止流转。
      */
     private void requireFinalFile(ReviewTaskRecord task) {
         FileCategory category = finalFileCategory(task);
         var files = fileMapper.findLatestByTaskIdAndCategory(task.getId(), category.name());
-        var finalFile = files.stream().filter(file -> task.getStatus().equals(file.getUploadedStage())
+        files.stream().filter(file -> task.getStatus().equals(file.getUploadedStage())
                         && task.getDesignerEmployeeNo().equals(file.getUploadedByEmployeeNo()))
                 .findFirst().orElseThrow(() -> new BusinessException(ErrorCode.TASK_STATUS_CONFLICT,
                         "请由设计者在当前评审阶段重新上传终版文件"));
-        List<OpinionSourceType> sources = ReviewType.PCB.name().equals(task.getReviewType())
-                ? List.of(OpinionSourceType.MUTUAL_CHECK_ITEM, OpinionSourceType.MUTUAL_EXTRA)
-                : List.of(OpinionSourceType.SCHEMATIC_REVIEW);
-        boolean outdated = opinionMapper.findByTaskId(task.getId()).stream()
-                .filter(opinion -> sources.contains(opinion.getSourceType()))
-                .map(opinion -> opinion.getUpdatedAt() == null ? opinion.getCreatedAt() : opinion.getUpdatedAt())
-                .anyMatch(updatedAt -> updatedAt != null && (finalFile.getUploadedAt() == null || finalFile.getUploadedAt().isBefore(updatedAt)));
-        if (outdated) {
-            //throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "请在评审意见全部处理完成后重新上传终版文件");
-        }
     }
 
     /**
@@ -944,15 +939,16 @@ public class WorkflowApplicationService {
     /**
      * 检查每个提交要求是否有对应工号和意见来源的正式记录。
      * 无意见确认也可作为记录，草稿不计入。
-     * 失败时提示未提交的工号。
+     * 失败时提示未提交人员的姓名。
      */
     private void requireReviewersSubmitted(long taskId, List<ReviewerSubmissionRequirement> requirements, String message) {
         if (requirements.isEmpty()) {
             return;
         }
         List<com.bms.review.infrastructure.ReviewOpinionRecord> opinions = opinionMapper.findByTaskId(taskId);
+        Set<String> pendingRound = com.bms.review.domain.ReviewRound.pendingPcbReviewers(requireTask(taskId), flowMapper.findByTaskId(taskId));
         List<String> unsubmittedEmployeeNos = requirements.stream()
-                .filter(requirement -> (opinions == null ? List.<com.bms.review.infrastructure.ReviewOpinionRecord>of() : opinions).stream()
+                .filter(requirement -> pendingRound.contains(requirement.employeeNo()) || (opinions == null ? List.<com.bms.review.infrastructure.ReviewOpinionRecord>of() : opinions).stream()
                         .noneMatch(opinion -> !opinion.isDraft()
                                 && requirement.employeeNo().equals(opinion.getRaisedByEmployeeNo())
                                 && requirement.sources().contains(opinion.getSourceType())))
@@ -960,8 +956,15 @@ public class WorkflowApplicationService {
                 .distinct()
                 .toList();
         if (!unsubmittedEmployeeNos.isEmpty()) {
+            Map<String, ReviewerWhitelistApplicationService.ReviewerProfile> profiles = reviewerWhitelistApplicationService
+                    .findReviewerProfilesByEmployeeNos(unsubmittedEmployeeNos);
+            List<String> names = unsubmittedEmployeeNos.stream().map(employeeNo -> {
+                var profile = profiles.get(employeeNo);
+                return profile == null || profile.reviewerName() == null || profile.reviewerName().equals(employeeNo)
+                        ? "姓名未维护" : profile.reviewerName();
+            }).toList();
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT,
-                    message + "；以下评审人尚未确认提交：" + String.join("、", unsubmittedEmployeeNos));
+                    message + "；以下评审人尚未确认提交：" + String.join("、", names));
         }
     }
 

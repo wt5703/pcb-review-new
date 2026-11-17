@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+/** 汇总任务各文件类型的最新批次，并补充上传者姓名。 */
 @Service
 public class TaskLatestFileService {
     private final FileApplicationService files;

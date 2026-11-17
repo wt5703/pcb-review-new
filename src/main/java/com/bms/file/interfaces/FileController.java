@@ -65,8 +65,33 @@ public class FileController {
         return ApiResponse.ok(uploaded, traceId(servletRequest));
     }
 
+    @PostMapping(value = "/files/upload/grouped", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "按多个文件类型批量上传", description = "传 taskId 和多个 fileCategories 参数。文件 part 名称使用对应 FileCategory 编码，每类可重复多个文件，例如 fileCategories=PCB_REVIEW&fileCategories=PCB_STRUCTURE_REVIEW，文件字段 PCB_REVIEW=a.zip、PCB_REVIEW=b.pdf、PCB_STRUCTURE_REVIEW=c.zip。每类至少一个文件，响应按类型分组。同类旧文件转历史，本批全部为最新。")
+    ApiResponse<List<UploadFileGroupView>> uploadGrouped(@RequestParam long taskId,
+            @RequestParam @NotEmpty List<FileCategory> fileCategories,
+            org.springframework.web.multipart.MultipartHttpServletRequest request,
+            @NotBlank @RequestHeader("userId") String employeeNo) {
+        java.util.Map<FileCategory, List<MultipartFile>> groups = new java.util.LinkedHashMap<>();
+        for (FileCategory category : fileCategories) {
+            if (groups.putIfAbsent(category, request.getFiles(category.name())) != null) {
+                throw new com.bms.common.BusinessException(com.bms.common.ErrorCode.VALIDATION_ERROR, "文件类型不能重复");
+            }
+        }
+        if (!request.getMultiFileMap().keySet().equals(groups.keySet().stream().map(Enum::name).collect(java.util.stream.Collectors.toSet()))) {
+            throw new com.bms.common.BusinessException(com.bms.common.ErrorCode.VALIDATION_ERROR, "文件字段名必须与 fileCategories 对应且每类均有文件");
+        }
+        var result = fileApplicationService.uploadGrouped(taskId, groups, employeeNo).stream()
+                .map(group -> new UploadFileGroupView(group.fileCategory(), group.files().stream()
+                        .map(file -> new UploadFileView(file.fileId(), file.id(), file.fileName(), file.fileSize(), file.category())).toList())).toList();
+        return ApiResponse.ok(result, traceId(request));
+    }
+
+    @Schema(description = "按文件类型返回的上传结果")
+    record UploadFileGroupView(@Schema(description = "文件业务类型") FileCategory fileCategory,
+                               @Schema(description = "该类型本次上传的所有文件") List<UploadFileView> files) { }
+
     @PostMapping("/files/download")
-    @Operation(summary = "下载文件", description = "只传 review_file 主键 fileId。后端从文件记录取得任务归属和文件类别，完成权限校验后代理公司资源服务下载。")
+    @Operation(summary = "下载文件", description = "传 review_file 主键 fileId。所有登录用户均可下载任务文件；后端确认文件及所属任务存在后代理资源服务下载。上传、取消上传仍限制为任务设计者。")
     ResponseEntity<byte[]> downloadContent(@RequestParam long fileId,
                                            @NotBlank @RequestHeader("userId") String employeeNo) {
         FileApplicationService.DownloadContent content = fileApplicationService.downloadFile(fileId, employeeNo);

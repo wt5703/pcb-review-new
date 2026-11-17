@@ -147,6 +147,25 @@ class CheckItemTemplateApplicationServiceTest {
         verify(templateMapper, never()).insert(org.mockito.ArgumentMatchers.any());
     }
 
+    @Test
+    void shouldUpdateSecondLevelCategoryAndItsChildren() {
+        CheckItemTemplateRecord root = template(1L, null, 1);
+        CheckItemTemplateRecord category = template(2L, 1L, 1);
+        CheckItemTemplateRecord child = template(3L, 2L, 1);
+        when(templateMapper.findById(1L)).thenReturn(root);
+        when(templateMapper.findById(2L)).thenReturn(category);
+        when(templateMapper.findById(3L)).thenReturn(child);
+        when(templateMapper.findAll("PCB")).thenReturn(List.of(root, category, child));
+        when(templateMapper.nextId()).thenReturn(4L);
+        var result = service.update(new CheckItemTemplateApplicationService.UpdateTemplateCommand(2L, "大类新名称",
+                List.of(new CheckItemTemplateApplicationService.UpdateItemCommand(3L, "已有小类"),
+                        new CheckItemTemplateApplicationService.UpdateItemCommand(null, "新增小类")), List.of()));
+        org.assertj.core.api.Assertions.assertThat(result.items()).hasSize(2);
+        org.assertj.core.api.Assertions.assertThat(result.item().parentId()).isEqualTo(1L);
+        verify(templateMapper).update(child);
+        verify(templateMapper).insert(org.mockito.ArgumentMatchers.argThat(item -> Long.valueOf(2L).equals(item.getParentId())));
+    }
+
     private CheckItemTemplateRecord template(long id, Long parentId, int sortNo) {
         CheckItemTemplateRecord record = new CheckItemTemplateRecord();
         record.setId(id);

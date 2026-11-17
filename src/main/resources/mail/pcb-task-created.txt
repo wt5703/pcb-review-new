@@ -1,4 +1,6 @@
-[[${recipientNames}]]你们好！
+[[${resubmissionNotice}]]
+
+[[${recipientNames}]][[${greeting}]]！
 
 附件是[[${projectName}]]PCB文件，请进行硬件评审与EMC评审。
 

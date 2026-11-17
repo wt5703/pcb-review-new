@@ -81,8 +81,12 @@ public class TaskApplicationService {
     public TaskView saveExistingTask(long taskId, CreateTaskCommand command, List<String> fileIds,
                                      boolean submit, String operatorEmployeeNo) {
         taskMapper.lockById(taskId);
+        ReviewTask before = loadTask(taskId);
         TaskView draft = updateDraftTask(taskId, command, operatorEmployeeNo);
         List<Long> boundFileIds = bindPendingInitialFiles(taskId, fileIds, operatorEmployeeNo);
+        if (submit && before.status() == TaskStatus.PENDING_INITIATION) {
+            return submitTask(taskId, boundFileIds, operatorEmployeeNo, expertsChanged(before, loadTask(taskId)));
+        }
         return finishSavingTask(draft, boundFileIds, submit, operatorEmployeeNo);
     }
 
@@ -91,6 +95,10 @@ public class TaskApplicationService {
      */
     @Transactional
     public TaskView submitTask(long taskId, List<Long> initialFileIds, String operatorEmployeeNo) {
+        return submitTask(taskId, initialFileIds, operatorEmployeeNo, null);
+    }
+
+    private TaskView submitTask(long taskId, List<Long> initialFileIds, String operatorEmployeeNo, Boolean reassigned) {
         taskMapper.lockById(taskId);
         ReviewTask task = loadTask(taskId);
         requireDesignerPermission(task.designerEmployeeNo(), operatorEmployeeNo, "提交");
@@ -101,7 +109,11 @@ public class TaskApplicationService {
         activateReviewersAtTaskSubmission(task);
         recordTaskSubmission(task, fromStatus, operatorEmployeeNo);
         // 邮件收件人必须以已落库的 reviewer_assignments 为准，不能读取提交过程中的临时对象。
-        reviewMailNotificationApplicationService.enqueueTaskCreated(persistedTask);
+        if (reassigned == null) {
+            reviewMailNotificationApplicationService.enqueueTaskCreated(persistedTask);
+        } else if (reassigned) {
+            reviewMailNotificationApplicationService.enqueueTaskResubmitted(persistedTask);
+        }
         return toTaskSummary(task);
     }
 
@@ -144,22 +156,37 @@ public class TaskApplicationService {
         return new TaskPage(total, validQuery.pageNum(), validQuery.pageSize(), items);
     }
 
-    /** 仅更新项目编号、项目名称和重新上传的初始文件，不触发任务流程流转。 */
+    /** 草稿或待发起任务修改后立即提交；进行中的任务必须先撤回。 */
     @Transactional
     public TaskView updateTaskBasicInfo(long taskId, UpdateTaskCommand command, String operatorEmployeeNo) {
         taskMapper.lockById(taskId);
         ReviewTaskRecord taskRecord = loadTaskRecord(taskId);
         requireDesignerPermission(taskRecord.getDesignerEmployeeNo(), operatorEmployeeNo, "修改");
-        if (TaskStatus.isClosed(taskRecord.getStatus())) {
-            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "已结束任务不允许修改基本信息或重新上传文件");
+        ReviewTask before = restoreTask(taskRecord);
+        if (!before.status().isPendingSubmission()) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "仅草稿或待发起任务允许修改并发起流程，进行中的任务请先撤回");
         }
-        taskRecord.setProjectNo(command.projectNo());
-        taskRecord.setProjectName(command.projectName());
-        if (taskMapper.updateBasicInfo(taskRecord) != 1) {
-            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "任务已结束或不存在，无法修改");
-        }
+        String leaderNo = command.expertLeaderEmployeeNo() == null ? before.expertLeaderEmployeeNo() : command.expertLeaderEmployeeNo();
+        CreateTaskCommand update = new CreateTaskCommand(before.reviewType(), before.taskName(), command.projectNo(), command.projectName(),
+                before.designerEmployeeNo(), before.designerName(), before.designName(), before.pcbType(), before.expectedCompletedDate(),
+                leaderNo, reviewerWhitelistApplicationService.findDisplayNameOrDefault(leaderNo, before.expertLeaderName()),
+                command.reviewRoles() == null ? before.reviewRoles() : command.reviewRoles(),
+                command.reviewerAssignments() == null ? before.reviewerAssignments() : command.reviewerAssignments(), before.reviewDescription());
+        updateDraftTask(taskId, update, operatorEmployeeNo);
         fileApplicationService.replaceInitialFiles(taskId, command.files(), operatorEmployeeNo);
-        return toTaskSummary(restoreTask(taskRecord));
+        return submitTask(taskId, List.of(), operatorEmployeeNo,
+                before.status() == TaskStatus.DRAFT ? null : expertsChanged(before, loadTask(taskId)));
+    }
+
+    private boolean expertsChanged(ReviewTask before, ReviewTask after) {
+        return !java.util.Objects.equals(before.expertLeaderEmployeeNo(), after.expertLeaderEmployeeNo())
+                || !assignmentSet(before).equals(assignmentSet(after));
+    }
+
+    /** 角色与工号组成集合，忽略数组顺序及重复元素。 */
+    private Set<String> assignmentSet(ReviewTask task) {
+        return task.reviewerAssignments().stream().flatMap(assignment -> assignment.reviewerEmployeeNos().stream()
+                .map(employeeNo -> assignment.reviewRole().name() + ":" + employeeNo)).collect(Collectors.toSet());
     }
 
     /** 新建一条尚未派发的任务草稿。 */
@@ -393,7 +420,7 @@ public class TaskApplicationService {
         return switch (record.getAction()) {
             case "CREATE" -> ReviewType.PCB.name().equals(task.getReviewType())
                     ? TaskStatus.PCB_EXPERT_REVIEWING : TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT;
-            case "START_PCB_PROCESS_REVIEW", "START_PCB_STRUCTURE_REVIEW" -> TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING;
+            case "START_PCB_PROCESS_REVIEW", "START_PCB_STRUCTURE_REVIEW", "START_PCB_PROCESS_STRUCTURE_REVIEW" -> TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING;
             case "START_PCB_MATUAL_ASSIGNMENT" -> TaskStatus.MUTUAL_CHECK_PENDING_ASSIGNMENT;
             case "START_PCB_MATUAL_REVIEW", "START_SCHEMATIC_MATUAL_REVIEW" -> TaskStatus.MUTUAL_CHECK_REVIEWING;
             case "START_SCHEMATIC_EXPERT_ASSIGNMENT" -> TaskStatus.SCHEMATIC_EXPERT_PENDING_ASSIGNMENT;
@@ -499,7 +526,11 @@ public class TaskApplicationService {
         }
     }
 
-    public record UpdateTaskCommand(String projectNo, String projectName, List<String> files) {
+    public record UpdateTaskCommand(String projectNo, String projectName, List<String> files,
+                                    List<ReviewRole> reviewRoles, List<TaskReviewerAssignment> reviewerAssignments, String expertLeaderEmployeeNo) {
+        public UpdateTaskCommand(String projectNo, String projectName, List<String> files) {
+            this(projectNo, projectName, files, null, null, null);
+        }
         public UpdateTaskCommand {
             files = files == null ? List.of() : List.copyOf(files);
         }
@@ -568,10 +599,14 @@ public class TaskApplicationService {
         WITHDRAW, TERMINATE, NONE;
 
         static DesignerAction forTask(ReviewTask task, boolean hasReviewOpinions) {
-            if (TaskStatus.isClosed(task.status().name())) {
+            return forStatus(task.reviewType(), task.status(), hasReviewOpinions);
+        }
+
+        static DesignerAction forStatus(ReviewType reviewType, TaskStatus status, boolean hasReviewOpinions) {
+            if (TaskStatus.isClosed(status.name())) {
                 return NONE;
             }
-            return task.status().canWithdraw(task.reviewType(), hasReviewOpinions) ? WITHDRAW : TERMINATE;
+            return status.canWithdraw(reviewType, hasReviewOpinions) ? WITHDRAW : TERMINATE;
         }
     }
 

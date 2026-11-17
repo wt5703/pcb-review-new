@@ -224,6 +224,11 @@ public class OpinionApplicationService {
         confirmation.setConfirmedByEmployeeNo(operatorEmployeeNo);
         opinionMapper.insertConfirmation(confirmation);
         updateStatus(opinion, command.passed() ? OpinionStatus.CONFIRMED_PASS : OpinionStatus.CONFIRMED_REJECTED);
+        if (command.passed() && opinion.getSourceType() == OpinionSourceType.MUTUAL_CHECK_ITEM) {
+            if (opinion.getSourceItemId() == null || taskCheckItemMapper.markConfirmedPass(opinion.getTaskId(), opinion.getSourceItemId()) != 1) {
+                throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "意见对应的互检项不存在");
+            }
+        }
         return toView(opinion);
     }
 
@@ -380,6 +385,7 @@ public class OpinionApplicationService {
     /** 未提交人员由任务创建时保存的“角色—专家”映射推导；旧任务兼容历史组长作为唯一专家。 */
     private List<OutstandingReviewerView> unsubmittedReviewers(ReviewTaskRecord task, List<OpinionSourceType> sourceTypes) {
         List<ReviewOpinionRecord> opinions = opinionMapper.findByTaskId(task.getId());
+        java.util.Set<String> pendingRound = com.bms.review.domain.ReviewRound.pendingPcbReviewers(task, flowMapper.findByTaskId(task.getId()));
         List<AssignedReviewer> assignments = new java.util.ArrayList<>();
         for (TaskReviewerAssignment assignment : TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments())) {
             assignment.reviewerEmployeeNos().forEach(employeeNo -> assignments.add(new AssignedReviewer(assignment.reviewRole().name(), employeeNo)));
@@ -393,7 +399,7 @@ public class OpinionApplicationService {
         return assignments.stream()
                 .filter(assigned -> reviewerRoleMatchesCurrentSummary(task, sourceTypes, assigned.role()))
                 .distinct()
-                .filter(assigned -> opinions.stream().filter(opinion -> !opinion.isDraft()).noneMatch(opinion -> assigned.reviewerEmployeeNo().equals(opinion.getRaisedByEmployeeNo())
+                .filter(assigned -> pendingRound.contains(assigned.reviewerEmployeeNo()) || opinions.stream().filter(opinion -> !opinion.isDraft()).noneMatch(opinion -> assigned.reviewerEmployeeNo().equals(opinion.getRaisedByEmployeeNo())
                         && matchesSourceForRole(opinion.getSourceType(), assigned.role())))
                 .map(assigned -> new OutstandingReviewerView(assigned.reviewerEmployeeNo(),
                         profileName(assigned.reviewerEmployeeNo(), profiles), assigned.role(), "PENDING"))
@@ -562,7 +568,9 @@ public class OpinionApplicationService {
     private boolean hasStarted(long taskId, WorkflowAction action) {
         List<com.bms.workflow.infrastructure.TaskFlowRecord> records = flowMapper.findByTaskId(taskId);
         return (records == null ? List.<com.bms.workflow.infrastructure.TaskFlowRecord>of() : records).stream()
-                .anyMatch(record -> action.name().equals(record.getAction()));
+                .anyMatch(record -> action.name().equals(record.getAction())
+                        || (action == WorkflowAction.START_PCB_PROCESS_REVIEW || action == WorkflowAction.START_PCB_STRUCTURE_REVIEW)
+                        && WorkflowAction.START_PCB_PROCESS_STRUCTURE_REVIEW.name().equals(record.getAction()));
     }
 
     private boolean isClosedPassedOpinion(ReviewOpinionRecord opinion) {

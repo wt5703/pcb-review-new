@@ -1,3 +1,5 @@
-[[${recipientNames}]]你们好！
+[[${resubmissionNotice}]]
+
+[[${recipientNames}]][[${greeting}]]！
 
 附件是[[${projectName}]]PCB终版图，请查收。

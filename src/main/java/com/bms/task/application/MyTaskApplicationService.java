@@ -84,6 +84,27 @@ public class MyTaskApplicationService {
                 .map(task -> toView(task, actions.get(task.getId()), reviewerProfiles)).toList();
     }
 
+    /** 先确定当前用户待办，再按与任务列表相同的条件过滤并分页，total 为过滤后的待办总数。 */
+    public MyTaskPage list(String operatorEmployeeNo, TaskApplicationService.TaskQuery query) {
+        var filter = (query == null ? TaskApplicationService.TaskQuery.defaultQuery() : query).normalized();
+        List<MyTaskView> matching = list(operatorEmployeeNo).stream()
+                .filter(task -> contains(task.taskName(), filter.taskName())
+                        && contains(task.projectNo(), filter.projectNo()) && contains(task.projectName(), filter.projectName())
+                        && (filter.designerEmployeeNo() == null || filter.designerEmployeeNo().equals(task.designerEmployeeNo()))
+                        && (filter.reviewType() == null || filter.reviewType() == task.reviewType())
+                        && (filter.statuses().isEmpty() || filter.statuses().contains(task.status())))
+                .toList();
+        long offset = (long) (filter.pageNum() - 1) * filter.pageSize();
+        return new MyTaskPage(matching.size(), filter.pageNum(), filter.pageSize(),
+                matching.stream().skip(offset).limit(filter.pageSize()).toList());
+    }
+
+    private boolean contains(String text, String filter) {
+        return filter == null || text != null && text.toLowerCase(java.util.Locale.ROOT).contains(filter.toLowerCase(java.util.Locale.ROOT));
+    }
+
+    public record MyTaskPage(long total, int pageNum, int pageSize, List<MyTaskView> items) { }
+
     /** 人员被指派为流程处理人不等于需要填写评审意见；分配节点只显示“分配评审人”操作。 */
     private boolean isReviewingStatus(ReviewTaskRecord task) {
         return switch (TaskStatus.valueOf(task.getStatus())) {
@@ -205,7 +226,9 @@ public class MyTaskApplicationService {
                              List<TaskApplicationService.ReviewerView> mutualCheckReviewers,
                              String reviewDescription, TaskStatus status, List<MyTaskAction> actions,
                              @Schema(description = "任务创建时间，格式 yyyy-MM-dd HH:mm:ss", example = "2026-10-19 15:30:00")
-                             @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime createdTime) {
+                             @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime createdTime,
+                             @Schema(description = "设计者操作，与任务列表一致：WITHDRAW 撤回、TERMINATE 终止、NONE 无操作")
+                             TaskApplicationService.DesignerAction designerAction) {
         static MyTaskView from(ReviewTaskRecord record, String designerName, String expertLeaderName,
                                List<TaskApplicationService.ReviewerAssignmentView> reviewerAssignments,
                                List<TaskApplicationService.ReviewerView> mutualCheckReviewers,
@@ -216,7 +239,8 @@ public class MyTaskApplicationService {
                     record.getDesignerEmployeeNo(), designerName, record.getDesignName(), record.getPcbType(), record.getExpectedCompletedDate(),
                     record.getExpertLeaderEmployeeNo(), expertLeaderName, reviewRoles, List.copyOf(reviewerAssignments),
                     List.copyOf(mutualCheckReviewers), record.getReviewDescription(), TaskStatus.valueOf(record.getStatus()),
-                    List.copyOf(actions), record.getCreatedAt());
+                    List.copyOf(actions), record.getCreatedAt(), TaskApplicationService.DesignerAction.forStatus(
+                            ReviewType.valueOf(record.getReviewType()), TaskStatus.valueOf(record.getStatus()), record.isHasReviewOpinions()));
         }
     }
 

@@ -64,7 +64,7 @@ public class TaskController {
     }
 
     @GetMapping("/{taskId}/files/latest")
-    @Operation(summary = "查询任务各阶段最新文件", description = "返回各文件类型 is_latest=true 的全部文件，包括最新批次的多个文件；未上传的类型不返回。沿用文件访问权限，仅设计者、组长和任务评审人员可访问。无文件返回空数组。")
+    @Operation(summary = "查询任务各阶段最新文件", description = "返回各文件类型 is_latest=true 的全部文件，包括最新批次的多个文件；未上传的类型不返回。所有登录用户可查看任务文件。无文件返回空数组。")
     ApiResponse<List<TaskLatestFileService.TaskFileView>> listLatestFiles(
             @Parameter(description = "评审任务 ID", required = true) @PathVariable long taskId,
             @Parameter(description = "当前用户工号", required = true) @NotBlank @RequestHeader("userId") String employeeNo,
@@ -127,20 +127,32 @@ public class TaskController {
     }
 
     @PutMapping("/{taskId}")
-    @Operation(summary = "修改任务基本信息", description = "不触发流程流转。仅任务设计者可修改项目编号、项目名称和重新上传的初始文件；files 传更新后的初始文件 UUID 列表，可同时包含已关联到当前任务的文件和新上传文件；未列出的同类型当前文件会转为历史版本。")
+    @Operation(summary = "修改任务并发起评审", description = "仅设计者可修改草稿或待发起任务并发起与创建相同的流程；进行中任务须先撤回。files 为更新后的初始文件 UUID 列表。待发起任务专家分配不变时不重复发邮件，变更时通知新分配人员并说明任务撤回后重新发起。")
     ApiResponse<TaskApplicationService.TaskView> updateBasicInfo(@PathVariable long taskId,
                                                                   @Valid @RequestBody UpdateTaskRequest request,
                                                                   @NotBlank @RequestHeader("userId") String employeeNo,
                                                                   HttpServletRequest servletRequest) {
         return ApiResponse.ok(taskService.updateTaskBasicInfo(taskId,
-                new TaskApplicationService.UpdateTaskCommand(request.projectNo(), request.projectName(), request.files()), employeeNo),
+                new TaskApplicationService.UpdateTaskCommand(request.projectNo(), request.projectName(), request.files(), request.reviewRoles(),
+                        request.reviewerAssignments() == null ? null : request.reviewerAssignments().stream()
+                                .map(item -> new TaskReviewerAssignment(item.reviewRole(), item.reviewerEmployeeNos())).toList(), request.expertLeaderEmployeeNo()), employeeNo),
                 getTraceId(servletRequest));
     }
 
     @GetMapping("/my")
-    @Operation(summary = "查询我的待办任务", description = "返回当前流程节点需要当前用户评审、提交流程、答复、确认、分配或结束的任务；原理图互检闭环后，设计者提交 START_SCHEMATIC_EXPERT_ASSIGNMENT 进入硬件专家分配，硬件部开发经理在该状态下执行专家分配。")
-    ApiResponse<List<MyTaskApplicationService.MyTaskView>> myTasks(@NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
-        return ApiResponse.ok(myTaskApplicationService.list(employeeNo), getTraceId(servletRequest));
+    @Operation(summary = "分页查询我的待办任务", description = "筛选参数与任务列表相同，返回 total、pageNum、pageSize、items。仅返回当前用户需要评审、提交流程、答复、确认、分配或结束的任务，items 包含与任务列表规则一致的 designerAction。原理图互检闭环并上传最新原理图文件后，设计者提交 START_SCHEMATIC_EXPERT_ASSIGNMENT 进入硬件专家分配。")
+    ApiResponse<MyTaskApplicationService.MyTaskPage> myTasks(
+            @RequestParam(required = false) @Parameter(description = "任务名称，模糊查询") String taskName,
+            @RequestParam(required = false) @Parameter(description = "项目编号，模糊查询") String projectNo,
+            @RequestParam(required = false) @Parameter(description = "项目名称，模糊查询") String projectName,
+            @RequestParam(name = "designerId", required = false) @Parameter(description = "设计者工号，精确查询") String designerId,
+            @RequestParam(required = false) @Parameter(description = "评审类型") ReviewType reviewType,
+            @RequestParam(required = false) @Parameter(description = "任务状态，可多选") List<TaskStatus> statuses,
+            @RequestParam(defaultValue = "1") @Parameter(description = "页码，从1开始") Integer pageNum,
+            @RequestParam(defaultValue = "20") @Parameter(description = "每页数量，最大100") Integer pageSize,
+            @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
+        return ApiResponse.ok(myTaskApplicationService.list(employeeNo, new TaskApplicationService.TaskQuery(
+                taskName, projectNo, projectName, designerId, reviewType, statuses, pageNum, pageSize, null)), getTraceId(servletRequest));
     }
 
     @GetMapping("/workbench/statistics")
@@ -222,9 +234,12 @@ public class TaskController {
             @Schema(description = "评审角色", requiredMode = Schema.RequiredMode.REQUIRED) @NotNull ReviewRole reviewRole,
             @Schema(description = "该角色下的白名单专家企业工号，至少一人", requiredMode = Schema.RequiredMode.REQUIRED) List<@NotBlank String> reviewerEmployeeNos) { }
 
-    @Schema(description = "修改任务基本信息请求；不允许修改任务名称、设计者、评审角色或流程状态")
+    @Schema(description = "修改草稿或待发起任务并发起流程；未传专家分配、角色或组长时沿用原值")
     record UpdateTaskRequest(
             @Schema(description = "项目编号，可为空") String projectNo,
             @Schema(description = "项目名称，可为空") String projectName,
-            @Schema(description = "更新后的初始文件 UUID 列表，可包含当前任务旧文件及新上传文件；为空时保留现有文件") List<@NotBlank String> files) { }
+            @Schema(description = "更新后的初始文件 UUID 列表，可包含当前任务旧文件及新上传文件；为空时保留现有文件") List<@NotBlank String> files,
+            @Schema(description = "评审角色，不传保留原值") List<ReviewRole> reviewRoles,
+            @Schema(description = "专家分配，不传保留原值") List<@Valid ReviewerAssignmentRequest> reviewerAssignments,
+            @Schema(description = "专家组长或硬件部开发经理工号，不传保留原值") String expertLeaderEmployeeNo) { }
 }

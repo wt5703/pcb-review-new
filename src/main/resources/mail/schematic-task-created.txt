@@ -1,4 +1,6 @@
-[[${recipientNames}]]您好:
+[[${resubmissionNotice}]]
+
+[[${recipientNames}]][[${greeting}]]:
 
 附件为[[${projectName}]]原理图文件，请进行原理图评审。
 

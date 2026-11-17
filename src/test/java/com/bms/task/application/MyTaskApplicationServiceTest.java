@@ -37,6 +37,27 @@ class MyTaskApplicationServiceTest {
             reviewerWhitelistApplicationService);
 
     @Test
+    void shouldFilterAndPageMyTasksAndExposeDesignerActions() {
+        var first = task(1L, "BMS010", TaskStatus.PCB_EXPERT_REVIEWING);
+        var second = task(2L, "BMS010", TaskStatus.PCB_EXPERT_REVIEWING);
+        first.setTaskName("PCB评审"); second.setTaskName("PCB评审二");
+        first.setProjectNo("P-1"); second.setProjectNo("P-2");
+        first.setProjectName("项目"); second.setProjectName("项目");
+        second.setHasReviewOpinions(true);
+        when(taskMapper.findAllUnfinished()).thenReturn(List.of(second, first));
+        var page = service.list("BMS010", new TaskApplicationService.TaskQuery("PCB", "P-", "项目", "BMS010",
+                ReviewType.PCB, List.of(TaskStatus.PCB_EXPERT_REVIEWING), 1, 1, null));
+        assertThat(page.total()).isEqualTo(2);
+        assertThat(page.items()).singleElement().satisfies(item -> {
+            assertThat(item.id()).isEqualTo(2L);
+            assertThat(item.designerAction()).isEqualTo(TaskApplicationService.DesignerAction.TERMINATE);
+        });
+        var next = service.list("BMS010", new TaskApplicationService.TaskQuery("PCB", "P-", "项目", "BMS010",
+                ReviewType.PCB, List.of(TaskStatus.PCB_EXPERT_REVIEWING), 2, 1, null));
+        assertThat(next.items().get(0).designerAction()).isEqualTo(TaskApplicationService.DesignerAction.WITHDRAW);
+    }
+
+    @Test
     void shouldOnlyReturnTaskRequiringCurrentReviewerAction() {
         ReviewTaskRecord completedTask = task(1L, "BMS010", TaskStatus.PCB_EXPERT_REVIEWING);
         ReviewTaskRecord myTask = task(2L, "BMS010", TaskStatus.MUTUAL_CHECK_REVIEWING);

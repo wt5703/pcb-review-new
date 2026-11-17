@@ -14,6 +14,8 @@ import java.util.List;
  */
 @Mapper
 public interface TaskCheckItemMapper {
+    @Update("UPDATE task_check_item SET check_result='PASS', check_status='COMPLETED', updated_at=CURRENT_TIMESTAMP WHERE task_id=#{taskId} AND id=#{id}")
+    int markConfirmedPass(long taskId, long id);
     @org.apache.ibatis.annotations.Delete("DELETE FROM task_check_item WHERE task_id=#{taskId} AND id=#{id} AND check_status='PENDING' AND check_result IS NULL AND (check_comment IS NULL OR check_comment='') AND (rich_text IS NULL OR rich_text='')")
     int deleteUnfilledSnapshot(long taskId, long id);
     @Select("SELECT COALESCE(MAX(id), 0) + 1 FROM task_check_item")

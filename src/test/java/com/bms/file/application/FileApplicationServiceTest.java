@@ -56,7 +56,7 @@ class FileApplicationServiceTest {
     }
 
     @Test
-    void shouldAllowAssignedReviewerAndRejectUnassignedReviewerWhenDownloadingPcbFile() {
+    void shouldAllowAnyUserToDownloadTaskFiles() {
         ReviewFileRecord file = record(101L, "md5-a");
         when(fileMapper.findById(101L)).thenReturn(file);
         when(taskMapper.findById(1L)).thenReturn(taskRecord());
@@ -66,9 +66,7 @@ class FileApplicationServiceTest {
         FileApplicationService.DownloadContent download = service.downloadFile(101L, "20");
 
         assertThat(download.fileName()).isEqualTo("BMS.pcb");
-        assertThatThrownBy(() -> service.downloadFile(101L, "21"))
-                .isInstanceOf(com.bms.common.BusinessException.class)
-                .hasMessage("无权访问该任务的文件");
+        assertThat(service.downloadFile(101L, "21").content()).containsExactly((byte) 1);
     }
 
     @Test

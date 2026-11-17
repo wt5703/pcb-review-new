@@ -53,11 +53,11 @@ public class WorkflowController {
             所有流程推进均使用 multipart/form-data。CREATE 不调用本接口，创建任务请调用任务提交接口。<br/>
             分配互检人员时传 reviewerEmployeeNos；硬件部开发经理分配原理图专家时传 reviewerAssignments。<br/>
             流程文件必须按对象传递：files[0].fileCategory + files[0].file，二者表示同一个文件，不能使用分离的文件类型数组。<br/><br/>
-            1. 开启工艺/结构评审：可单独传 START_PCB_STRUCTURE_REVIEW 或 START_PCB_PROCESS_REVIEW，也可同时传二者。<br/>
+            1. 开启工艺/结构评审：可单独传 START_PCB_STRUCTURE_REVIEW 或 START_PCB_PROCESS_REVIEW，也可同时传二者。同时传入时合并为一条“开启工艺结构评审”日志，action_code=START_PCB_PROCESS_STRUCTURE_REVIEW；此合并编码只用于日志，不作为请求动作。<br/>
             2. 开启互检单分配：传 START_PCB_MATUAL_ASSIGNMENT。<br/>
             3. 分配 PCB 互检人员并开启互检：具备 PCB-LEADER 角色的用户传 START_PCB_MATUAL_REVIEW + reviewerEmployeeNos。<br/>
             4. 分配原理图互检人员并开启互检：任务指定且具备 SCHEMATIC-LEADER 角色的原理图组长传 START_SCHEMATIC_MATUAL_REVIEW + reviewerEmployeeNos。<br/>
-            5. 原理图创建任务时已分配 EMC 专家。互检意见闭环后，设计者传 START_SCHEMATIC_EXPERT_ASSIGNMENT，任务进入“硬件专家分配”；随后具备 HARDWARE-MANAGER 角色的用户传 START_SCHEMATIC_EXPERT_REVIEW，并以 reviewerAssignments 指定硬件评审人员，任务才进入原理图评审。<br/>
+            5. 原理图创建任务时已分配 EMC 专家。互检意见闭环且已有最新 SCHEMATIC_REVIEW 文件后，设计者传 START_SCHEMATIC_EXPERT_ASSIGNMENT，任务进入“硬件专家分配”；随后具备 HARDWARE-MANAGER 角色的用户传 START_SCHEMATIC_EXPERT_REVIEW，并以 reviewerAssignments 指定硬件评审人员，任务才进入原理图评审。<br/>
             6. 设计者推进流程时只校验指定来源意见：开启 PCB 工艺/结构评审校验 PCB_REVIEW；开启 PCB 互检单分配校验 PCB_PROCESS_REVIEW、PCB_STRUCTURE_REVIEW；PCB 进入待结束校验互检意见；原理图进入硬件专家分配校验互检意见，进入待结束校验 SCHEMATIC_REVIEW。<br/>
             7. 相关意见闭环后，设计者重新上传终版文件并传 PENDING_FINISH，任务进入待结束；PCB 组长或任务指定的原理图组长与硬件部经理分别传 FINISH 确认；两人均确认后任务才结束。<br/>
             

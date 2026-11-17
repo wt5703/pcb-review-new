@@ -83,7 +83,13 @@ class WorkflowApplicationServiceTest {
                 "BMS010");
 
         assertThat(view.toStatus()).isEqualTo(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
-        verify(outboxEventMapper, times(2)).insert(any());
+        verify(outboxEventMapper).insert(any());
+        ArgumentCaptor<TaskFlowRecord> history = ArgumentCaptor.forClass(TaskFlowRecord.class);
+        verify(flowMapper).insert(history.capture());
+        assertThat(history.getValue().getActionName()).isEqualTo("开启工艺结构评审");
+        assertThat(history.getValue().getComment()).isEqualTo("开启工艺结构评审");
+        assertThat(history.getValue().getFromStatus()).isEqualTo("PCB_EXPERT_REVIEWING");
+        assertThat(history.getValue().getToStatus()).isEqualTo("PCB_PROCESS_STRUCTURE_REVIEWING");
         verify(reviewMailNotificationApplicationService).enqueuePcbStageReview(any(), eq(List.of(
                 FileCategory.PCB_STRUCTURE_REVIEW, FileCategory.PCB_PROCESS_REVIEW)));
     }
@@ -148,7 +154,7 @@ class WorkflowApplicationServiceTest {
                         WorkflowAction.START_PCB_STRUCTURE_REVIEW, WorkflowAction.START_PCB_PROCESS_REVIEW), null, List.of()),
                 "BMS010"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessage("专家评审意见尚未全部确认通过，不能开启工艺或结构评审；以下评审人尚未确认提交：BMS020");
+                .hasMessage("专家评审意见尚未全部确认通过，不能开启工艺或结构评审；以下评审人尚未确认提交：姓名未维护");
     }
 
     @Test
@@ -248,7 +254,7 @@ class WorkflowApplicationServiceTest {
     }
 
     @Test
-    void shouldRejectFinalFileUploadedBeforeOpinionClosure() {
+    void shouldAcceptCurrentStageFinalFileWithoutUnusedOpinionTimestampCheck() {
         when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.MUTUAL_CHECK_REVIEWING));
         ReviewOpinionRecord opinion = new ReviewOpinionRecord();
         opinion.setSourceType(OpinionSourceType.MUTUAL_EXTRA);
@@ -260,10 +266,9 @@ class WorkflowApplicationServiceTest {
         file.setUploadedByEmployeeNo("BMS010");
         file.setUploadedAt(LocalDateTime.of(2026, 10, 19, 10, 0));
         when(fileMapper.findLatestByTaskIdAndCategory(1001L, FileCategory.PCB_REVIEW.name())).thenReturn(List.of(file));
-        /*assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.PENDING_FINISH, null,
-                "BMS010"))
-                .isInstanceOf(BusinessException.class)
-                .hasMessage("请在评审意见全部处理完成后重新上传终版文件");*/
+        when(taskMapper.update(any())).thenReturn(1);
+        assertThat(service.transition(1001L, WorkflowAction.PENDING_FINISH, null, "BMS010").toStatus())
+                .isEqualTo(TaskStatus.PENDING_FINISH);
     }
 
     @Test
@@ -289,7 +294,7 @@ class WorkflowApplicationServiceTest {
         assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.PENDING_FINISH, null,
                 "BMS010"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessage("互检单意见尚未全部确认通过，不能进入待结束；以下评审人尚未确认提交：BMS020");
+                .hasMessage("互检单意见尚未全部确认通过，不能进入待结束；以下评审人尚未确认提交：姓名未维护");
     }
 
     @Test
@@ -386,7 +391,7 @@ class WorkflowApplicationServiceTest {
         assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.START_SCHEMATIC_EXPERT_ASSIGNMENT,
                 null, "BMS010"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessage("互检单意见尚未全部确认通过，不能开启硬件专家分配；以下评审人尚未确认提交：BMS020");
+                .hasMessage("互检单意见尚未全部确认通过，不能开启硬件专家分配；以下评审人尚未确认提交：姓名未维护");
     }
 
     @Test
@@ -414,7 +419,7 @@ class WorkflowApplicationServiceTest {
         assertThatThrownBy(() -> service.transition(1001L,
                 WorkflowAction.START_PCB_MATUAL_ASSIGNMENT, null, "BMS010"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessage("工艺或结构评审意见尚未全部确认通过，不能开启互检单分配；以下评审人尚未确认提交：BMS020");
+                .hasMessage("工艺或结构评审意见尚未全部确认通过，不能开启互检单分配；以下评审人尚未确认提交：姓名未维护");
     }
 
     @Test
@@ -491,6 +496,33 @@ class WorkflowApplicationServiceTest {
                 "BMS001"))
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("任务不存在");
+    }
+
+    @Test
+    void shouldRequireLatestSchematicFileBeforeExpertAssignment() {
+        when(taskMapper.findById(1001L)).thenReturn(task(ReviewType.SCHEMATIC, TaskStatus.MUTUAL_CHECK_REVIEWING));
+        assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.START_SCHEMATIC_EXPERT_ASSIGNMENT, null, "BMS010"))
+                .hasMessage("请先上传最新原理图评审文件");
+        when(fileMapper.findLatestByTaskIdAndCategory(1001L, "SCHEMATIC_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
+        when(taskMapper.update(any())).thenReturn(1);
+        assertThat(service.transition(1001L, WorkflowAction.START_SCHEMATIC_EXPERT_ASSIGNMENT, null, "BMS010").toStatus())
+                .isEqualTo(TaskStatus.SCHEMATIC_EXPERT_PENDING_ASSIGNMENT);
+    }
+
+    @Test
+    void shouldBlockReturnedExpertsUntilResubmissionAndReportTheirNames() {
+        ReviewTaskRecord task = task(TaskStatus.PCB_EXPERT_REVIEWING);
+        task.setReviewerAssignments("PCB_EXPERT:BMS020"); task.setAssignedReviewerEmployeeNos("BMS020");
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        var old = new ReviewOpinionRecord(); old.setSourceType(OpinionSourceType.PCB_REVIEW);
+        old.setRaisedByEmployeeNo("BMS020"); old.setStatus("CONFIRMED_PASS");
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(old));
+        var returned = new TaskFlowRecord(); returned.setAction("RETURN"); returned.setToStatus("PCB_EXPERT_REVIEWING");
+        when(flowMapper.findByTaskId(1001L)).thenReturn(List.of(returned));
+        when(reviewerWhitelistApplicationService.findReviewerProfilesByEmployeeNos(List.of("BMS020"))).thenReturn(java.util.Map.of(
+                "BMS020", new ReviewerWhitelistApplicationService.ReviewerProfile("张工", "BMS硬件开发部")));
+        assertThatThrownBy(() -> service.transition(1001L, WorkflowAction.START_PCB_STRUCTURE_REVIEW, null, "BMS010"))
+                .hasMessageContaining("以下评审人尚未确认提交：张工");
     }
 
     private ReviewTaskRecord task(TaskStatus status) {

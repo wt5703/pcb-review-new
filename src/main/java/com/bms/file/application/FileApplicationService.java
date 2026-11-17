@@ -168,6 +168,22 @@ public class FileApplicationService {
         return uploadBatch(taskId, category, java.util.Collections.singletonList(file), operatorEmployeeNo).get(0);
     }
 
+    /** 按类别整体上传；先校验全部文件，避免后面的空分组导致前面的文件已上传。 */
+    @Transactional
+    public List<FileGroupView> uploadGrouped(long taskId, java.util.Map<FileCategory, List<MultipartFile>> groups, String operatorEmployeeNo) {
+        if (groups == null || groups.isEmpty() || groups.entrySet().stream().anyMatch(entry -> entry.getKey() == null
+                || entry.getValue() == null || entry.getValue().isEmpty() || entry.getValue().stream().anyMatch(file -> file == null
+                || file.isEmpty() || file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()))) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "每个文件类型必须至少上传一个非空文件");
+        }
+        taskMapper.lockById(taskId);
+        groups.keySet().forEach(category -> requireTaskAccess(taskId, operatorEmployeeNo, category, true));
+        return groups.entrySet().stream().map(entry -> new FileGroupView(entry.getKey(),
+                uploadBatch(taskId, entry.getKey(), entry.getValue(), operatorEmployeeNo))).toList();
+    }
+
+    public record FileGroupView(FileCategory fileCategory, List<FileView> files) { }
+
     @Transactional
     public List<FileView> uploadBatch(long taskId, FileCategory category, List<MultipartFile> files, String operatorEmployeeNo) {
         if (category == null || files == null || files.isEmpty()
@@ -278,11 +294,6 @@ public class FileApplicationService {
                 || category == FileCategory.PCB_PROCESS_REVIEW || category == FileCategory.PCB_STRUCTURE_REVIEW)
                 && !task.getDesignerEmployeeNo().equals(operatorEmployeeNo)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "仅任务设计者可以上传该任务的 PCB 或原理图文件");
-        }
-        if (!operatorEmployeeNo.equals(task.getDesignerEmployeeNo())
-                && !operatorEmployeeNo.equals(task.getExpertLeaderEmployeeNo())
-                && !taskAssignmentAccessMapper.isAssignedToTask(taskId, operatorEmployeeNo)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "无权访问该任务的文件");
         }
         return task;
     }

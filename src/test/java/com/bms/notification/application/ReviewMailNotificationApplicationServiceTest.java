@@ -37,6 +37,14 @@ class ReviewMailNotificationApplicationServiceTest {
     private final ReviewMailNotificationApplicationService service = new ReviewMailNotificationApplicationService(outboxEventMapper,
             fileMapper, whitelistMapper, objectMapper, new MailTemplateService());
 
+    @org.junit.jupiter.api.BeforeEach
+    void hardwareDepartmentMembers() {
+        when(whitelistMapper.findActiveByDepartmentName("BMS硬件开发部")).thenReturn(List.of(
+                user(101L, "H1", "硬件成员", "hardware@example.com"),
+                user(102L, "H2", "重复邮箱", " HARDWARE@example.com "),
+                user(103L, "H3", "无邮箱", " ")));
+    }
+
     @Test
     void shouldNotifyOnlyPcbAndEmcExpertsWhenTaskSubmitted() throws Exception {
         when(whitelistMapper.findActiveByEmployeeNo("BMS001")).thenReturn(user(1L, "BMS001", "王鹏飞", "wang@bms.example.com"));
@@ -60,7 +68,7 @@ class ReviewMailNotificationApplicationServiceTest {
         assertThat(message.recipients()).extracting(MailMessage.MailRecipient::email)
                 .containsExactly("wang@bms.example.com", "liu@bms.example.com");
         assertThat(message.carbonCopies()).extracting(MailMessage.MailRecipient::email)
-                .containsExactly("BMS-hard@leapmotor.com");
+                .containsExactly("hardware@example.com");
         assertThat(message.attachments()).extracting(MailMessage.MailAttachment::fileName).containsExactly("初版PCB.zip");
     }
 
@@ -110,14 +118,14 @@ class ReviewMailNotificationApplicationServiceTest {
     }
 
     @Test
-    void shouldCarbonCopyTheHardwareDepartmentMailbox() throws Exception {
+    void shouldCarbonCopyHardwareDepartmentMembers() throws Exception {
         when(whitelistMapper.findActiveByEmployeeNo("BMS001")).thenReturn(user(1L, "BMS001", "王鹏飞", "wang@bms.example.com"));
         when(whitelistMapper.findActiveByEmployeeNo("BMS002")).thenReturn(user(2L, "BMS002", "刘满红", "liu@bms.example.com"));
         service.enqueueTaskCreated(task(10L, "PCB", "BMS", "PCB_EXPERT:BMS001;EMC_EXPERT:BMS002"));
 
         MailMessage message = payload();
         assertThat(message.carbonCopies()).extracting(MailMessage.MailRecipient::email)
-                .containsExactly("BMS-hard@leapmotor.com");
+                .containsExactly("hardware@example.com");
     }
 
     @Test
@@ -208,7 +216,21 @@ class ReviewMailNotificationApplicationServiceTest {
             default -> { task.setReviewType("SCHEMATIC"); service.enqueueSchematicReviewStarted(task); }
         }
         assertThat(payload().carbonCopies()).extracting(MailMessage.MailRecipient::email)
-                .containsExactly("BMS-hard@leapmotor.com", "leader@example.com");
+                .containsExactly("hardware@example.com", "leader@example.com");
+    }
+
+    @Test
+    void shouldUseSingleRecipientGreetingAndResubmissionNotice() throws Exception {
+        when(whitelistMapper.findActiveByEmployeeNo("P1")).thenReturn(user(1L, "P1", "张工", "zhang@example.com"));
+        service.enqueueTaskResubmitted(task(1L, "PCB", "BMS", "PCB_EXPERT:P1"));
+        assertThat(payload().content()).contains("张工您好", "本任务已撤回并重新发起，专家分配已调整");
+    }
+
+    @Test
+    void shouldNotFallbackToOldMailboxWhenDepartmentIsEmpty() throws Exception {
+        when(whitelistMapper.findActiveByDepartmentName("BMS硬件开发部")).thenReturn(List.of());
+        service.enqueueTaskCreated(task(1L, "PCB", "BMS", "PCB_EXPERT:P1"));
+        assertThat(payload().carbonCopies()).isEmpty();
     }
 
     private MailMessage payload() throws Exception {

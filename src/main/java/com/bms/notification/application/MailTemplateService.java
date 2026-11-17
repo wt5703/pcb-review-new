@@ -30,6 +30,7 @@ public class MailTemplateService {
     public String render(ReviewMailType type, Map<String, String> variables) {
         Context context = new Context(java.util.Locale.CHINA);
         context.setVariable("todoUrl", todoUrl);
+        context.setVariable("resubmissionNotice", "");
         variables.forEach(context::setVariable);
         return templateEngine.process(type.templateName(), context).trim();
     }

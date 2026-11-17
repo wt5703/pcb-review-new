@@ -9,6 +9,7 @@ public enum WorkflowAction {
     CREATE("创建任务"),
     START_PCB_STRUCTURE_REVIEW("开启结构评审"),
     START_PCB_PROCESS_REVIEW("开启工艺评审"),
+    START_PCB_PROCESS_STRUCTURE_REVIEW("开启工艺结构评审"),
     START_PCB_MATUAL_ASSIGNMENT("开启互检单分配"),
     START_PCB_MATUAL_REVIEW("开启互检单评审"),
     START_SCHEMATIC_MATUAL_REVIEW("开启互检单评审"),

@@ -89,6 +89,7 @@ public interface ReviewTaskMapper {
             + "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, "
             + "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, mutual_check_reviewer_employee_nos AS mutualCheckReviewerEmployeeNos, review_description AS reviewDescription, "
             + "task_status AS status, initial_file_ids AS initialFileIds, version, created_at AS createdAt, "
+            + "EXISTS (SELECT 1 FROM review_opinion o WHERE o.task_id=review_task.id AND o.is_no_opinion=FALSE) AS hasReviewOpinions, "
             + "CASE WHEN task_status='PENDING_FINISH' THEN EXISTS (SELECT 1 FROM task_flow_record flow WHERE flow.task_id=review_task.id AND flow.to_status='PENDING_FINISH') ELSE FALSE END AS finishApprovalInitialized "
             + "FROM review_task WHERE task_status NOT IN ('FINISHED', 'TERMINATED') ORDER BY id DESC")
     List<ReviewTaskRecord> findAllUnfinished();
