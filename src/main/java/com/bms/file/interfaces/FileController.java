@@ -56,11 +56,12 @@ public class FileController {
     }
 
     @PostMapping(value = "/files/upload/batch", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "批量上传任务文件", description = "传 taskId、fileCategory 及多个同名 files 文件字段。整批上传成功后绑定任务，同类型原有最新文件转为历史，本批文件均为最新。")
+    @Operation(summary = "批量上传任务文件", description = "传 taskId、fileCategory 及多个同名 files 文件字段。整批上传成功后绑定任务，同类型原有最新文件转为历史，本批文件均为最新。sendMail 默认 false；工艺/结构评审开启后传 true，在全部文件落库成功后向该类型的评审人员发送开启评审邮件，附件为该类型最新批次文件。")
     ApiResponse<List<UploadFileView>> uploadBatch(@RequestParam long taskId,
             @RequestPart("files") @NotEmpty List<MultipartFile> files, @RequestParam FileCategory fileCategory,
+            @RequestParam(defaultValue = "false") @Schema(description = "是否发送工艺/结构评审邮件，默认 false；仅工艺/结构评审阶段的对应文件可传 true") boolean sendMail,
             @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
-        List<UploadFileView> uploaded = fileApplicationService.uploadBatch(taskId, fileCategory, files, employeeNo).stream()
+        List<UploadFileView> uploaded = fileApplicationService.uploadBatch(taskId, fileCategory, files, employeeNo, sendMail).stream()
                 .map(file -> new UploadFileView(file.fileId(), file.id(), file.fileName(), file.fileSize(), file.category())).toList();
         return ApiResponse.ok(uploaded, traceId(servletRequest));
     }

@@ -342,7 +342,9 @@ class WorkflowControllerIntegrationTest {
                             "{\"targetStatus\":\"PCB_EXPERT_REVIEWING\",\"reason\":\"重新评审\"}"))
                     .andExpect(status().isOk());
             org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM review_submission WHERE task_id=?", Integer.class, taskId)).isZero();
+                    "SELECT COUNT(*) FROM review_submission WHERE task_id=? AND delete_status=0", Integer.class, taskId)).isZero();
+            org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM review_submission WHERE task_id=? AND delete_status=1", Integer.class, taskId)).isEqualTo(5);
             org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM review_opinion WHERE task_id=? AND source_type='PCB_REVIEW'", Integer.class, taskId)).isEqualTo(3);
             mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)

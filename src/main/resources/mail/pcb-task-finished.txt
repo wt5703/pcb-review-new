@@ -3,3 +3,6 @@
 [[${recipientNames}]][[${greeting}]]！
 
 附件是[[${projectName}]]PCB终版图，请查收。
+
+请点击以下链接查看任务详情：
+[[${taskDetailUrl}]][[${taskId}]]

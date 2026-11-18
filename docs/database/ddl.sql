@@ -3,6 +3,7 @@
 
 CREATE TABLE review_task (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    delete_status TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除状态：0未删除，1已删除；普通业务更新不得修改',
     review_type VARCHAR(32) NOT NULL,
     task_name VARCHAR(200) NOT NULL,
     project_no VARCHAR(100) NOT NULL DEFAULT '',
@@ -31,6 +32,7 @@ CREATE TABLE review_task (
 
 CREATE TABLE review_opinion (
     id BIGINT PRIMARY KEY,
+    delete_status TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除状态：0未删除，1已删除；普通业务更新不得修改',
     task_id BIGINT NOT NULL,
     source_type VARCHAR(64) NOT NULL,
     source_item_id BIGINT,
@@ -49,15 +51,19 @@ CREATE TABLE review_opinion (
 ) COMMENT='评审意见表';
 
 CREATE TABLE review_submission (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
     task_id BIGINT NOT NULL COMMENT '评审任务 ID',
+    delete_status TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除状态：0未删除，1已删除；普通业务更新不得修改',
     source_type VARCHAR(64) NOT NULL COMMENT '评审来源；互检统一使用 MUTUAL_CHECK_ITEM',
     reviewer_employee_no VARCHAR(64) NOT NULL COMMENT '点击评审完成的人员工号',
     submitted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '点击评审完成的时间',
-    PRIMARY KEY (task_id, source_type, reviewer_employee_no)
-) COMMENT='当前轮次评审完成记录；重新开启对应阶段时清除，意见历史保留';
+    active_source_type VARCHAR(64) GENERATED ALWAYS AS (CASE WHEN delete_status=0 THEN source_type ELSE NULL END),
+    UNIQUE KEY uk_review_submission_active (task_id, active_source_type, reviewer_employee_no)
+) COMMENT='评审完成记录；重新开启阶段时逻辑删除旧记录，重新完成时新增';
 
 CREATE TABLE review_file (
     id BIGINT PRIMARY KEY,
+    delete_status TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除状态：0未删除，1已删除；普通业务更新不得修改',
     file_id VARCHAR(64) NOT NULL UNIQUE,
     task_id BIGINT,
     file_category VARCHAR(32) NOT NULL,
@@ -76,6 +82,7 @@ CREATE TABLE review_file (
 
 CREATE TABLE opinion_reply (
     id BIGINT PRIMARY KEY,
+    delete_status TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除状态：0未删除，1已删除；普通业务更新不得修改',
     opinion_id BIGINT NOT NULL,
     reply_type VARCHAR(32) NOT NULL,
     reason VARCHAR(2000),
@@ -88,6 +95,7 @@ CREATE TABLE opinion_reply (
 
 CREATE TABLE opinion_confirmation (
     id BIGINT PRIMARY KEY,
+    delete_status TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除状态：0未删除，1已删除；普通业务更新不得修改',
     opinion_id BIGINT NOT NULL,
     reply_id BIGINT NOT NULL,
     passed BOOLEAN NOT NULL,
@@ -99,6 +107,7 @@ CREATE TABLE opinion_confirmation (
 
 CREATE TABLE check_item_template (
     id BIGINT PRIMARY KEY,
+    delete_status TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除状态：0未删除，1已删除；普通业务更新不得修改',
     review_type VARCHAR(32) NOT NULL,
     parent_id BIGINT,
     item_name TEXT NOT NULL,
@@ -114,6 +123,7 @@ CREATE TABLE check_item_template (
 
 CREATE TABLE task_check_item (
     id BIGINT PRIMARY KEY,
+    delete_status TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除状态：0未删除，1已删除；普通业务更新不得修改',
     task_id BIGINT NOT NULL,
     item_id BIGINT NOT NULL,
     parent_id BIGINT,
@@ -124,13 +134,15 @@ CREATE TABLE task_check_item (
     check_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_task_check_item (task_id, item_id),
+    active_item_id BIGINT GENERATED ALWAYS AS (CASE WHEN delete_status=0 THEN item_id ELSE NULL END),
+    UNIQUE KEY uk_task_check_item (task_id, active_item_id),
     INDEX idx_task_check_item_task (task_id, sort_no),
     INDEX idx_task_check_item_parent (task_id, parent_id, sort_no)
 ) COMMENT='任务检查项实例表';
 
 CREATE TABLE task_flow_record (
     id BIGINT PRIMARY KEY,
+    delete_status TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除状态：0未删除，1已删除；普通业务更新不得修改',
     task_id BIGINT NOT NULL,
     action_code VARCHAR(64) NOT NULL,
     action_name VARCHAR(100) NOT NULL,
@@ -146,6 +158,7 @@ CREATE TABLE task_flow_record (
 
 CREATE TABLE outbox_event (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    delete_status TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除状态：0未删除，1已删除；普通业务更新不得修改',
     event_type VARCHAR(64) NOT NULL,
     aggregate_type VARCHAR(64) NOT NULL,
     aggregate_id BIGINT NOT NULL,
@@ -160,6 +173,7 @@ CREATE TABLE outbox_event (
 
 CREATE TABLE notification_send_record (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    delete_status TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除状态：0未删除，1已删除；普通业务更新不得修改',
     outbox_event_id BIGINT NOT NULL,
     task_id BIGINT,
     event_type VARCHAR(64) NOT NULL,
@@ -177,6 +191,7 @@ CREATE TABLE notification_send_record (
 
 CREATE TABLE task_archive_snapshot (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    delete_status TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除状态：0未删除，1已删除；普通业务更新不得修改',
     task_id BIGINT NOT NULL UNIQUE,
     file_snapshot TEXT,
     flow_snapshot TEXT,
@@ -186,6 +201,7 @@ CREATE TABLE task_archive_snapshot (
 
 CREATE TABLE reviewer_whitelist (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    delete_status TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除状态：0未删除，1已删除；普通业务更新不得修改',
     employee_no VARCHAR(64) NOT NULL,
     display_name VARCHAR(100),
     email VARCHAR(200),
@@ -202,6 +218,7 @@ CREATE TABLE reviewer_whitelist (
 
 CREATE TABLE reviewer_whitelist_role (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    delete_status TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除状态：0未删除，1已删除；普通业务更新不得修改',
     employee_no VARCHAR(64) NOT NULL,
     review_role VARCHAR(64) NOT NULL,
     created_by_employee_no VARCHAR(64) NOT NULL,

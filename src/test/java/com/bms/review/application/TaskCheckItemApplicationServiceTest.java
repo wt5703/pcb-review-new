@@ -81,7 +81,7 @@ class TaskCheckItemApplicationServiceTest {
         TaskCheckItemRecord checkItem = item(51L, 31L);
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(checkItem);
-        when(templateMapper.findById(31L)).thenReturn(template(31L, "线距检查"));
+        when(templateMapper.findSnapshotById(31L)).thenReturn(template(31L, "线距检查"));
         when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
 
         service.submit(1001L, 51L,
@@ -99,7 +99,7 @@ class TaskCheckItemApplicationServiceTest {
         TaskCheckItemRecord checkItem = item(51L, 31L);
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(checkItem);
-        when(templateMapper.findById(31L)).thenReturn(template(31L, "线距检查"));
+        when(templateMapper.findSnapshotById(31L)).thenReturn(template(31L, "线距检查"));
         when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
         when(opinionMapper.nextOpinionId()).thenReturn(71L);
         when(userProfileClient.getByEmployeeNo("BMS001"))
@@ -128,7 +128,7 @@ class TaskCheckItemApplicationServiceTest {
         opinion.setStatus("PENDING_CONFIRMATION");
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(checkItem);
-        when(templateMapper.findById(31L)).thenReturn(template(31L, "线距检查"));
+        when(templateMapper.findSnapshotById(31L)).thenReturn(template(31L, "线距检查"));
         when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
         when(opinionMapper.findActiveMutualCheckItemOpinion(1001L, 51L, OpinionSourceType.MUTUAL_CHECK_ITEM)).thenReturn(opinion);
         when(opinionMapper.updateStatus(any(ReviewOpinionRecord.class))).thenReturn(1);
@@ -151,7 +151,7 @@ class TaskCheckItemApplicationServiceTest {
         opinion.setRaisedByEmployeeNo("BMS001");
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(checkItem);
-        when(templateMapper.findById(31L)).thenReturn(template(31L, "线距检查"));
+        when(templateMapper.findSnapshotById(31L)).thenReturn(template(31L, "线距检查"));
         when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
         when(opinionMapper.findActiveMutualCheckItemOpinion(1001L, 51L, OpinionSourceType.MUTUAL_CHECK_ITEM)).thenReturn(opinion);
         when(opinionMapper.updateOpinion(any(ReviewOpinionRecord.class))).thenReturn(1);
@@ -172,7 +172,7 @@ class TaskCheckItemApplicationServiceTest {
         TaskCheckItemRecord checkItem = item(51L, 31L);
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(checkItem);
-        when(templateMapper.findById(31L)).thenReturn(template(31L, "线距检查"));
+        when(templateMapper.findSnapshotById(31L)).thenReturn(template(31L, "线距检查"));
         when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
 
         List<TaskCheckItemApplicationService.CheckItemView> result = service.submitBatch(1001L,
@@ -193,7 +193,7 @@ class TaskCheckItemApplicationServiceTest {
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(checkItem);
         when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
-        when(templateMapper.findById(31L)).thenReturn(template(31L, "线距检查"));
+        when(templateMapper.findSnapshotById(31L)).thenReturn(template(31L, "线距检查"));
         when(opinionMapper.nextOpinionId()).thenReturn(71L);
         when(userProfileClient.getByEmployeeNo("BMS001"))
                 .thenReturn(new UserCenterUserProfileClient.UserProfile("BMS001", "王工", null, null, null));
@@ -224,7 +224,7 @@ class TaskCheckItemApplicationServiceTest {
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(taskCheckItemMapper.findByTaskIdAndId(1001L, 51L)).thenReturn(checkItem);
         when(taskCheckItemMapper.submit(any(TaskCheckItemRecord.class))).thenReturn(1);
-        when(templateMapper.findById(31L)).thenReturn(template(31L, "线距检查"));
+        when(templateMapper.findSnapshotById(31L)).thenReturn(template(31L, "线距检查"));
         when(opinionMapper.findActiveMutualCheckItemOpinion(1001L, 51L, OpinionSourceType.MUTUAL_CHECK_ITEM)).thenReturn(draftOpinion);
         when(opinionMapper.updateOpinion(any(ReviewOpinionRecord.class))).thenReturn(1);
         when(userProfileClient.getByEmployeeNo("BMS001"))
@@ -247,7 +247,7 @@ class TaskCheckItemApplicationServiceTest {
         TaskCheckItemRecord snapshot = item(51L, 31L);
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of(category, snapshot));
-        when(templateMapper.findByIds(List.of(30L, 31L))).thenReturn(List.of(template(30L, "结束时的类别"),
+        when(templateMapper.findSnapshotByIds(List.of(30L, 31L))).thenReturn(List.of(template(30L, "结束时的类别"),
                 template(31L, "结束时的线距检查")));
 
         List<TaskCheckItemApplicationService.CheckItemCategoryView> items = service.list(1001L);
@@ -264,7 +264,7 @@ class TaskCheckItemApplicationServiceTest {
         category.setParentId(null);
         TaskCheckItemRecord child = item(51L, 31L);
         when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of(category, child));
-        when(templateMapper.findByIds(List.of(30L, 31L))).thenReturn(List.of(template(30L, "历史大类"), template(31L, "历史小类")));
+        when(templateMapper.findSnapshotByIds(List.of(30L, 31L))).thenReturn(List.of(template(30L, "历史大类"), template(31L, "历史小类")));
         CheckItemTemplateRecord root = template(100L, "通用");
         root.setParentId(null);
         when(templateMapper.findAll(null)).thenReturn(List.of(root));
@@ -282,7 +282,7 @@ class TaskCheckItemApplicationServiceTest {
         category.setParentId(null);
         TaskCheckItemRecord child = item(51L, 31L);
         when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of(category, child));
-        when(templateMapper.findByIds(List.of(30L, 31L))).thenReturn(List.of(template(30L, "大类"), template(31L, "小类")));
+        when(templateMapper.findSnapshotByIds(List.of(30L, 31L))).thenReturn(List.of(template(30L, "大类"), template(31L, "小类")));
         CheckItemTemplateRecord root = template(100L, "通用");
         root.setParentId(null);
         when(templateMapper.findEnabledByReviewType("PCB")).thenReturn(List.of(root));
@@ -292,7 +292,7 @@ class TaskCheckItemApplicationServiceTest {
         TaskCheckItemRecord leaf = item(61L, 32L);
         leaf.setParentId(51L);
         when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of(category, child, leaf));
-        when(templateMapper.findByIds(List.of(30L, 31L, 32L))).thenReturn(List.of(template(30L, "Sheet"), template(31L, "大类"), template(32L, "小类")));
+        when(templateMapper.findSnapshotByIds(List.of(30L, 31L, 32L))).thenReturn(List.of(template(30L, "Sheet"), template(31L, "大类"), template(32L, "小类")));
         var result = service.list(1001L);
         assertThat(result.get(0).category().id()).isEqualTo(41L);
         assertThat(result.get(0).items().get(0).items().get(0).id()).isEqualTo(61L);
@@ -312,7 +312,7 @@ class TaskCheckItemApplicationServiceTest {
         TaskCheckItemRecord obsolete = item(52L, 32L);
         obsolete.setStatus("PENDING");
         when(taskCheckItemMapper.findByTaskId(1001L)).thenReturn(List.of(category, saved, obsolete));
-        when(templateMapper.findByIds(List.of(30L, 31L, 32L))).thenReturn(List.of(template(30L, "旧类"), template(31L, "同名检查"), template(32L, "过期项")));
+        when(templateMapper.findSnapshotByIds(List.of(30L, 31L, 32L))).thenReturn(List.of(template(30L, "旧类"), template(31L, "同名检查"), template(32L, "过期项")));
         CheckItemTemplateRecord newRoot = template(100L, "新模板");
         newRoot.setParentId(null);
         CheckItemTemplateRecord newItem = template(101L, "同名检查");

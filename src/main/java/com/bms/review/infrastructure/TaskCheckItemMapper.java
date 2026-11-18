@@ -14,9 +14,9 @@ import java.util.List;
  */
 @Mapper
 public interface TaskCheckItemMapper {
-    @Update("UPDATE task_check_item SET check_result='PASS', check_status='COMPLETED', updated_at=CURRENT_TIMESTAMP WHERE task_id=#{taskId} AND id=#{id}")
+    @Update("UPDATE task_check_item SET check_result='PASS', check_status='COMPLETED', updated_at=CURRENT_TIMESTAMP WHERE delete_status=0 AND task_id=#{taskId} AND id=#{id}")
     int markConfirmedPass(long taskId, long id);
-    @org.apache.ibatis.annotations.Delete("DELETE FROM task_check_item WHERE task_id=#{taskId} AND id=#{id} AND check_status='PENDING' AND check_result IS NULL AND (check_comment IS NULL OR check_comment='') AND (rich_text IS NULL OR rich_text='')")
+    @Update("UPDATE task_check_item SET delete_status=1 WHERE delete_status=0 AND task_id=#{taskId} AND id=#{id} AND check_status='PENDING' AND check_result IS NULL AND (check_comment IS NULL OR check_comment='') AND (rich_text IS NULL OR rich_text='')")
     int deleteUnfilledSnapshot(long taskId, long id);
     @Select("SELECT COALESCE(MAX(id), 0) + 1 FROM task_check_item")
     long nextId();
@@ -26,21 +26,21 @@ public interface TaskCheckItemMapper {
     int insert(TaskCheckItemRecord record);
 
     @Update("UPDATE task_check_item SET parent_id=#{parentId}, sort_no=#{sortNo}, updated_at=CURRENT_TIMESTAMP "
-            + "WHERE task_id=#{taskId} AND item_id=#{itemId}")
+            + "WHERE delete_status=0 AND task_id=#{taskId} AND item_id=#{itemId}")
     int refreshTemplateSnapshot(TaskCheckItemRecord record);
 
     @Select("SELECT id, task_id AS taskId, item_id AS itemId, parent_id AS parentId, sort_no AS sortNo, "
-            + "check_result AS checkResult, check_comment AS comment, rich_text AS richText, check_status AS status FROM task_check_item WHERE task_id=#{taskId} ORDER BY sort_no, id")
+            + "check_result AS checkResult, check_comment AS comment, rich_text AS richText, check_status AS status FROM task_check_item WHERE delete_status=0 AND task_id=#{taskId} ORDER BY sort_no, id")
     List<TaskCheckItemRecord> findByTaskId(long taskId);
 
     @Select("SELECT id, task_id AS taskId, item_id AS itemId, parent_id AS parentId, sort_no AS sortNo, "
-            + "check_result AS checkResult, check_comment AS comment, rich_text AS richText, check_status AS status FROM task_check_item WHERE task_id=#{taskId} AND id=#{id}")
+            + "check_result AS checkResult, check_comment AS comment, rich_text AS richText, check_status AS status FROM task_check_item WHERE delete_status=0 AND task_id=#{taskId} AND id=#{id}")
     TaskCheckItemRecord findByTaskIdAndId(long taskId, long id);
 
-    @Select("SELECT EXISTS (SELECT 1 FROM task_check_item WHERE task_id=#{taskId} AND parent_id=#{parentId})")
+    @Select("SELECT EXISTS (SELECT 1 FROM task_check_item WHERE delete_status=0 AND task_id=#{taskId} AND parent_id=#{parentId})")
     boolean hasChildren(Long taskId, long parentId);
 
     @Update("UPDATE task_check_item SET check_result=#{checkResult}, check_comment=#{comment}, rich_text=#{richText}, check_status=#{status}, "
-            + "updated_at=CURRENT_TIMESTAMP WHERE id=#{id} AND task_id=#{taskId}")
+            + "updated_at=CURRENT_TIMESTAMP WHERE delete_status=0 AND id=#{id} AND task_id=#{taskId}")
     int submit(TaskCheckItemRecord record);
 }

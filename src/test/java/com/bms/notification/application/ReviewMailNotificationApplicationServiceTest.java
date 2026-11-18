@@ -175,7 +175,8 @@ class ReviewMailNotificationApplicationServiceTest {
         MailMessage message = payload();
         assertThat(message.notificationType()).isEqualTo("SCHEMATIC_TASK_FINISHED");
         assertThat(message.subject()).isEqualTo("VCU原理图终版");
-        assertThat(message.content()).contains("附件为VCU原理图终版文件。");
+        assertThat(message.content()).contains("附件为VCU原理图终版文件。", "http://10.195.135.149:31792/task/detail?id=30")
+                .doesNotContain("myTodo", "我的待办");
         assertThat(message.recipients()).hasSize(2);
         assertThat(message.attachments()).hasSize(1);
     }
@@ -195,6 +196,8 @@ class ReviewMailNotificationApplicationServiceTest {
 
         MailMessage message = payload();
         assertThat(message.notificationType()).isEqualTo("PCB_TASK_FINISHED");
+        assertThat(message.content()).contains("http://10.195.135.149:31792/task/detail?id=31")
+                .doesNotContain("myTodo", "我的待办");
         assertThat(message.attachments()).extracting(MailMessage.MailAttachment::fileName).containsExactly("PCB.zip");
     }
 

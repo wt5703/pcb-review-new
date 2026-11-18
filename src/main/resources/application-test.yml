@@ -49,3 +49,4 @@ user-center:
   user-profile-path: ${USER_CENTER_USER_PROFILE_PATH:/user/{employeeNo}}
 review-mail:
   todo-url: ${REVIEW_MAIL_TODO_URL:http://10.195.135.149:31792/myTodo}
+  task-detail-url: ${REVIEW_MAIL_TASK_DETAIL_URL:http://10.195.135.149:31792/task/detail?id=}

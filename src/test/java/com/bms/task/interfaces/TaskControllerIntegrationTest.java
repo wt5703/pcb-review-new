@@ -216,8 +216,12 @@ class TaskControllerIntegrationTest {
                         .header("userId", "BMS010")).andExpect(status().isOk());
         for (String table : java.util.List.of("review_file", "review_opinion", "task_flow_record", "review_submission")) {
             org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM " + table + " WHERE task_id=?", Integer.class, taskId)).isZero();
+                    "SELECT COUNT(*) FROM " + table + " WHERE task_id=? AND delete_status=0", Integer.class, taskId)).isZero();
+            org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM " + table + " WHERE task_id=? AND delete_status=1", Integer.class, taskId)).isPositive();
         }
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "SELECT delete_status FROM review_task WHERE id=?", Integer.class, taskId)).isEqualTo(1);
         mockMvc.perform(get("/tasks/{taskId}", taskId).header("userId", "BMS010")).andExpect(status().isNotFound());
     }
 

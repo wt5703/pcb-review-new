@@ -7,7 +7,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 /** 汇总任务各文件类型的最新批次，并补充上传者姓名。 */
 @Service
@@ -20,18 +22,28 @@ public class TaskLatestFileService {
         this.users = users;
     }
 
-    public List<TaskFileView> list(long taskId, String employeeNo) {
+    /**
+     * 按文件类别分组返回任务各评审阶段当前最新版本文件；即使某个类别没有文件，也会以空列表返回，方便前端按类别渲染。
+     */
+    public Map<FileCategory, List<TaskFileView>> list(long taskId, String employeeNo) {
+        Map<FileCategory, List<FileApplicationService.FileView>> latestByCategory = new EnumMap<>(FileCategory.class);
         List<FileApplicationService.FileView> latest = new ArrayList<>();
         // 复用文件查询权限与版本规则；一个类别最新批次中的多个文件全部保留。
         for (FileCategory category : FileCategory.values()) {
-            latest.addAll(files.listLatestByCategory(taskId, category, employeeNo));
+            List<FileApplicationService.FileView> filesOfCategory = files.listLatestByCategory(taskId, category, employeeNo);
+            latestByCategory.put(category, filesOfCategory);
+            latest.addAll(filesOfCategory);
         }
         var profiles = users.getByEmployeeNos(latest.stream().map(FileApplicationService.FileView::uploadedByEmployeeNo).toList());
-        return latest.stream().map(file -> {
-            var profile = profiles.get(file.uploadedByEmployeeNo());
-            return new TaskFileView(file.id(), file.fileId(), file.fileName(), file.category(), file.uploadedAt(),
-                    file.uploadedByEmployeeNo(), profile == null ? file.uploadedByEmployeeNo() : profile.displayName(), file.uploadedStage());
-        }).toList();
+        Map<FileCategory, List<TaskFileView>> grouped = new EnumMap<>(FileCategory.class);
+        for (FileCategory category : FileCategory.values()) {
+            grouped.put(category, latestByCategory.get(category).stream().map(file -> {
+                var profile = profiles.get(file.uploadedByEmployeeNo());
+                return new TaskFileView(file.id(), file.fileId(), file.fileName(), file.category(), file.uploadedAt(),
+                        file.uploadedByEmployeeNo(), profile == null ? file.uploadedByEmployeeNo() : profile.displayName(), file.uploadedStage());
+            }).toList());
+        }
+        return grouped;
     }
 
     @Schema(description = "任务各评审阶段当前最新版本文件信息")

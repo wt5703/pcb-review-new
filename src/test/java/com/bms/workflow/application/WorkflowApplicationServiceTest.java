@@ -93,8 +93,7 @@ class WorkflowApplicationServiceTest {
         assertThat(history.getValue().getComment()).isEqualTo("开启工艺结构评审");
         assertThat(history.getValue().getFromStatus()).isEqualTo("PCB_EXPERT_REVIEWING");
         assertThat(history.getValue().getToStatus()).isEqualTo("PCB_PROCESS_STRUCTURE_REVIEWING");
-        verify(reviewMailNotificationApplicationService).enqueuePcbStageReview(any(), eq(List.of(
-                FileCategory.PCB_STRUCTURE_REVIEW, FileCategory.PCB_PROCESS_REVIEW)));
+        org.mockito.Mockito.verifyNoInteractions(reviewMailNotificationApplicationService);
     }
 
     @org.junit.jupiter.params.ParameterizedTest
@@ -116,8 +115,7 @@ class WorkflowApplicationServiceTest {
 
         assertThat(view.toStatus()).isEqualTo(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
         org.mockito.Mockito.verifyNoInteractions(fileMapper);
-        verify(reviewMailNotificationApplicationService).enqueuePcbStageReview(any(), eq(List.of(
-                action == WorkflowAction.START_PCB_STRUCTURE_REVIEW ? FileCategory.PCB_STRUCTURE_REVIEW : FileCategory.PCB_PROCESS_REVIEW)));
+        org.mockito.Mockito.verifyNoInteractions(reviewMailNotificationApplicationService);
     }
 
     @Test

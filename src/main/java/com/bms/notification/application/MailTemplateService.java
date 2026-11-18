@@ -16,6 +16,10 @@ public class MailTemplateService {
     @Value("${review-mail.todo-url:http://10.195.135.149:31792/myTodo}")
     private String todoUrl = "http://10.195.135.149:31792/myTodo";
 
+    /** 任务详情地址前缀，结束邮件模板在其后追加上下文中的当前任务 ID。 */
+    @Value("${review-mail.task-detail-url:http://10.195.135.149:31792/task/detail?id=}")
+    private String taskDetailUrl = "http://10.195.135.149:31792/task/detail?id=";
+
     public MailTemplateService() {
         ClassLoaderTemplateResolver resolver = new ClassLoaderTemplateResolver();
         resolver.setPrefix("mail/");
@@ -30,6 +34,7 @@ public class MailTemplateService {
     public String render(ReviewMailType type, Map<String, String> variables) {
         Context context = new Context(java.util.Locale.CHINA);
         context.setVariable("todoUrl", todoUrl);
+        context.setVariable("taskDetailUrl", taskDetailUrl);
         context.setVariable("resubmissionNotice", "");
         variables.forEach(context::setVariable);
         return templateEngine.process(type.templateName(), context).trim();

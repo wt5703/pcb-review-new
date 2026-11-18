@@ -23,53 +23,63 @@ public interface CheckItemTemplateMapper {
     int insert(CheckItemTemplateRecord record);
 
     @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, "
-            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE review_type=#{reviewType} AND enabled=TRUE ORDER BY sort_no, id")
+            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE delete_status=0 AND review_type=#{reviewType} AND enabled=TRUE ORDER BY sort_no, id")
     List<CheckItemTemplateRecord> findEnabledByReviewType(String reviewType);
 
     @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, "
-            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE enabled=TRUE "
+            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE delete_status=0 AND enabled=TRUE "
             + "AND (#{reviewType} IS NULL OR review_type=#{reviewType}) ORDER BY review_type, parent_id, sort_no, id")
     List<CheckItemTemplateRecord> findAll(String reviewType);
 
     @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, "
-            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE id=#{id}")
+            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE delete_status=0 AND id=#{id}")
     CheckItemTemplateRecord findById(long id);
 
     @Select("<script>SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, sort_no AS sortNo, enabled, version "
-            + "FROM check_item_template WHERE id IN "
+            + "FROM check_item_template WHERE delete_status=0 AND id IN "
             + "<foreach collection='itemIds' item='itemId' open='(' separator=',' close=')'>#{itemId}</foreach>"
             + "</script>")
     List<CheckItemTemplateRecord> findByIds(@Param("itemIds") List<Long> itemIds);
 
+    /** 仅用于已有任务快照展示：模板删除后仍保留历史检查项的名称和说明。 */
+    @Select("<script>SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, sort_no AS sortNo, enabled, version "
+            + "FROM check_item_template WHERE id IN "
+            + "<foreach collection='itemIds' item='itemId' open='(' separator=',' close=')'>#{itemId}</foreach></script>")
+    List<CheckItemTemplateRecord> findSnapshotByIds(@Param("itemIds") List<Long> itemIds);
+
+    @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, sort_no AS sortNo, enabled, version "
+            + "FROM check_item_template WHERE id=#{id}")
+    CheckItemTemplateRecord findSnapshotById(long id);
+
     @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, "
-            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE review_type=#{reviewType} AND parent_id IS NULL AND item_name=#{itemName} AND enabled=TRUE LIMIT 1")
+            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE delete_status=0 AND review_type=#{reviewType} AND parent_id IS NULL AND item_name=#{itemName} AND enabled=TRUE LIMIT 1")
     CheckItemTemplateRecord findCategoryByReviewTypeAndName(String reviewType, String itemName);
 
     @Select("SELECT id, review_type AS reviewType, parent_id AS parentId, item_name AS itemName, item_rich_text AS itemRichText, "
-            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE parent_id=#{parentId} AND item_name=#{itemName} AND enabled=TRUE LIMIT 1")
+            + "sort_no AS sortNo, enabled, version FROM check_item_template WHERE delete_status=0 AND parent_id=#{parentId} AND item_name=#{itemName} AND enabled=TRUE LIMIT 1")
     CheckItemTemplateRecord findChildByParentIdAndName(long parentId, String itemName);
 
     @Update("UPDATE check_item_template SET parent_id=#{parentId}, item_name=#{itemName}, item_rich_text=#{itemRichText}, sort_no=#{sortNo}, "
-            + "enabled=#{enabled}, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=#{id}")
+            + "enabled=#{enabled}, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE delete_status=0 AND id=#{id}")
     int update(CheckItemTemplateRecord record);
 
-    @Update("UPDATE check_item_template SET enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 "
-            + "WHERE parent_id=#{parentId} AND enabled=TRUE")
+    @Update("UPDATE check_item_template SET delete_status=1, enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 "
+            + "WHERE delete_status=0 AND parent_id=#{parentId} AND enabled=TRUE")
     int disableChildrenByParentId(@Param("parentId") long parentId);
 
-    @Update("UPDATE check_item_template SET enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE id=#{id}")
+    @Update("UPDATE check_item_template SET delete_status=1, enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 WHERE delete_status=0 AND id=#{id}")
     int disableById(long id);
 
     /** 确认重新导入时，逻辑停用该评审类型当前启用的整套模板。 */
     @Update("UPDATE check_item_template SET enabled=FALSE, updated_at=CURRENT_TIMESTAMP, version=version+1 "
-            + "WHERE review_type=#{reviewType} AND enabled=TRUE")
+            + "WHERE delete_status=0 AND review_type=#{reviewType} AND enabled=TRUE")
     int disableEnabledByReviewType(@Param("reviewType") String reviewType);
 
     @Update("UPDATE check_item_template SET sort_no=sort_no-1, updated_at=CURRENT_TIMESTAMP, version=version+1 "
-            + "WHERE review_type=#{reviewType} AND parent_id IS NULL AND enabled=TRUE AND sort_no > #{sortNo}")
+            + "WHERE delete_status=0 AND review_type=#{reviewType} AND parent_id IS NULL AND enabled=TRUE AND sort_no > #{sortNo}")
     int decrementCategorySortAfter(@Param("reviewType") String reviewType, @Param("sortNo") int sortNo);
 
     @Update("UPDATE check_item_template SET sort_no=sort_no-1, updated_at=CURRENT_TIMESTAMP, version=version+1 "
-            + "WHERE parent_id=#{parentId} AND enabled=TRUE AND sort_no > #{sortNo}")
+            + "WHERE delete_status=0 AND parent_id=#{parentId} AND enabled=TRUE AND sort_no > #{sortNo}")
     int decrementSiblingItemSortAfter(@Param("parentId") long parentId, @Param("sortNo") int sortNo);
 }

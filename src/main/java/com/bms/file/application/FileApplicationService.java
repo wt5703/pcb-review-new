@@ -6,6 +6,7 @@ import com.bms.file.domain.FileCategory;
 import com.bms.file.infrastructure.ResourceServiceClient;
 import com.bms.file.infrastructure.ReviewFileMapper;
 import com.bms.file.infrastructure.ReviewFileRecord;
+import com.bms.notification.application.ReviewMailNotificationApplicationService;
 import com.bms.task.infrastructure.TaskAssignmentAccessMapper;
 import com.bms.task.infrastructure.ReviewTaskMapper;
 import com.bms.task.infrastructure.ReviewTaskRecord;
@@ -33,15 +34,18 @@ public class FileApplicationService {
     private final ReviewTaskMapper taskMapper;
     private final TaskAssignmentAccessMapper taskAssignmentAccessMapper;
     private final ResourceServiceClient resourceServiceClient;
+    private final ReviewMailNotificationApplicationService reviewMailNotificationApplicationService;
 
     @Autowired
     public FileApplicationService(ReviewFileMapper fileMapper, ReviewTaskMapper taskMapper,
                                   TaskAssignmentAccessMapper taskAssignmentAccessMapper,
-                                  ResourceServiceClient resourceServiceClient) {
+                                  ResourceServiceClient resourceServiceClient,
+                                  ReviewMailNotificationApplicationService reviewMailNotificationApplicationService) {
         this.fileMapper = fileMapper;
         this.taskMapper = taskMapper;
         this.taskAssignmentAccessMapper = taskAssignmentAccessMapper;
         this.resourceServiceClient = resourceServiceClient;
+        this.reviewMailNotificationApplicationService = reviewMailNotificationApplicationService;
     }
 
     /**
@@ -186,6 +190,12 @@ public class FileApplicationService {
 
     @Transactional
     public List<FileView> uploadBatch(long taskId, FileCategory category, List<MultipartFile> files, String operatorEmployeeNo) {
+        return uploadBatch(taskId, category, files, operatorEmployeeNo, false);
+    }
+
+    /** 整批文件落库成功后按需登记工艺/结构邮件，邮件附件读取本次上传后的最新文件。 */
+    @Transactional
+    public List<FileView> uploadBatch(long taskId, FileCategory category, List<MultipartFile> files, String operatorEmployeeNo, boolean sendMail) {
         if (category == null || files == null || files.isEmpty()
                 || files.stream().anyMatch(file -> file == null || file.isEmpty()
                 || file.getOriginalFilename() == null || file.getOriginalFilename().isBlank())) {
@@ -193,6 +203,13 @@ public class FileApplicationService {
         }
         taskMapper.lockById(taskId);
         ReviewTaskRecord task = requireTaskAccess(taskId, operatorEmployeeNo, category, true);
+        if (sendMail && (category != FileCategory.PCB_PROCESS_REVIEW && category != FileCategory.PCB_STRUCTURE_REVIEW)) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "发送评审邮件仅支持工艺或结构评审文件");
+        }
+        if (sendMail && (!"PCB".equals(task.getReviewType())
+                || !TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING.name().equals(task.getStatus()))) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "请先开启工艺或结构评审，再上传文件并发送邮件");
+        }
         List<ReviewFileRecord> uploaded = files.stream()
                 .map(file -> uploadTaskFile(task, category, file, operatorEmployeeNo)).toList();
         fileMapper.markLatestAsHistorical(taskId, category.name());
@@ -202,6 +219,7 @@ public class FileApplicationService {
                 throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_UNAVAILABLE, "保存任务文件失败");
             }
         }
+        if (sendMail) reviewMailNotificationApplicationService.enqueuePcbStageReview(task, List.of(category));
         return uploaded.stream().map(FileView::from).toList();
     }
 

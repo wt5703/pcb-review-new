@@ -67,7 +67,7 @@ public class TaskCheckItemApplicationService {
             records = taskCheckItemMapper.findByTaskId(taskId);
         } else {
             templates = records.isEmpty() ? List.of()
-                    : templateMapper.findByIds(records.stream().map(TaskCheckItemRecord::getItemId).distinct().toList());
+                    : templateMapper.findSnapshotByIds(records.stream().map(TaskCheckItemRecord::getItemId).distinct().toList());
         }
         Map<Long, CheckItemTemplateRecord> templatesByItemId = templates.stream()
                 .collect(java.util.stream.Collectors.toMap(CheckItemTemplateRecord::getId, template -> template));
@@ -375,7 +375,7 @@ public class TaskCheckItemApplicationService {
     }
 
     private String itemNameOf(TaskCheckItemRecord record) {
-        CheckItemTemplateRecord template = templateMapper.findById(record.getItemId());
+        CheckItemTemplateRecord template = templateMapper.findSnapshotById(record.getItemId());
         if (template == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND, "互检检查项模板不存在");
         }

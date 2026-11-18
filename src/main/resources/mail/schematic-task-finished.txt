@@ -3,3 +3,6 @@
 [[${recipientNames}]][[${greeting}]]:
 
 附件为[[${projectName}]]原理图终版文件。
+
+请点击以下链接查看任务详情：
+[[${taskDetailUrl}]][[${taskId}]]

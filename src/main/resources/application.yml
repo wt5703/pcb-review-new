@@ -49,3 +49,4 @@ user-center:
   user-profile-path: ${USER_CENTER_USER_PROFILE_PATH:/user/{employeeNo}}
 review-mail:
   todo-url: ${REVIEW_MAIL_TODO_URL:https://pcb-leapenergy.leapmotor.com/myTodo}
+  task-detail-url: ${REVIEW_MAIL_TASK_DETAIL_URL:https://pcb-leapenergy.leapmotor.com/task/detail?id=}

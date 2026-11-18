@@ -189,7 +189,7 @@ public class TaskApplicationService {
                 .map(employeeNo -> assignment.reviewRole().name() + ":" + employeeNo)).collect(Collectors.toSet());
     }
 
-    /** 新建一条尚未派发的任务草稿。 */
+    /** 锁定任务与通知事件后，在同一事务内逻辑删除任务及关联数据，保留原始记录。 */
     @Transactional
     public void deleteTask(long taskId, String operatorEmployeeNo) {
         taskMapper.lockById(taskId);

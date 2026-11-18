@@ -188,8 +188,7 @@ public class WorkflowApplicationService {
             result = combined.toView();
         }
 
-        // 所有动作都执行成功后，再统一登记工艺或结构评审通知。
-        notifyPcbStageReviewStarted(taskId, actions);
+        // 工艺/结构文件由设计者在流程推进后上传，通知由批量上传接口按 sendMail 控制。
         return result;
     }
 
@@ -232,17 +231,6 @@ public class WorkflowApplicationService {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "当前流程动作不支持上传文件");
         }
         return category;
-    }
-
-    /** 通知本次实际开启的工艺或结构评审人员。 */
-    private void notifyPcbStageReviewStarted(long taskId, List<WorkflowAction> actions) {
-        List<FileCategory> fileCategories = actions.stream()
-                .filter(PCB_STAGE_FILE_CATEGORIES::containsKey)
-                .map(PCB_STAGE_FILE_CATEGORIES::get)
-                .toList();
-        if (!fileCategories.isEmpty()) {
-            reviewMailNotificationApplicationService.enqueuePcbStageReview(requireTask(taskId), fileCategories);
-        }
     }
 
     /**

@@ -19,13 +19,13 @@ public interface NotificationSendRecordMapper {
 
     @Select("SELECT outbox_event_id AS outboxEventId, task_id AS taskId, event_type AS eventType, recipient, carbon_copies AS carbonCopies, "
             + "attachments, mail_subject AS subject, template_code AS templateCode, delivery_status AS deliveryStatus, failure_reason AS failureReason, attempted_at AS attemptedAt FROM notification_send_record "
-            + "WHERE outbox_event_id=#{outboxEventId} ORDER BY id")
+            + "WHERE delete_status=0 AND outbox_event_id=#{outboxEventId} ORDER BY id")
     List<NotificationSendRecord> findByOutboxEventId(long outboxEventId);
 
     @Select("SELECT record.outbox_event_id AS outboxEventId, record.task_id AS taskId, record.event_type AS eventType, record.recipient, "
             + "record.carbon_copies AS carbonCopies, record.attachments, record.mail_subject AS subject, record.template_code AS templateCode, record.delivery_status AS deliveryStatus, record.failure_reason AS failureReason, "
             + "record.attempted_at AS attemptedAt FROM notification_send_record record INNER JOIN outbox_event event "
-            + "ON event.id=record.outbox_event_id WHERE event.aggregate_type='REVIEW_TASK' AND event.aggregate_id=#{taskId} "
+            + "ON event.id=record.outbox_event_id WHERE record.delete_status=0 AND event.delete_status=0 AND event.aggregate_type='REVIEW_TASK' AND event.aggregate_id=#{taskId} "
             + "ORDER BY record.attempted_at, record.id")
     List<NotificationSendRecord> findByTaskId(long taskId);
 }

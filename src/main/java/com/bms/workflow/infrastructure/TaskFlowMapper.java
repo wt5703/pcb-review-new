@@ -22,6 +22,6 @@ public interface TaskFlowMapper {
 
     @Select("SELECT id, task_id AS taskId, action_code AS action, action_name AS actionName, operate_employee_no AS operateEmployeeNo, flow_comment AS comment, "
             + "from_status AS fromStatus, to_status AS toStatus, next_operator_employee_nos AS nextOperatorEmployeeNos, approval_role AS approvalRole, create_at AS createdAt "
-            + "FROM task_flow_record WHERE task_id=#{taskId} ORDER BY id")
+            + "FROM task_flow_record WHERE delete_status=0 AND task_id=#{taskId} ORDER BY id")
     List<TaskFlowRecord> findByTaskId(long taskId);
 }

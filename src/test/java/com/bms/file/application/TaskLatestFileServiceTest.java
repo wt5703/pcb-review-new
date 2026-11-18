@@ -14,7 +14,7 @@ class TaskLatestFileServiceTest {
     private final TaskLatestFileService service = new TaskLatestFileService(files, users);
 
     @Test
-    void includesAllLatestBatchFilesAcrossCategoriesAndResolvesNames() {
+    void groupsAllLatestBatchFilesByCategoryAndResolvesNames() {
         when(files.listLatestByCategory(1L, FileCategory.PCB_REVIEW, "viewer"))
                 .thenReturn(List.of(file(1L, FileCategory.PCB_REVIEW), file(2L, FileCategory.PCB_REVIEW)));
         when(files.listLatestByCategory(1L, FileCategory.PCB_STRUCTURE_REVIEW, "viewer"))
@@ -22,14 +22,21 @@ class TaskLatestFileServiceTest {
         when(users.getByEmployeeNos(anyList())).thenReturn(Map.of("u1",
                 new UserCenterUserProfileClient.UserProfile("u1", "张工", null, null, null)));
         var result = service.list(1L, "viewer");
-        assertThat(result).extracting(TaskLatestFileService.TaskFileView::id).containsExactly(1L, 2L, 3L);
-        assertThat(result).extracting(TaskLatestFileService.TaskFileView::uploadedByName).containsOnly("张工");
+        assertThat(result).containsOnlyKeys(FileCategory.values());
+        assertThat(result.get(FileCategory.PCB_REVIEW)).extracting(TaskLatestFileService.TaskFileView::id).containsExactly(1L, 2L);
+        assertThat(result.get(FileCategory.PCB_STRUCTURE_REVIEW)).extracting(TaskLatestFileService.TaskFileView::id).containsExactly(3L);
+        assertThat(result.get(FileCategory.PCB_PROCESS_REVIEW)).isEmpty();
+        assertThat(result.get(FileCategory.SCHEMATIC_REVIEW)).isEmpty();
+        assertThat(result.values().stream().flatMap(List::stream).toList())
+                .extracting(TaskLatestFileService.TaskFileView::uploadedByName).containsOnly("张工");
         for (FileCategory category : FileCategory.values()) verify(files).listLatestByCategory(1L, category, "viewer");
     }
 
     @Test
-    void returnsEmptyWhenNoFilesExist() {
-        assertThat(service.list(1L, "viewer")).isEmpty();
+    void returnsEveryCategoryWithAnEmptyListWhenNoFilesExist() {
+        assertThat(service.list(1L, "viewer"))
+                .containsOnlyKeys(FileCategory.values())
+                .allSatisfy((category, categoryFiles) -> assertThat(categoryFiles).isEmpty());
     }
 
     @Test

@@ -15,11 +15,11 @@ public interface TaskArchiveSnapshotMapper {
             + "VALUES (#{taskId}, #{fileSnapshot}, #{flowSnapshot}, #{notificationSnapshot})")
     int insert(TaskArchiveSnapshotRecord record);
 
-    @Select("SELECT CASE WHEN EXISTS (SELECT 1 FROM task_archive_snapshot WHERE task_id=#{taskId}) THEN TRUE ELSE FALSE END")
+    @Select("SELECT CASE WHEN EXISTS (SELECT 1 FROM task_archive_snapshot WHERE delete_status=0 AND task_id=#{taskId}) THEN TRUE ELSE FALSE END")
     boolean existsByTaskId(long taskId);
 
     @Select("SELECT task_id AS taskId, file_snapshot AS fileSnapshot, flow_snapshot AS flowSnapshot, "
             + "notification_snapshot AS notificationSnapshot "
-            + "FROM task_archive_snapshot WHERE task_id=#{taskId}")
+            + "FROM task_archive_snapshot WHERE delete_status=0 AND task_id=#{taskId}")
     TaskArchiveSnapshotRecord findByTaskId(long taskId);
 }

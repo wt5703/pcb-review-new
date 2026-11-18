@@ -3,6 +3,7 @@ package com.bms.task.interfaces;
 import com.bms.common.ApiResponse;
 import com.bms.common.TraceIdFilter;
 import com.bms.file.application.TaskLatestFileService;
+import com.bms.file.domain.FileCategory;
 import com.bms.review.application.ReviewerWhitelistApplicationService;
 import com.bms.review.domain.ReviewerWhitelistRole;
 import com.bms.task.application.TaskApplicationService;
@@ -35,6 +36,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import java.util.List;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.Map;
 
 import static java.net.URLDecoder.decode;
 
@@ -64,8 +66,8 @@ public class TaskController {
     }
 
     @GetMapping("/{taskId}/files/latest")
-    @Operation(summary = "查询任务各阶段最新文件", description = "返回各文件类型 is_latest=true 的全部文件，包括最新批次的多个文件；未上传的类型不返回。所有登录用户可查看任务文件。无文件返回空数组。")
-    ApiResponse<List<TaskLatestFileService.TaskFileView>> listLatestFiles(
+    @Operation(summary = "查询任务各文件类型最新文件", description = "按 fileCategory 分组返回各文件类型最新版本的文件列表，key 为 PCB_REVIEW=PCB评审、SCHEMATIC_REVIEW=原理图评审、PCB_PROCESS_REVIEW=工艺评审、PCB_STRUCTURE_REVIEW=结构评审；无文件的类别以空列表返回")
+    ApiResponse<Map<FileCategory, List<TaskLatestFileService.TaskFileView>>> listLatestFiles(
             @Parameter(description = "评审任务 ID", required = true) @PathVariable long taskId,
             @Parameter(description = "当前用户工号", required = true) @NotBlank @RequestHeader("userId") String employeeNo,
             HttpServletRequest servletRequest) {
@@ -119,7 +121,7 @@ public class TaskController {
     }
 
     @DeleteMapping("/{taskId}")
-    @Operation(summary = "删除评审任务", description = "仅任务设计者可删除本人创建的任务。同步删除任务基本信息、评审意见及其回复和确认、互检单、文件记录、流转日志、通知和归档。")
+    @Operation(summary = "逻辑删除评审任务", description = "仅任务设计者可删除本人创建的任务。将任务及其意见、回复、确认、评审完成记录、互检单、文件记录、流转日志、通知和归档的 delete_status 从 0 改为 1，保留数据库记录；已删除的数据不再出现在业务查询中，也不允许普通更新或恢复。")
     ApiResponse<Void> deleteTask(@PathVariable long taskId, @NotBlank @RequestHeader("userId") String employeeNo,
                                  HttpServletRequest servletRequest) {
         taskService.deleteTask(taskId, employeeNo);

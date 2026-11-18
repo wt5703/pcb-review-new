@@ -150,6 +150,7 @@ public class ReviewMailNotificationApplicationService {
             log.error("邮件收件人资料不完整：taskId={}, mailType={}，将记录为一次失败投递", taskId, type);
         }
         Map<String, String> templateVariables = new LinkedHashMap<>(variables);
+        templateVariables.put("taskId", Long.toString(taskId));
         templateVariables.put("recipientNames", recipientNames(recipients));
         templateVariables.put("greeting", recipients.size() == 1 ? "您好" : "你们好");
         String content = mailTemplateService.render(type, templateVariables);

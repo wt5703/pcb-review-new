@@ -1,6 +1,5 @@
 package com.bms.task.infrastructure;
 
-import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
@@ -28,22 +27,22 @@ public interface ReviewTaskMapper {
     @Select("SELECT id, review_type AS reviewType, task_name AS taskName, project_no AS projectNo, project_name AS projectName, designer_employee_no AS designerEmployeeNo, " +
             "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, " +
             "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, mutual_check_reviewer_employee_nos AS mutualCheckReviewerEmployeeNos, review_description AS reviewDescription, " +
-            "task_status AS status, initial_file_ids AS initialFileIds, version, created_at AS createdAt FROM review_task WHERE id = #{id}")
+            "task_status AS status, initial_file_ids AS initialFileIds, version, created_at AS createdAt FROM review_task WHERE delete_status=0 AND id = #{id}")
     ReviewTaskRecord findById(long id);
 
-    @Select("SELECT id FROM review_task WHERE id=#{id} FOR UPDATE")
+    @Select("SELECT id FROM review_task WHERE delete_status=0 AND id=#{id} FOR UPDATE")
     Long lockById(long id);
 
     @Select("SELECT id, review_type AS reviewType, task_name AS taskName, project_no AS projectNo, project_name AS projectName, designer_employee_no AS designerEmployeeNo, " +
             "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, " +
             "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, mutual_check_reviewer_employee_nos AS mutualCheckReviewerEmployeeNos, review_description AS reviewDescription, " +
-            "task_status AS status, initial_file_ids AS initialFileIds, version FROM review_task ORDER BY id")
+            "task_status AS status, initial_file_ids AS initialFileIds, version FROM review_task WHERE delete_status=0 ORDER BY id")
     List<ReviewTaskRecord> findAll();
 
     /** 任务列表筛选和分页均在数据库执行；列表查询不按当前用户做数据隔离。 */
     @Select("<script>"
             + "SELECT COUNT(*) FROM review_task "
-            + "<where>"
+            + "<where>delete_status=0 "
             + "<if test='taskName != null and taskName != \"\"'>AND task_name LIKE CONCAT('%', #{taskName}, '%') </if>"
             + "<if test='projectNo != null and projectNo != \"\"'>AND project_no LIKE CONCAT('%', #{projectNo}, '%') </if>"
             + "<if test='projectName != null and projectName != \"\"'>AND project_name LIKE CONCAT('%', #{projectName}, '%') </if>"
@@ -64,9 +63,9 @@ public interface ReviewTaskMapper {
             + "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, "
             + "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, "
             + "assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, mutual_check_reviewer_employee_nos AS mutualCheckReviewerEmployeeNos, review_description AS reviewDescription, task_status AS status, initial_file_ids AS initialFileIds, version, created_at AS createdAt, "
-            + "EXISTS (SELECT 1 FROM review_opinion o WHERE o.task_id=review_task.id AND o.is_no_opinion=FALSE) AS hasReviewOpinions "
+            + "EXISTS (SELECT 1 FROM review_opinion o WHERE delete_status=0 AND o.task_id=review_task.id AND o.is_no_opinion=FALSE) AS hasReviewOpinions "
             + "FROM review_task "
-            + "<where>"
+            + "<where>delete_status=0 "
             + "<if test='taskName != null and taskName != \"\"'>AND task_name LIKE CONCAT('%', #{taskName}, '%') </if>"
             + "<if test='projectNo != null and projectNo != \"\"'>AND project_no LIKE CONCAT('%', #{projectNo}, '%') </if>"
             + "<if test='projectName != null and projectName != \"\"'>AND project_name LIKE CONCAT('%', #{projectName}, '%') </if>"
@@ -89,13 +88,13 @@ public interface ReviewTaskMapper {
             + "designer_name AS designerName, design_name AS designName, pcb_type AS pcbType, expected_completed_date AS expectedCompletedDate, "
             + "expert_leader_employee_no AS expertLeaderEmployeeNo, expert_leader_name AS expertLeaderName, review_roles AS reviewRoles, reviewer_assignments AS reviewerAssignments, assigned_reviewer_employee_nos AS assignedReviewerEmployeeNos, mutual_check_reviewer_employee_nos AS mutualCheckReviewerEmployeeNos, review_description AS reviewDescription, "
             + "task_status AS status, initial_file_ids AS initialFileIds, version, created_at AS createdAt, "
-            + "EXISTS (SELECT 1 FROM review_opinion o WHERE o.task_id=review_task.id AND o.is_no_opinion=FALSE) AS hasReviewOpinions, "
-            + "CASE WHEN task_status='PENDING_FINISH' THEN EXISTS (SELECT 1 FROM task_flow_record flow WHERE flow.task_id=review_task.id AND flow.to_status='PENDING_FINISH') ELSE FALSE END AS finishApprovalInitialized "
-            + "FROM review_task WHERE task_status NOT IN ('FINISHED', 'TERMINATED') ORDER BY id DESC")
+            + "EXISTS (SELECT 1 FROM review_opinion o WHERE delete_status=0 AND o.task_id=review_task.id AND o.is_no_opinion=FALSE) AS hasReviewOpinions, "
+            + "CASE WHEN task_status='PENDING_FINISH' THEN EXISTS (SELECT 1 FROM task_flow_record flow WHERE delete_status=0 AND flow.task_id=review_task.id AND flow.to_status='PENDING_FINISH') ELSE FALSE END AS finishApprovalInitialized "
+            + "FROM review_task WHERE delete_status=0 AND task_status NOT IN ('FINISHED', 'TERMINATED') ORDER BY id DESC")
     List<ReviewTaskRecord> findAllUnfinished();
 
     /** 工作台“本月已结束”仅统计当前设计者创建，并在指定自然月内结束的任务。 */
-    @Select("SELECT COUNT(*) FROM review_task WHERE designer_employee_no=#{designerEmployeeNo} AND task_status='FINISHED' "
+    @Select("SELECT COUNT(*) FROM review_task WHERE delete_status=0 AND designer_employee_no=#{designerEmployeeNo} AND task_status='FINISHED' "
             + "AND updated_at >= #{monthStart} AND updated_at < #{nextMonthStart}")
     long countFinishedByDesignerEmployeeNoInPeriod(@Param("designerEmployeeNo") String designerEmployeeNo,
                                                    @Param("monthStart") LocalDateTime monthStart,
@@ -103,65 +102,65 @@ public interface ReviewTaskMapper {
 
     /** 提交任务或保存初始文件时，同步保存角色—专家分配，供邮件通知等后续流程读取。 */
     @Update("UPDATE review_task SET pcb_type=#{pcbType}, review_roles=#{reviewRoles}, reviewer_assignments=#{reviewerAssignments}, "
-            + "task_status=#{status}, initial_file_ids=#{initialFileIds}, updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
+            + "task_status=#{status}, initial_file_ids=#{initialFileIds}, updated_at=CURRENT_TIMESTAMP WHERE delete_status=0 AND id=#{id}")
     int update(ReviewTaskRecord record);
 
     /** 取消初始文件上传时，同步去掉任务中冗余保存的文件主键。 */
     @Update("UPDATE review_task SET initial_file_ids=TRIM(BOTH ',' FROM REPLACE(CONCAT(',', COALESCE(initial_file_ids, ''), ','), "
-            + "CONCAT(',', #{fileRecordId}, ','), ',')), updated_at=CURRENT_TIMESTAMP WHERE id=#{taskId}")
+            + "CONCAT(',', #{fileRecordId}, ','), ',')), updated_at=CURRENT_TIMESTAMP WHERE delete_status=0 AND id=#{taskId}")
     int removeInitialFileId(@Param("taskId") long taskId, @Param("fileRecordId") long fileRecordId);
 
     /** 仅维护当前流程节点待处理人员，不覆盖创建任务时保存的 reviewer_assignments。 */
     @Update("UPDATE review_task SET assigned_reviewer_employee_nos=#{assignedReviewerEmployeeNos}, " +
             "mutual_check_reviewer_employee_nos=COALESCE(#{mutualCheckReviewerEmployeeNos}, mutual_check_reviewer_employee_nos), " +
-            "updated_at=CURRENT_TIMESTAMP WHERE id=#{id}")
+            "updated_at=CURRENT_TIMESTAMP WHERE delete_status=0 AND id=#{id}")
     int updateAssignedReviewerEmployeeNos(ReviewTaskRecord record);
 
     @Update("UPDATE review_task SET review_type=#{reviewType}, task_name=#{taskName}, project_no=#{projectNo}, project_name=#{projectName}, designer_name=#{designerName}, "
             + "design_name=#{designName}, pcb_type=#{pcbType}, expected_completed_date=#{expectedCompletedDate}, expert_leader_employee_no=#{expertLeaderEmployeeNo}, "
             + "expert_leader_name=#{expertLeaderName}, review_roles=#{reviewRoles}, reviewer_assignments=#{reviewerAssignments}, assigned_reviewer_employee_nos=#{assignedReviewerEmployeeNos}, mutual_check_reviewer_employee_nos=COALESCE(#{mutualCheckReviewerEmployeeNos}, mutual_check_reviewer_employee_nos), review_description=#{reviewDescription}, updated_at=CURRENT_TIMESTAMP "
-            + "WHERE id=#{id} AND task_status IN ('DRAFT', 'PENDING_INITIATION')")
+            + "WHERE delete_status=0 AND id=#{id} AND task_status IN ('DRAFT', 'PENDING_INITIATION')")
     int updateDraft(ReviewTaskRecord record);
 
     /** 任务基本信息独立修改，不改变任务状态、评审角色或流程分配。 */
     @Update("UPDATE review_task SET project_no=#{projectNo}, project_name=#{projectName}, updated_at=CURRENT_TIMESTAMP "
-            + "WHERE id=#{id} AND task_status NOT IN ('FINISHED', 'TERMINATED')")
+            + "WHERE delete_status=0 AND id=#{id} AND task_status NOT IN ('FINISHED', 'TERMINATED')")
     int updateBasicInfo(ReviewTaskRecord record);
 
-    @Select("SELECT id FROM outbox_event WHERE aggregate_type='REVIEW_TASK' AND aggregate_id=#{taskId} FOR UPDATE")
+    @Select("SELECT id FROM outbox_event WHERE delete_status=0 AND aggregate_type='REVIEW_TASK' AND aggregate_id=#{taskId} FOR UPDATE")
     List<Long> lockTaskOutbox(long taskId);
 
-    @Delete("DELETE FROM notification_send_record WHERE task_id=#{taskId} OR outbox_event_id IN "
-            + "(SELECT id FROM outbox_event WHERE aggregate_type='REVIEW_TASK' AND aggregate_id=#{taskId})")
+    @Update("UPDATE notification_send_record SET delete_status=1 WHERE delete_status=0 AND (task_id=#{taskId} OR outbox_event_id IN "
+            + "(SELECT id FROM outbox_event WHERE aggregate_type='REVIEW_TASK' AND aggregate_id=#{taskId}))")
     int deleteTaskNotifications(long taskId);
 
-    @Delete("DELETE FROM outbox_event WHERE aggregate_type='REVIEW_TASK' AND aggregate_id=#{taskId}")
+    @Update("UPDATE outbox_event SET delete_status=1 WHERE delete_status=0 AND aggregate_type='REVIEW_TASK' AND aggregate_id=#{taskId}")
     int deleteTaskOutbox(long taskId);
 
-    @Delete("DELETE FROM opinion_reply WHERE opinion_id IN (SELECT id FROM review_opinion WHERE task_id=#{taskId})")
+    @Update("UPDATE opinion_reply SET delete_status=1 WHERE delete_status=0 AND opinion_id IN (SELECT id FROM review_opinion WHERE task_id=#{taskId})")
     int deleteTaskOpinionReplies(long taskId);
 
-    @Delete("DELETE FROM opinion_confirmation WHERE opinion_id IN (SELECT id FROM review_opinion WHERE task_id=#{taskId})")
+    @Update("UPDATE opinion_confirmation SET delete_status=1 WHERE delete_status=0 AND opinion_id IN (SELECT id FROM review_opinion WHERE task_id=#{taskId})")
     int deleteTaskOpinionConfirmations(long taskId);
 
-    @Delete("DELETE FROM review_opinion WHERE task_id=#{taskId}")
+    @Update("UPDATE review_opinion SET delete_status=1 WHERE delete_status=0 AND task_id=#{taskId}")
     int deleteTaskOpinions(long taskId);
 
-    @Delete("DELETE FROM review_submission WHERE task_id=#{taskId}")
+    @Update("UPDATE review_submission SET delete_status=1 WHERE delete_status=0 AND task_id=#{taskId}")
     int deleteTaskReviewSubmissions(long taskId);
 
-    @Delete("DELETE FROM task_check_item WHERE task_id=#{taskId}")
+    @Update("UPDATE task_check_item SET delete_status=1 WHERE delete_status=0 AND task_id=#{taskId}")
     int deleteTaskCheckItems(long taskId);
 
-    @Delete("DELETE FROM review_file WHERE task_id=#{taskId}")
+    @Update("UPDATE review_file SET delete_status=1 WHERE delete_status=0 AND task_id=#{taskId}")
     int deleteTaskFileRecords(long taskId);
 
-    @Delete("DELETE FROM task_flow_record WHERE task_id=#{taskId}")
+    @Update("UPDATE task_flow_record SET delete_status=1 WHERE delete_status=0 AND task_id=#{taskId}")
     int deleteTaskFlowRecords(long taskId);
 
-    @Delete("DELETE FROM task_archive_snapshot WHERE task_id=#{taskId}")
+    @Update("UPDATE task_archive_snapshot SET delete_status=1 WHERE delete_status=0 AND task_id=#{taskId}")
     int deleteTaskArchive(long taskId);
 
-    @Delete("DELETE FROM review_task WHERE id=#{taskId}")
+    @Update("UPDATE review_task SET delete_status=1 WHERE delete_status=0 AND id=#{taskId}")
     int deleteById(long taskId);
 }

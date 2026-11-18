@@ -10,12 +10,12 @@ import org.apache.ibatis.annotations.Select;
  */
 @Mapper
 public interface TaskAssignmentAccessMapper {
-    @Select("SELECT CASE WHEN EXISTS (SELECT 1 FROM review_task WHERE id=#{taskId} AND (designer_employee_no=#{employeeNo} OR expert_leader_employee_no=#{employeeNo} "
+    @Select("SELECT CASE WHEN EXISTS (SELECT 1 FROM review_task WHERE delete_status=0 AND id=#{taskId} AND (designer_employee_no=#{employeeNo} OR expert_leader_employee_no=#{employeeNo} "
             + "OR CONCAT(',', COALESCE(assigned_reviewer_employee_nos, ''), ',') LIKE CONCAT('%,', #{employeeNo}, ',%'))) "
             + "THEN TRUE ELSE FALSE END")
     boolean isAssignedToTask(long taskId, String employeeNo);
 
-    @Select("SELECT CASE WHEN EXISTS (SELECT 1 FROM review_task WHERE id=#{taskId} AND task_status NOT IN ('FINISHED', 'TERMINATED', 'PENDING_INITIATION', 'PENDING_FINISH') "
+    @Select("SELECT CASE WHEN EXISTS (SELECT 1 FROM review_task WHERE delete_status=0 AND id=#{taskId} AND task_status NOT IN ('FINISHED', 'TERMINATED', 'PENDING_INITIATION', 'PENDING_FINISH') "
             + "AND CONCAT(',', COALESCE(assigned_reviewer_employee_nos, ''), ',') LIKE CONCAT('%,', #{employeeNo}, ',%')) "
             + "THEN TRUE ELSE FALSE END")
     boolean isCurrentTaskProcessor(long taskId, String employeeNo);
