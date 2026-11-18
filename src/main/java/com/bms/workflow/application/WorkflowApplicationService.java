@@ -188,7 +188,7 @@ public class WorkflowApplicationService {
             result = combined.toView();
         }
 
-        // 工艺/结构文件由设计者在流程推进后上传，通知由批量上传接口按 sendMail 控制。
+        // 工艺/结构文件由设计者在流程推进后上传，通知由分组上传接口按 sendMail 控制。
         return result;
     }
 

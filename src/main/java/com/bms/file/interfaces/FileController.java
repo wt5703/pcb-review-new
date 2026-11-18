@@ -56,20 +56,20 @@ public class FileController {
     }
 
     @PostMapping(value = "/files/upload/batch", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "批量上传任务文件", description = "传 taskId、fileCategory 及多个同名 files 文件字段。整批上传成功后绑定任务，同类型原有最新文件转为历史，本批文件均为最新。sendMail 默认 false；工艺/结构评审开启后传 true，在全部文件落库成功后向该类型的评审人员发送开启评审邮件，附件为该类型最新批次文件。")
+    @Operation(summary = "批量上传任务文件", description = "传 taskId、fileCategory 及多个同名 files 文件字段。整批上传成功后绑定任务，同类型原有最新文件转为历史，本批文件均为最新。")
     ApiResponse<List<UploadFileView>> uploadBatch(@RequestParam long taskId,
             @RequestPart("files") @NotEmpty List<MultipartFile> files, @RequestParam FileCategory fileCategory,
-            @RequestParam(defaultValue = "false") @Schema(description = "是否发送工艺/结构评审邮件，默认 false；仅工艺/结构评审阶段的对应文件可传 true") boolean sendMail,
             @NotBlank @RequestHeader("userId") String employeeNo, HttpServletRequest servletRequest) {
-        List<UploadFileView> uploaded = fileApplicationService.uploadBatch(taskId, fileCategory, files, employeeNo, sendMail).stream()
+        List<UploadFileView> uploaded = fileApplicationService.uploadBatch(taskId, fileCategory, files, employeeNo).stream()
                 .map(file -> new UploadFileView(file.fileId(), file.id(), file.fileName(), file.fileSize(), file.category())).toList();
         return ApiResponse.ok(uploaded, traceId(servletRequest));
     }
 
     @PostMapping(value = "/files/upload/grouped", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "按多个文件类型批量上传", description = "传 taskId 和多个 fileCategories 参数。文件 part 名称使用对应 FileCategory 编码，每类可重复多个文件，例如 fileCategories=PCB_REVIEW&fileCategories=PCB_STRUCTURE_REVIEW，文件字段 PCB_REVIEW=a.zip、PCB_REVIEW=b.pdf、PCB_STRUCTURE_REVIEW=c.zip。每类至少一个文件，响应按类型分组。同类旧文件转历史，本批全部为最新。")
+    @Operation(summary = "按多个文件类型批量上传", description = "传 taskId 和多个 fileCategories 参数。文件 part 名称使用对应 FileCategory 编码，每类可重复多个文件，例如 fileCategories=PCB_REVIEW&fileCategories=PCB_STRUCTURE_REVIEW，文件字段 PCB_REVIEW=a.zip、PCB_REVIEW=b.pdf、PCB_STRUCTURE_REVIEW=c.zip。每类至少一个文件，响应按类型分组。同类旧文件转历史，本批全部为最新。sendMail 默认 false；工艺/结构评审开启后传 true，在所有分组文件均上传、落库成功后，向本次涉及的工艺/结构评审人员发送一封评审邮件，附件仅包含对应工艺/结构类型的最新批次文件。")
     ApiResponse<List<UploadFileGroupView>> uploadGrouped(@RequestParam long taskId,
             @RequestParam @NotEmpty List<FileCategory> fileCategories,
+            @RequestParam(defaultValue = "false") @Schema(description = "是否发送工艺/结构评审邮件，默认 false；传 true 时任务须处于工艺/结构评审阶段，且本次须包含工艺或结构评审文件") boolean sendMail,
             org.springframework.web.multipart.MultipartHttpServletRequest request,
             @NotBlank @RequestHeader("userId") String employeeNo) {
         java.util.Map<FileCategory, List<MultipartFile>> groups = new java.util.LinkedHashMap<>();
@@ -81,7 +81,7 @@ public class FileController {
         if (!request.getMultiFileMap().keySet().equals(groups.keySet().stream().map(Enum::name).collect(java.util.stream.Collectors.toSet()))) {
             throw new com.bms.common.BusinessException(com.bms.common.ErrorCode.VALIDATION_ERROR, "文件字段名必须与 fileCategories 对应且每类均有文件");
         }
-        var result = fileApplicationService.uploadGrouped(taskId, groups, employeeNo).stream()
+        var result = fileApplicationService.uploadGrouped(taskId, groups, employeeNo, sendMail).stream()
                 .map(group -> new UploadFileGroupView(group.fileCategory(), group.files().stream()
                         .map(file -> new UploadFileView(file.fileId(), file.id(), file.fileName(), file.fileSize(), file.category())).toList())).toList();
         return ApiResponse.ok(result, traceId(request));

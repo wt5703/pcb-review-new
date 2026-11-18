@@ -39,19 +39,23 @@ class FileApplicationServiceTest {
             resourceServiceClient, mailService);
 
     @Test
-    void shouldNotSendMailWhenOneFileInTheBatchFailsToUpload() {
+    void shouldNotSendMailWhenALaterGroupFailsToUpload() {
         var task = taskRecord();
         task.setReviewType("PCB");
         task.setStatus("PCB_PROCESS_STRUCTURE_REVIEWING");
         when(taskMapper.findById(1L)).thenReturn(task);
+        when(fileMapper.nextId()).thenReturn(101L);
+        when(fileMapper.insert(any())).thenReturn(1);
         when(resourceServiceClient.upload(any(MultipartFile.class), anyString()))
                 .thenReturn(new ResourceServiceClient.StoredResource("first", "/first"))
                 .thenThrow(new com.bms.common.BusinessException(com.bms.common.ErrorCode.EXTERNAL_SERVICE_UNAVAILABLE, "上传失败"));
-        assertThatThrownBy(() -> service.uploadBatch(1L, FileCategory.PCB_PROCESS_REVIEW,
-                List.of(multipart("first.zip", "first"), multipart("second.zip", "second")), "10", true))
+        var groups = new java.util.LinkedHashMap<FileCategory, List<MultipartFile>>();
+        groups.put(FileCategory.PCB_PROCESS_REVIEW, List.of(multipart("first.zip", "first")));
+        groups.put(FileCategory.PCB_STRUCTURE_REVIEW, List.of(multipart("second.zip", "second")));
+        assertThatThrownBy(() -> service.uploadGrouped(1L, groups, "10", true))
                 .hasMessage("上传失败");
         org.mockito.Mockito.verifyNoInteractions(mailService);
-        verify(fileMapper, org.mockito.Mockito.never()).insert(any());
+        verify(fileMapper).insert(any());
     }
 
     @Test

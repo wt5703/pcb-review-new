@@ -99,18 +99,18 @@ class GroupedFileUploadIntegrationTest {
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.EnumSource(value = com.bms.file.domain.FileCategory.class,
             names = {"PCB_PROCESS_REVIEW", "PCB_STRUCTURE_REVIEW"})
-    void sendsOptionalReviewMailOnlyWhenRequestedAfterEntireBatchUpload(com.bms.file.domain.FileCategory category) throws Exception {
+    void sendsOptionalReviewMailOnlyWhenRequestedAfterGroupedUpload(com.bms.file.domain.FileCategory category) throws Exception {
         var task = tasks.findById(9901L);
         task.setStatus("PCB_PROCESS_STRUCTURE_REVIEWING");
         task.setReviewerAssignments("PROCESS_EXPERT:BMS003;STRUCTURE_EXPERT:BMS004");
         tasks.update(task);
-        mvc.perform(multipart("/files/upload/batch").file(file("files", "old.zip"))
-                        .header("userId", "BMS010").param("taskId", "9901").param("fileCategory", category.name()))
+        mvc.perform(multipart("/files/upload/grouped").file(file(category.name(), "old.zip"))
+                        .header("userId", "BMS010").param("taskId", "9901").param("fileCategories", category.name()))
                 .andExpect(status().isOk());
         assertThat(outbox.findByAggregate("REVIEW_TASK", 9901L)).isEmpty();
 
-        mvc.perform(multipart("/files/upload/batch").file(file("files", "a.zip")).file(file("files", "b.pdf"))
-                        .header("userId", "BMS010").param("taskId", "9901").param("fileCategory", category.name()).param("sendMail", "true"))
+        mvc.perform(multipart("/files/upload/grouped").file(file(category.name(), "a.zip")).file(file(category.name(), "b.pdf"))
+                        .header("userId", "BMS010").param("taskId", "9901").param("fileCategories", category.name()).param("sendMail", "true"))
                 .andExpect(status().isOk());
         var events = outbox.findByAggregate("REVIEW_TASK", 9901L);
         assertThat(events).hasSize(1);
@@ -121,25 +121,56 @@ class GroupedFileUploadIntegrationTest {
                 .containsExactlyInAnyOrder("a.zip", "b.pdf");
         assertThat(mail.attachments()).extracting(com.bms.notification.domain.MailMessage.MailAttachment::fileCategory).containsOnly(category.name());
 
-        mvc.perform(multipart("/files/upload/batch").file(file("files", "silent.zip"))
-                        .header("userId", "BMS010").param("taskId", "9901").param("fileCategory", category.name()).param("sendMail", "false"))
+        mvc.perform(multipart("/files/upload/grouped").file(file(category.name(), "silent.zip"))
+                        .header("userId", "BMS010").param("taskId", "9901").param("fileCategories", category.name()).param("sendMail", "false"))
                 .andExpect(status().isOk());
         assertThat(outbox.findByAggregate("REVIEW_TASK", 9901L)).hasSize(1);
     }
 
     @Test
-    void doesNotSendOptionalMailBeforeStageStartsOrWhenBatchIsInvalid() throws Exception {
-        mvc.perform(multipart("/files/upload/batch").file(file("files", "a.zip"))
-                        .header("userId", "BMS010").param("taskId", "9901").param("fileCategory", "PCB_PROCESS_REVIEW").param("sendMail", "true"))
+    void doesNotSendOptionalMailBeforeStageStartsOrWhenAnyGroupIsInvalid() throws Exception {
+        mvc.perform(multipart("/files/upload/grouped").file(file("PCB_PROCESS_REVIEW", "a.zip"))
+                        .header("userId", "BMS010").param("taskId", "9901").param("fileCategories", "PCB_PROCESS_REVIEW").param("sendMail", "true"))
                 .andExpect(status().isConflict());
         var task = tasks.findById(9901L);
         task.setStatus("PCB_PROCESS_STRUCTURE_REVIEWING");
         tasks.update(task);
-        mvc.perform(multipart("/files/upload/batch").file(file("files", "a.zip"))
-                        .file(new MockMultipartFile("files", "empty.zip", "application/octet-stream", new byte[0]))
-                        .header("userId", "BMS010").param("taskId", "9901").param("fileCategory", "PCB_PROCESS_REVIEW").param("sendMail", "true"))
+        mvc.perform(multipart("/files/upload/grouped").file(file("PCB_PROCESS_REVIEW", "a.zip"))
+                        .file(new MockMultipartFile("PCB_STRUCTURE_REVIEW", "empty.zip", "application/octet-stream", new byte[0]))
+                        .header("userId", "BMS010").param("taskId", "9901").param("fileCategories", "PCB_PROCESS_REVIEW", "PCB_STRUCTURE_REVIEW").param("sendMail", "true"))
                 .andExpect(status().isBadRequest());
         assertThat(files.findByTaskId(9901L)).isEmpty();
+        assertThat(outbox.findByAggregate("REVIEW_TASK", 9901L)).isEmpty();
+    }
+
+    @Test
+    void combinesProcessAndStructureGroupsInOneMailAfterAllFilesAreStored() throws Exception {
+        var task = tasks.findById(9901L);
+        task.setStatus("PCB_PROCESS_STRUCTURE_REVIEWING");
+        task.setReviewerAssignments("PROCESS_EXPERT:BMS003;STRUCTURE_EXPERT:BMS004");
+        tasks.update(task);
+        mvc.perform(multipart("/files/upload/grouped")
+                        .file(file("PCB_PROCESS_REVIEW", "process.zip")).file(file("PCB_PROCESS_REVIEW", "process.pdf"))
+                        .file(file("PCB_STRUCTURE_REVIEW", "structure.zip")).file(file("PCB_REVIEW", "layout.pcb"))
+                        .header("userId", "BMS010").param("taskId", "9901")
+                        .param("fileCategories", "PCB_PROCESS_REVIEW", "PCB_STRUCTURE_REVIEW", "PCB_REVIEW").param("sendMail", "true"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(3));
+        assertThat(files.findLatestByTaskId(9901L)).hasSize(4);
+        var events = outbox.findByAggregate("REVIEW_TASK", 9901L);
+        assertThat(events).hasSize(1);
+        var mail = json.readValue(events.get(0).getPayload(), com.bms.notification.domain.MailMessage.class);
+        assertThat(mail.subject()).contains("工艺评审与结构评审");
+        assertThat(mail.recipients()).hasSize(2);
+        assertThat(mail.attachments()).extracting(com.bms.notification.domain.MailMessage.MailAttachment::fileName)
+                .containsExactlyInAnyOrder("process.zip", "process.pdf", "structure.zip");
+    }
+
+    @Test
+    void batchUploadKeepsItsOriginalBehaviorAndDoesNotSendMail() throws Exception {
+        mvc.perform(multipart("/files/upload/batch").file(file("files", "a.zip")).file(file("files", "b.pdf"))
+                        .header("userId", "BMS010").param("taskId", "9901").param("fileCategory", "PCB_PROCESS_REVIEW")
+                        .param("sendMail", "true"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(2));
         assertThat(outbox.findByAggregate("REVIEW_TASK", 9901L)).isEmpty();
     }
 

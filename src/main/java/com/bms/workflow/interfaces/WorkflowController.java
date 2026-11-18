@@ -62,7 +62,7 @@ public class WorkflowController {
             7. 相关意见闭环后，设计者重新上传终版文件并传 PENDING_FINISH，任务进入待结束；PCB 组长或任务指定的原理图组长与硬件部经理分别传 FINISH 确认；两人均确认后任务才结束。<br/>
             
             所有对应评审人都必须调用评审完成接口，单条意见全部通过不能代替评审完成。<br/>
-            关于文件：开启工艺/结构评审时不要求已有工艺或结构文件，也不发送评审邮件；后续通过 /files/upload/batch 上传并传 sendMail=true 才发送对应评审邮件。进入互检单分配时仍校验最新工艺和结构文件。开启工艺/结构评审及进入待结束时支持随流程上传，也可先通过文件接口上传终版。
+            关于文件：开启工艺/结构评审时不要求已有工艺或结构文件，也不发送评审邮件；后续通过 /files/upload/grouped 上传并传 sendMail=true 才发送对应评审邮件。进入互检单分配时仍校验最新工艺和结构文件。开启工艺/结构评审及进入待结束时支持随流程上传，也可先通过文件接口上传终版。
             """)
     ApiResponse<WorkflowApplicationService.WorkflowView> transition(@PathVariable long taskId,
             @Valid @ModelAttribute TransitionRequest request,

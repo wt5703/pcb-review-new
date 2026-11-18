@@ -175,6 +175,12 @@ public class FileApplicationService {
     /** 按类别整体上传；先校验全部文件，避免后面的空分组导致前面的文件已上传。 */
     @Transactional
     public List<FileGroupView> uploadGrouped(long taskId, java.util.Map<FileCategory, List<MultipartFile>> groups, String operatorEmployeeNo) {
+        return uploadGrouped(taskId, groups, operatorEmployeeNo, false);
+    }
+
+    /** 所有分组文件成功落库后，按需统一登记本次涉及的工艺/结构评审邮件。 */
+    @Transactional
+    public List<FileGroupView> uploadGrouped(long taskId, java.util.Map<FileCategory, List<MultipartFile>> groups, String operatorEmployeeNo, boolean sendMail) {
         if (groups == null || groups.isEmpty() || groups.entrySet().stream().anyMatch(entry -> entry.getKey() == null
                 || entry.getValue() == null || entry.getValue().isEmpty() || entry.getValue().stream().anyMatch(file -> file == null
                 || file.isEmpty() || file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()))) {
@@ -182,20 +188,26 @@ public class FileApplicationService {
         }
         taskMapper.lockById(taskId);
         groups.keySet().forEach(category -> requireTaskAccess(taskId, operatorEmployeeNo, category, true));
-        return groups.entrySet().stream().map(entry -> new FileGroupView(entry.getKey(),
+        ReviewTaskRecord task = requireTask(taskId);
+        List<FileCategory> reviewCategories = groups.keySet().stream()
+                .filter(category -> category == FileCategory.PCB_PROCESS_REVIEW || category == FileCategory.PCB_STRUCTURE_REVIEW).toList();
+        if (sendMail && reviewCategories.isEmpty()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "发送评审邮件须包含工艺或结构评审文件");
+        }
+        if (sendMail && (!"PCB".equals(task.getReviewType())
+                || !TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING.name().equals(task.getStatus()))) {
+            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "请先开启工艺或结构评审，再上传文件并发送邮件");
+        }
+        List<FileGroupView> uploaded = groups.entrySet().stream().map(entry -> new FileGroupView(entry.getKey(),
                 uploadBatch(taskId, entry.getKey(), entry.getValue(), operatorEmployeeNo))).toList();
+        if (sendMail) reviewMailNotificationApplicationService.enqueuePcbStageReview(task, reviewCategories);
+        return uploaded;
     }
 
     public record FileGroupView(FileCategory fileCategory, List<FileView> files) { }
 
     @Transactional
     public List<FileView> uploadBatch(long taskId, FileCategory category, List<MultipartFile> files, String operatorEmployeeNo) {
-        return uploadBatch(taskId, category, files, operatorEmployeeNo, false);
-    }
-
-    /** 整批文件落库成功后按需登记工艺/结构邮件，邮件附件读取本次上传后的最新文件。 */
-    @Transactional
-    public List<FileView> uploadBatch(long taskId, FileCategory category, List<MultipartFile> files, String operatorEmployeeNo, boolean sendMail) {
         if (category == null || files == null || files.isEmpty()
                 || files.stream().anyMatch(file -> file == null || file.isEmpty()
                 || file.getOriginalFilename() == null || file.getOriginalFilename().isBlank())) {
@@ -203,13 +215,6 @@ public class FileApplicationService {
         }
         taskMapper.lockById(taskId);
         ReviewTaskRecord task = requireTaskAccess(taskId, operatorEmployeeNo, category, true);
-        if (sendMail && (category != FileCategory.PCB_PROCESS_REVIEW && category != FileCategory.PCB_STRUCTURE_REVIEW)) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "发送评审邮件仅支持工艺或结构评审文件");
-        }
-        if (sendMail && (!"PCB".equals(task.getReviewType())
-                || !TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING.name().equals(task.getStatus()))) {
-            throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "请先开启工艺或结构评审，再上传文件并发送邮件");
-        }
         List<ReviewFileRecord> uploaded = files.stream()
                 .map(file -> uploadTaskFile(task, category, file, operatorEmployeeNo)).toList();
         fileMapper.markLatestAsHistorical(taskId, category.name());
@@ -219,7 +224,6 @@ public class FileApplicationService {
                 throw new BusinessException(ErrorCode.EXTERNAL_SERVICE_UNAVAILABLE, "保存任务文件失败");
             }
         }
-        if (sendMail) reviewMailNotificationApplicationService.enqueuePcbStageReview(task, List.of(category));
         return uploaded.stream().map(FileView::from).toList();
     }
 
