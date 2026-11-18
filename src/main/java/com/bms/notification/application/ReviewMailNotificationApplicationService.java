@@ -60,11 +60,11 @@ public class ReviewMailNotificationApplicationService {
         if (task.reviewType() == ReviewType.PCB) {
             List<TaskReviewerAssignment> receivers = filter(assignments,
                     assignment -> isPcbInitialReviewRole(assignment.reviewRole()));
-            enqueue(hasEmc(task.reviewRoles(), task.reviewerAssignments()), task.id(), ReviewMailType.PCB_TASK_CREATED, task.projectName() + " PCB布局布线评审", receivers,
+            enqueue(reviewRoles(task.reviewRoles(), task.reviewerAssignments()), task.id(), ReviewMailType.PCB_TASK_CREATED, task.projectName() + " PCB布局布线评审", receivers,
                     initialAttachments(task.initialFileIds(), FileCategory.PCB_REVIEW), Map.of("projectName", task.projectName()));
             return;
         }
-        enqueue(hasEmc(task.reviewRoles(), task.reviewerAssignments()), task.id(), ReviewMailType.SCHEMATIC_TASK_CREATED, task.projectName() + "原理图评审", assignments,
+        enqueue(reviewRoles(task.reviewRoles(), task.reviewerAssignments()), task.id(), ReviewMailType.SCHEMATIC_TASK_CREATED, task.projectName() + "原理图评审", assignments,
                 initialAttachments(task.initialFileIds(), FileCategory.SCHEMATIC_REVIEW), Map.of("projectName", task.projectName()));
     }
 
@@ -87,12 +87,12 @@ public class ReviewMailNotificationApplicationService {
         if (reviewType == ReviewType.PCB) {
             List<TaskReviewerAssignment> receivers = filter(assignments,
                     assignment -> isPcbInitialReviewRole(assignment.reviewRole()));
-            enqueue(hasEmc(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.PCB_TASK_CREATED, task.getProjectName() + " PCB布局布线评审", receivers,
+            enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.PCB_TASK_CREATED, task.getProjectName() + " PCB布局布线评审", receivers,
                     initialAttachments(parseInitialFileIds(task.getInitialFileIds()), FileCategory.PCB_REVIEW),
                     variables);
             return;
         }
-        enqueue(hasEmc(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.SCHEMATIC_TASK_CREATED, task.getProjectName() + "原理图评审", assignments,
+        enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.SCHEMATIC_TASK_CREATED, task.getProjectName() + "原理图评审", assignments,
                 initialAttachments(parseInitialFileIds(task.getInitialFileIds()), FileCategory.SCHEMATIC_REVIEW),
                 variables);
     }
@@ -110,7 +110,7 @@ public class ReviewMailNotificationApplicationService {
         List<TaskReviewerAssignment> receivers = filter(assignments(task), assignment -> (hasProcess && assignment.reviewRole() == ReviewRole.PROCESS_EXPERT)
                 || (hasStructure && assignment.reviewRole() == ReviewRole.STRUCTURE_EXPERT));
         String reviewName = hasProcess && hasStructure ? "工艺评审与结构评审" : hasProcess ? "工艺评审" : "结构评审";
-        enqueue(hasEmc(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.PCB_OPTIONAL_REVIEW, task.getProjectName() + reviewName, receivers,
+        enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.PCB_OPTIONAL_REVIEW, task.getProjectName() + reviewName, receivers,
                 latestAttachments(task.getId(), categories), Map.of("projectName", task.getProjectName(), "reviewName", reviewName));
     }
 
@@ -122,7 +122,7 @@ public class ReviewMailNotificationApplicationService {
         if (attachments.isEmpty()) {
             attachments = initialAttachments(parseInitialFileIds(task.getInitialFileIds()), FileCategory.SCHEMATIC_REVIEW);
         }
-        enqueue(hasEmc(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.SCHEMATIC_TASK_CREATED, task.getProjectName() + "原理图评审", receivers,
+        enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.SCHEMATIC_TASK_CREATED, task.getProjectName() + "原理图评审", receivers,
                 attachments,
                 Map.of("projectName", task.getProjectName()));
     }
@@ -134,15 +134,15 @@ public class ReviewMailNotificationApplicationService {
             List<TaskReviewerAssignment> hardwareReceivers = filter(assignments(task),
                     assignment -> assignment.reviewRole() == ReviewRole.PCB_EXPERT
                             || assignment.reviewRole() == ReviewRole.HARDWARE_EXPERT);
-            enqueue(hasEmc(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.PCB_TASK_FINISHED, task.getProjectName() + "PCB终版图", hardwareReceivers,
+            enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.PCB_TASK_FINISHED, task.getProjectName() + "PCB终版图", hardwareReceivers,
                     latestAttachments(task.getId(), List.of(FileCategory.PCB_REVIEW)), Map.of("projectName", task.getProjectName()));
             return;
         }
-        enqueue(hasEmc(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.SCHEMATIC_TASK_FINISHED, task.getProjectName() + "原理图终版", assignments(task),
+        enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.SCHEMATIC_TASK_FINISHED, task.getProjectName() + "原理图终版", assignments(task),
                 latestAttachments(task.getId(), List.of(FileCategory.SCHEMATIC_REVIEW)), Map.of("projectName", task.getProjectName()));
     }
 
-    private void enqueue(boolean hasEmc, long taskId, ReviewMailType type, String subject, List<TaskReviewerAssignment> assignments,
+    private void enqueue(java.util.Set<ReviewRole> taskRoles, long taskId, ReviewMailType type, String subject, List<TaskReviewerAssignment> assignments,
                          List<MailMessage.MailAttachment> attachments, Map<String, String> variables) {
         List<MailMessage.MailRecipient> recipients = recipients(assignments);
         if (recipients.isEmpty()) {
@@ -153,7 +153,7 @@ public class ReviewMailNotificationApplicationService {
         templateVariables.put("recipientNames", recipientNames(recipients));
         templateVariables.put("greeting", recipients.size() == 1 ? "您好" : "你们好");
         String content = mailTemplateService.render(type, templateVariables);
-        MailMessage message = new MailMessage(type.name(), subject, content, recipients, carbonCopies(type, hasEmc), attachments);
+        MailMessage message = new MailMessage(type.name(), subject, content, recipients, carbonCopies(type, taskRoles, recipients), attachments);
         try {
             outboxEventMapper.insert(new OutboxEventRecord(REVIEW_MAIL_EVENT, "REVIEW_TASK", taskId,
                     objectMapper.writeValueAsString(message), "PENDING"));
@@ -165,28 +165,38 @@ public class ReviewMailNotificationApplicationService {
 
     /**
      * 需要抄送的评审邮件查询白名单中 BMS 硬件开发部人员的邮箱。
-     * 包含 EMC 评审的任务，所有邮件均抄送硬件部及 EMC-LEADER；其他任务保持原有规则。
+     * 根据整个任务的角色追加 EMC、结构部门领导，并从抄送中排除实际收件人。
      */
-    private List<MailMessage.MailRecipient> carbonCopies(ReviewMailType type, boolean hasEmc) {
-        if (!hasEmc && type == ReviewMailType.PCB_OPTIONAL_REVIEW) return List.of();
+    private List<MailMessage.MailRecipient> carbonCopies(ReviewMailType type, java.util.Set<ReviewRole> taskRoles,
+                                                       List<MailMessage.MailRecipient> recipients) {
+        boolean hasEmc = taskRoles.contains(ReviewRole.EMC_EXPERT);
+        java.util.Set<String> leaderRoles = new java.util.LinkedHashSet<>();
+        if (hasEmc) leaderRoles.add("EMC-LEADER");
+        if (taskRoles.contains(ReviewRole.STRUCTURE_EXPERT)) leaderRoles.add("STRUCTURE-LEADER");
         Map<String, MailMessage.MailRecipient> copies = new LinkedHashMap<>();
-        whitelistMapper.findActiveByDepartmentName(HARDWARE_DEPARTMENT).stream()
+        if (hasEmc || type != ReviewMailType.PCB_OPTIONAL_REVIEW) {
+            whitelistMapper.findActiveByDepartmentName(HARDWARE_DEPARTMENT).stream()
                 .filter(person -> person.getEmail() != null && !person.getEmail().isBlank())
                 .forEach(person -> copies.putIfAbsent(emailKey(person.getEmail()),
                         new MailMessage.MailRecipient(person.getDisplayName(), person.getEmail().trim())));
-        if (!hasEmc) return List.copyOf(copies.values());
-        whitelistMapper.findActiveWithSystemRoles().stream()
+        }
+        if (!leaderRoles.isEmpty()) {
+            whitelistMapper.findActiveWithSystemRoles().stream()
                 .filter(person -> person.getRoles() != null && java.util.Arrays.stream(person.getRoles().split(","))
-                        .map(String::trim).anyMatch("EMC-LEADER"::equals))
+                        .map(String::trim).anyMatch(leaderRoles::contains))
                 .filter(person -> person.getEmail() != null && !person.getEmail().isBlank())
                 .forEach(person -> copies.putIfAbsent(emailKey(person.getEmail()),
                         new MailMessage.MailRecipient(person.getDisplayName(), person.getEmail().trim())));
+        }
+        recipients.forEach(recipient -> copies.remove(emailKey(recipient.email())));
         return List.copyOf(copies.values());
     }
 
-    private boolean hasEmc(List<ReviewRole> roles, List<TaskReviewerAssignment> assignments) {
-        return roles != null && roles.contains(ReviewRole.EMC_EXPERT)
-                || assignments != null && assignments.stream().anyMatch(item -> item.reviewRole() == ReviewRole.EMC_EXPERT);
+    private java.util.Set<ReviewRole> reviewRoles(List<ReviewRole> roles, List<TaskReviewerAssignment> assignments) {
+        java.util.Set<ReviewRole> result = new java.util.LinkedHashSet<>();
+        if (roles != null) result.addAll(roles);
+        if (assignments != null) assignments.forEach(item -> result.add(item.reviewRole()));
+        return result;
     }
 
     private List<TaskReviewerAssignment> assignments(ReviewTaskRecord task) {
@@ -237,7 +247,7 @@ public class ReviewMailNotificationApplicationService {
         assignments.stream().flatMap(item -> item.reviewerEmployeeNos().stream()).distinct().forEach(employeeNo -> {
             ReviewerWhitelistRecord person = whitelistMapper.findActiveByEmployeeNo(employeeNo);
             if (person != null && person.getEmail() != null && !person.getEmail().isBlank()) {
-                recipients.putIfAbsent(emailKey(person.getEmail()), new MailMessage.MailRecipient(person.getDisplayName(), person.getEmail()));
+                recipients.putIfAbsent(emailKey(person.getEmail()), new MailMessage.MailRecipient(person.getDisplayName(), person.getEmail().trim()));
             }
         });
         return List.copyOf(recipients.values());

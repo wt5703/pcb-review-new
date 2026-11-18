@@ -233,6 +233,57 @@ class ReviewMailNotificationApplicationServiceTest {
         assertThat(payload().carbonCopies()).isEmpty();
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"domain", "created", "resubmitted", "optional", "pcbFinished", "schematicCreated", "schematicStarted", "schematicFinished"})
+    void shouldCopyStructureLeaderForEveryTaskMailUsingFullTaskRoles(String entry) throws Exception {
+        var leader = user(201L, "L1", "结构领导", "structure@example.com");
+        leader.setRoles("OTHER, STRUCTURE-LEADER ");
+        var duplicate = user(202L, "L2", "重复", " STRUCTURE@example.com ");
+        duplicate.setRoles("STRUCTURE-LEADER");
+        var unrelated = user(203L, "L3", "其他", "other@example.com");
+        unrelated.setRoles("STRUCTURE-LEADER-OTHER");
+        when(whitelistMapper.findActiveWithSystemRoles()).thenReturn(List.of(leader, duplicate, unrelated));
+        when(whitelistMapper.findActiveByEmployeeNo("P1")).thenReturn(user(204L, "P1", "专家", "expert@example.com"));
+        var task = task(1L, entry.startsWith("schematic") ? "SCHEMATIC" : "PCB", "BMS",
+                "PCB_EXPERT:P1;PROCESS_EXPERT:P1;HARDWARE_EXPERT:P1");
+        // 结构角色只存在于任务配置，当前邮件收件人分配中没有结构专家。
+        task.setReviewRoles("PCB_EXPERT,STRUCTURE_EXPERT");
+        switch (entry) {
+            case "domain" -> service.enqueueTaskCreated(ReviewTask.draft(1L, ReviewType.PCB, "任务", "BMS", "D1", "设计者", "P1", "BMU", LocalDate.now(),
+                    "P1", "专家", List.of(ReviewRole.PCB_EXPERT, ReviewRole.STRUCTURE_EXPERT),
+                    List.of(new TaskReviewerAssignment(ReviewRole.PCB_EXPERT, List.of("P1"))), null));
+            case "created", "schematicCreated" -> service.enqueueTaskCreated(task);
+            case "resubmitted" -> service.enqueueTaskResubmitted(task);
+            case "optional" -> service.enqueuePcbStageReview(task, List.of(com.bms.file.domain.FileCategory.PCB_PROCESS_REVIEW));
+            case "schematicStarted" -> service.enqueueSchematicReviewStarted(task);
+            default -> service.enqueueTaskFinished(task);
+        }
+        assertThat(payload().carbonCopies()).extracting(MailMessage.MailRecipient::email).containsExactlyElementsOf(
+                entry.equals("optional") ? List.of("structure@example.com") : List.of("hardware@example.com", "structure@example.com"));
+    }
+
+    @Test
+    void shouldRemoveAllActualRecipientsFromDepartmentAndLeaderCopiesIgnoringEmailCaseAndSpaces() throws Exception {
+        var hardware = user(1L, "A", "硬件成员", "HARDWARE@example.com");
+        var emc = user(2L, "B", "EMC领导", " emc@example.com ");
+        emc.setRoles("EMC-LEADER");
+        var structure = user(3L, "C", "结构领导", " STRUCTURE@example.com ");
+        structure.setRoles("STRUCTURE-LEADER");
+        var remaining = user(4L, "D", "其他领导", "remaining@example.com");
+        remaining.setRoles("EMC-LEADER,STRUCTURE-LEADER");
+        when(whitelistMapper.findActiveByEmployeeNo("A")).thenReturn(hardware);
+        when(whitelistMapper.findActiveByEmployeeNo("B")).thenReturn(emc);
+        when(whitelistMapper.findActiveByEmployeeNo("C")).thenReturn(structure);
+        when(whitelistMapper.findActiveWithSystemRoles()).thenReturn(List.of(emc, structure, remaining));
+        var task = task(1L, "PCB", "BMS", "PCB_EXPERT:A;EMC_EXPERT:B,C;STRUCTURE_EXPERT:D");
+        service.enqueueTaskCreated(task);
+
+        var message = payload();
+        assertThat(message.recipients()).extracting(MailMessage.MailRecipient::email)
+                .containsExactly("HARDWARE@example.com", "emc@example.com", "STRUCTURE@example.com");
+        assertThat(message.carbonCopies()).extracting(MailMessage.MailRecipient::email).containsExactly("remaining@example.com");
+    }
+
     private MailMessage payload() throws Exception {
         ArgumentCaptor<OutboxEventRecord> captor = ArgumentCaptor.forClass(OutboxEventRecord.class);
         verify(outboxEventMapper).insert(captor.capture());

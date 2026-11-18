@@ -15,6 +15,7 @@ import com.bms.review.domain.OpinionSourceType;
 import com.bms.review.domain.ReviewRole;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.infrastructure.ReviewOpinionRecord;
+import com.bms.review.infrastructure.ReviewSubmissionRecord;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskReviewerAssignment;
 import com.bms.task.domain.TaskStatus;
@@ -67,13 +68,14 @@ class WorkflowApplicationServiceTest {
     }
 
     @Test
-    void shouldStartPcbProcessReviewForAuthorizedDesignerAfterExpertOpinionsPassed() {
-        when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PCB_EXPERT_REVIEWING));
+    void shouldStartCombinedPcbReviewWithoutProcessOrStructureFilesAfterExpertCompletion() {
+        var task = task(TaskStatus.PCB_EXPERT_REVIEWING);
+        task.setReviewRoles("PCB_EXPERT");
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(opinionMapper.findSubmissionsByTaskId(1001L)).thenReturn(List.of(new ReviewSubmissionRecord(OpinionSourceType.PCB_REVIEW, "BMS010")));
         ReviewOpinionRecord submitted = new ReviewOpinionRecord();
         submitted.setSourceType(OpinionSourceType.PCB_REVIEW); submitted.setRaisedByEmployeeNo("BMS010"); submitted.setStatus("CONFIRMED_PASS");
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(submitted));
-        when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_PROCESS_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
-        when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_STRUCTURE_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
         when(taskMapper.update(any())).thenReturn(1);
         when(flowMapper.nextId()).thenReturn(1L);
 
@@ -83,6 +85,7 @@ class WorkflowApplicationServiceTest {
                 "BMS010");
 
         assertThat(view.toStatus()).isEqualTo(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
+        org.mockito.Mockito.verifyNoInteractions(fileMapper);
         verify(outboxEventMapper).insert(any());
         ArgumentCaptor<TaskFlowRecord> history = ArgumentCaptor.forClass(TaskFlowRecord.class);
         verify(flowMapper).insert(history.capture());
@@ -94,22 +97,27 @@ class WorkflowApplicationServiceTest {
                 FileCategory.PCB_STRUCTURE_REVIEW, FileCategory.PCB_PROCESS_REVIEW)));
     }
 
-    @Test
-    void shouldStartPcbStructureReviewIndependently() {
-        when(taskMapper.findById(1001L)).thenReturn(task(TaskStatus.PCB_EXPERT_REVIEWING));
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = WorkflowAction.class, names = {"START_PCB_STRUCTURE_REVIEW", "START_PCB_PROCESS_REVIEW"})
+    void shouldStartEachOptionalReviewWithoutFiles(WorkflowAction action) {
+        var task = task(TaskStatus.PCB_EXPERT_REVIEWING);
+        task.setReviewRoles("PCB_EXPERT");
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(opinionMapper.findSubmissionsByTaskId(1001L)).thenReturn(List.of(new ReviewSubmissionRecord(OpinionSourceType.PCB_REVIEW, "BMS010")));
         ReviewOpinionRecord submitted = new ReviewOpinionRecord();
         submitted.setSourceType(OpinionSourceType.PCB_REVIEW); submitted.setRaisedByEmployeeNo("BMS010"); submitted.setStatus("CONFIRMED_PASS");
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(submitted));
-        when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_STRUCTURE_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
         when(taskMapper.update(any())).thenReturn(1);
         when(flowMapper.nextId()).thenReturn(2L);
 
         WorkflowApplicationService.WorkflowView view = service.transition(1001L,
-                new WorkflowApplicationService.TransitionBatchCommand(List.of(WorkflowAction.START_PCB_STRUCTURE_REVIEW), null, List.of()),
+                new WorkflowApplicationService.TransitionBatchCommand(List.of(action), null, List.of()),
                 "BMS010");
 
         assertThat(view.toStatus()).isEqualTo(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING);
-        verify(reviewMailNotificationApplicationService).enqueuePcbStageReview(any(), eq(List.of(FileCategory.PCB_STRUCTURE_REVIEW)));
+        org.mockito.Mockito.verifyNoInteractions(fileMapper);
+        verify(reviewMailNotificationApplicationService).enqueuePcbStageReview(any(), eq(List.of(
+                action == WorkflowAction.START_PCB_STRUCTURE_REVIEW ? FileCategory.PCB_STRUCTURE_REVIEW : FileCategory.PCB_PROCESS_REVIEW)));
     }
 
     @Test
@@ -127,6 +135,8 @@ class WorkflowApplicationServiceTest {
         submittedByB.setRaisedByEmployeeNo("B");
         submittedByB.setStatus("CONFIRMED_PASS");
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(submitted, submittedByB));
+        when(opinionMapper.findSubmissionsByTaskId(1001L)).thenReturn(List.of(
+                new ReviewSubmissionRecord(OpinionSourceType.PCB_REVIEW, "A"), new ReviewSubmissionRecord(OpinionSourceType.PCB_REVIEW, "B")));
         when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_STRUCTURE_REVIEW"))
                 .thenReturn(List.of(new ReviewFileRecord()));
         when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_PROCESS_REVIEW"))
@@ -436,6 +446,7 @@ class WorkflowApplicationServiceTest {
         pendingPcbOpinion.setStatus("PENDING_CONFIRMATION");
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(noOpinion, pendingPcbOpinion));
+        when(opinionMapper.findSubmissionsByTaskId(1001L)).thenReturn(List.of(new ReviewSubmissionRecord(OpinionSourceType.PCB_PROCESS_REVIEW, "BMS020")));
         when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_PROCESS_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
         when(fileMapper.findLatestByTaskIdAndCategory(1001L, "PCB_STRUCTURE_REVIEW")).thenReturn(List.of(new ReviewFileRecord()));
         when(taskMapper.update(any())).thenReturn(1);
@@ -460,6 +471,7 @@ class WorkflowApplicationServiceTest {
         pendingMutualOpinion.setStatus("PENDING_CONFIRMATION");
         when(taskMapper.findById(1001L)).thenReturn(task);
         when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(schematicOpinion, pendingMutualOpinion));
+        when(opinionMapper.findSubmissionsByTaskId(1001L)).thenReturn(List.of(new ReviewSubmissionRecord(OpinionSourceType.SCHEMATIC_REVIEW, "BMS020")));
         ReviewFileRecord file = new ReviewFileRecord();
         file.setUploadedStage(TaskStatus.SCHEMATIC_REVIEWING.name());
         file.setUploadedByEmployeeNo("BMS010");

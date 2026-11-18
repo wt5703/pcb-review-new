@@ -201,6 +201,7 @@ public class TaskApplicationService {
         taskMapper.deleteTaskOpinionReplies(taskId);
         taskMapper.deleteTaskOpinionConfirmations(taskId);
         taskMapper.deleteTaskOpinions(taskId);
+        taskMapper.deleteTaskReviewSubmissions(taskId);
         taskMapper.deleteTaskCheckItems(taskId);
         taskMapper.deleteTaskFileRecords(taskId);
         taskMapper.deleteTaskFlowRecords(taskId);

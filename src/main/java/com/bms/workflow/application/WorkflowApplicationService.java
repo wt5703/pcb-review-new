@@ -435,12 +435,42 @@ public class WorkflowApplicationService {
 
     /** 在同一事务内更新任务状态和当前处理人，并写入流转日志及状态变更事件。 */
     private void persistTransition(TransitionContext context) {
+        resetReviewSubmissions(context);
         replaceSchematicManagerAssignments(context);
         refreshActiveReviewers(context);
         persistStatus(context.task(), context.plan().targetStatus());
         persistActiveReviewers(context.task());
         appendHistory(context);
         publishStatusChangedEvent(context.task().getId(), context.action(), context.plan().targetStatus());
+    }
+
+    /** 重新开启阶段只清除对应的完成标记，保留意见及答复历史；退回时从目标阶段重新评审。 */
+    private void resetReviewSubmissions(TransitionContext context) {
+        if (context.action() == WorkflowAction.WITHDRAW || context.action() == WorkflowAction.RETURN
+                && (context.plan().targetStatus() == TaskStatus.PENDING_INITIATION
+                || context.plan().targetStatus() == TaskStatus.PCB_EXPERT_REVIEWING)) {
+            opinionMapper.deleteSubmissions(context.task().getId());
+            return;
+        }
+        List<OpinionSourceType> sources = context.action() == WorkflowAction.RETURN
+                ? switch (context.plan().targetStatus()) {
+                    case PCB_PROCESS_STRUCTURE_REVIEWING -> List.of(OpinionSourceType.PCB_PROCESS_REVIEW,
+                            OpinionSourceType.PCB_STRUCTURE_REVIEW, OpinionSourceType.MUTUAL_CHECK_ITEM);
+                    case MUTUAL_CHECK_PENDING_ASSIGNMENT, MUTUAL_CHECK_REVIEWING -> List.of(
+                            OpinionSourceType.MUTUAL_CHECK_ITEM, OpinionSourceType.SCHEMATIC_REVIEW);
+                    case SCHEMATIC_EXPERT_PENDING_ASSIGNMENT, SCHEMATIC_REVIEWING -> List.of(OpinionSourceType.SCHEMATIC_REVIEW);
+                    default -> List.of();
+                }
+                : switch (context.action()) {
+                    case START_PCB_PROCESS_REVIEW -> List.of(OpinionSourceType.PCB_PROCESS_REVIEW);
+                    case START_PCB_STRUCTURE_REVIEW -> List.of(OpinionSourceType.PCB_STRUCTURE_REVIEW);
+                    case START_PCB_PROCESS_STRUCTURE_REVIEW -> List.of(OpinionSourceType.PCB_PROCESS_REVIEW, OpinionSourceType.PCB_STRUCTURE_REVIEW);
+                    case START_PCB_MATUAL_REVIEW, START_SCHEMATIC_MATUAL_REVIEW -> List.of(
+                            OpinionSourceType.MUTUAL_CHECK_ITEM, OpinionSourceType.SCHEMATIC_REVIEW);
+                    case START_SCHEMATIC_EXPERT_REVIEW -> List.of(OpinionSourceType.SCHEMATIC_REVIEW);
+                    default -> List.of();
+                };
+        if (!sources.isEmpty()) opinionMapper.deleteSubmissionsBySources(context.task().getId(), sources);
     }
 
     /**
@@ -875,8 +905,6 @@ public class WorkflowApplicationService {
             return;
         }
         FileCategory category = switch (action) {
-            case START_PCB_PROCESS_REVIEW -> FileCategory.PCB_PROCESS_REVIEW;
-            case START_PCB_STRUCTURE_REVIEW -> FileCategory.PCB_STRUCTURE_REVIEW;
             case START_SCHEMATIC_EXPERT_ASSIGNMENT, START_SCHEMATIC_EXPERT_REVIEW -> FileCategory.SCHEMATIC_REVIEW;
             default -> null;
         };
@@ -937,21 +965,17 @@ public class WorkflowApplicationService {
     }
 
     /**
-     * 检查每个提交要求是否有对应工号和意见来源的正式记录。
-     * 无意见确认也可作为记录，草稿不计入。
+     * 检查每位评审人是否通过“评审完成”接口明确完成对应来源；意见全部通过不能代替完成操作。
      * 失败时提示未提交人员的姓名。
      */
     private void requireReviewersSubmitted(long taskId, List<ReviewerSubmissionRequirement> requirements, String message) {
         if (requirements.isEmpty()) {
             return;
         }
-        List<com.bms.review.infrastructure.ReviewOpinionRecord> opinions = opinionMapper.findByTaskId(taskId);
-        Set<String> pendingRound = com.bms.review.domain.ReviewRound.pendingPcbReviewers(requireTask(taskId), flowMapper.findByTaskId(taskId));
+        var submissions = opinionMapper.findSubmissionsByTaskId(taskId);
         List<String> unsubmittedEmployeeNos = requirements.stream()
-                .filter(requirement -> pendingRound.contains(requirement.employeeNo()) || (opinions == null ? List.<com.bms.review.infrastructure.ReviewOpinionRecord>of() : opinions).stream()
-                        .noneMatch(opinion -> !opinion.isDraft()
-                                && requirement.employeeNo().equals(opinion.getRaisedByEmployeeNo())
-                                && requirement.sources().contains(opinion.getSourceType())))
+                .filter(requirement -> requirement.sources().stream().noneMatch(source -> submissions.stream()
+                        .anyMatch(submission -> submission.matches(source, requirement.employeeNo()))))
                 .map(ReviewerSubmissionRequirement::employeeNo)
                 .distinct()
                 .toList();
@@ -999,12 +1023,15 @@ public class WorkflowApplicationService {
 
     /**
      * 按互检分配快照生成提交要求。
-     * 固定检查项或额外意见任一来源的正式记录均可满足记录校验。
+     * 固定检查项和额外意见统一由互检评审完成操作确认。
      */
     private List<ReviewerSubmissionRequirement> mutualCheckSubmissionRequirements(ReviewTaskRecord task) {
+        // 原理图旧接口在互检阶段使用 SCHEMATIC_REVIEW；保留升级前已完成的记录。
+        List<OpinionSourceType> sources = ReviewType.SCHEMATIC.name().equals(task.getReviewType())
+                ? List.of(OpinionSourceType.MUTUAL_CHECK_ITEM, OpinionSourceType.SCHEMATIC_REVIEW)
+                : List.of(OpinionSourceType.MUTUAL_CHECK_ITEM);
         return TaskReviewerAssignmentCodec.decodeReviewerEmployeeNos(task.getMutualCheckReviewerEmployeeNos()).stream()
-                .map(employeeNo -> new ReviewerSubmissionRequirement(employeeNo,
-                        List.of(OpinionSourceType.MUTUAL_CHECK_ITEM, OpinionSourceType.MUTUAL_EXTRA)))
+                .map(employeeNo -> new ReviewerSubmissionRequirement(employeeNo, sources))
                 .toList();
     }
 

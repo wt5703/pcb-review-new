@@ -48,6 +48,14 @@ CREATE TABLE review_opinion (
     INDEX idx_review_opinion_task_draft (task_id, is_draft)
 ) COMMENT='评审意见表';
 
+CREATE TABLE review_submission (
+    task_id BIGINT NOT NULL COMMENT '评审任务 ID',
+    source_type VARCHAR(64) NOT NULL COMMENT '评审来源；互检统一使用 MUTUAL_CHECK_ITEM',
+    reviewer_employee_no VARCHAR(64) NOT NULL COMMENT '点击评审完成的人员工号',
+    submitted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '点击评审完成的时间',
+    PRIMARY KEY (task_id, source_type, reviewer_employee_no)
+) COMMENT='当前轮次评审完成记录；重新开启对应阶段时清除，意见历史保留';
+
 CREATE TABLE review_file (
     id BIGINT PRIMARY KEY,
     file_id VARCHAR(64) NOT NULL UNIQUE,

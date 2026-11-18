@@ -17,6 +17,24 @@ import java.util.List;
  */
 @Mapper
 public interface ReviewOpinionMapper {
+    @Select("SELECT source_type AS sourceType, reviewer_employee_no AS reviewerEmployeeNo FROM review_submission WHERE task_id=#{taskId}")
+    List<ReviewSubmissionRecord> findSubmissionsByTaskId(long taskId);
+
+    @Insert("INSERT INTO review_submission (task_id, source_type, reviewer_employee_no) VALUES (#{taskId}, #{sourceType}, #{employeeNo})")
+    int insertSubmission(@Param("taskId") long taskId, @Param("sourceType") OpinionSourceType sourceType,
+                         @Param("employeeNo") String employeeNo);
+
+    @Delete("DELETE FROM review_submission WHERE task_id=#{taskId}")
+    int deleteSubmissions(long taskId);
+
+    @Delete("<script>DELETE FROM review_submission WHERE task_id=#{taskId} AND source_type IN "
+            + "<foreach collection='sources' item='source' open='(' separator=',' close=')'>#{source}</foreach></script>")
+    int deleteSubmissionsBySources(@Param("taskId") long taskId, @Param("sources") List<OpinionSourceType> sources);
+
+    @Delete("DELETE FROM review_submission WHERE task_id=#{taskId} AND source_type=#{sourceType} AND reviewer_employee_no=#{employeeNo}")
+    int deleteReviewerSubmission(@Param("taskId") long taskId, @Param("sourceType") OpinionSourceType sourceType,
+                                 @Param("employeeNo") String employeeNo);
+
     @Select("SELECT COALESCE(MAX(id), 0) + 1 FROM review_opinion")
     long nextOpinionId();
 

@@ -203,6 +203,7 @@ class TaskControllerIntegrationTest {
                 + "VALUES (10001, ?, 'PCB_REVIEW', 'GENERAL', 'BMS003', '专家', 'PENDING_REPLY')", taskId);
         jdbcTemplate.update("INSERT INTO task_flow_record (id, task_id, action_code, action_name, operate_employee_no) "
                 + "VALUES (10001, ?, 'CREATE', '创建任务', 'BMS010')", taskId);
+        jdbcTemplate.update("INSERT INTO review_submission (task_id, source_type, reviewer_employee_no) VALUES (?, 'PCB_REVIEW', 'BMS003')", taskId);
         mockMvc.perform(get("/tasks").param("taskId", String.valueOf(taskId))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].designerAction").value("TERMINATE"));
         jdbcTemplate.update("UPDATE review_task SET task_status=? WHERE id=?", "FINISHED", taskId);
@@ -213,7 +214,7 @@ class TaskControllerIntegrationTest {
                         .header("userId", "BMS003")).andExpect(status().isForbidden());
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/tasks/{taskId}", taskId)
                         .header("userId", "BMS010")).andExpect(status().isOk());
-        for (String table : java.util.List.of("review_file", "review_opinion", "task_flow_record")) {
+        for (String table : java.util.List.of("review_file", "review_opinion", "task_flow_record", "review_submission")) {
             org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM " + table + " WHERE task_id=?", Integer.class, taskId)).isZero();
         }

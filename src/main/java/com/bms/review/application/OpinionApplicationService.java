@@ -13,6 +13,7 @@ import com.bms.review.infrastructure.OpinionConfirmationRecord;
 import com.bms.review.infrastructure.OpinionReplyRecord;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.infrastructure.ReviewOpinionRecord;
+import com.bms.review.infrastructure.ReviewSubmissionRecord;
 import com.bms.review.infrastructure.TaskCheckItemMapper;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
@@ -86,13 +87,14 @@ public class OpinionApplicationService {
         record.setRaisedByEmployeeNo(operatorEmployeeNo);
         record.setRaisedByName(operatorName);
         record.setStatus(OpinionStatus.PENDING_REPLY.name());
+        opinionMapper.deleteReviewerSubmission(command.taskId(), submissionSource(task, command.sourceType()), operatorEmployeeNo);
         opinionMapper.insert(record);
         return toView(record);
     }
 
     /**
      * 评审人确认当前阶段的评审结果已经提交完毕。没有提出意见时保存一条无意见记录；
-     * 已提出意见时，必须等本人该阶段的全部意见均确认通过后才允许提交。
+     * 已提出意见时，必须等本人该阶段的全部意见均确认通过或撤回，且没有草稿后才允许提交。
      */
     @Transactional
     public OpinionView submitNoOpinion(long taskId, OpinionSourceType sourceType, String operatorEmployeeNo, String operatorName) {
@@ -102,11 +104,10 @@ public class OpinionApplicationService {
         if (!isReviewSubmissionAvailable(task, sourceType)) {
             throw new BusinessException(ErrorCode.TASK_STATUS_CONFLICT, "当前评审节点不支持确认提交");
         }
-        List<ReviewOpinionRecord> reviewerOpinions = opinionsRaisedByReviewer(taskId, sourceType, operatorEmployeeNo);
+        List<ReviewOpinionRecord> reviewerOpinions = opinionsRaisedByReviewer(task, sourceType, operatorEmployeeNo);
         ReviewOpinionRecord previousNoOpinion = reviewerOpinions.stream()
                 .filter(ReviewOpinionRecord::isNoOpinion).findFirst().orElse(null);
-        if (previousNoOpinion != null && !hasStarted(taskId, WorkflowAction.RETURN)
-                && !hasStarted(taskId, WorkflowAction.WITHDRAW)) {
+        if (opinionMapper.findSubmissionsByTaskId(taskId).stream().anyMatch(item -> item.matches(submissionSource(task, sourceType), operatorEmployeeNo))) {
             throw new BusinessException(ErrorCode.OPINION_STATUS_CONFLICT, "当前评审阶段已确认提交");
         }
 
@@ -114,19 +115,19 @@ public class OpinionApplicationService {
                 .filter(item -> !item.isNoOpinion())
                 .toList();
         if (!actualOpinions.isEmpty()) {
-            boolean allConfirmedPass = actualOpinions.stream()
-                    .allMatch(item -> OpinionStatus.CONFIRMED_PASS.name().equals(item.getStatus()));
-            if (!allConfirmedPass) {
+            boolean allClosed = actualOpinions.stream()
+                    .allMatch(item -> !item.isDraft() && isClosedPassedOpinion(item));
+            if (!allClosed) {
                 throw new BusinessException(ErrorCode.OPINION_STATUS_CONFLICT,
                         "仍存在未答复、未确认或未确认通过的评审意见，不能确认提交");
             }
             // 评审意见全部确认通过后，明确由本次确认提交操作结束该专家在当前阶段的待办。
-            releaseReviewerWhenCurrentStagesCompleted(taskId, operatorEmployeeNo, sourceType);
+            recordSubmissionAndReleaseReviewer(taskId, operatorEmployeeNo, sourceType);
             return toView(actualOpinions.get(actualOpinions.size() - 1));
         }
 
         if (previousNoOpinion != null) {
-            releaseReviewerWhenCurrentStagesCompleted(taskId, operatorEmployeeNo, sourceType);
+            recordSubmissionAndReleaseReviewer(taskId, operatorEmployeeNo, sourceType);
             return toView(previousNoOpinion);
         }
 
@@ -143,7 +144,7 @@ public class OpinionApplicationService {
         record.setRaisedByName(operatorName);
         record.setStatus(OpinionStatus.CONFIRMED_PASS.name());
         opinionMapper.insert(record);
-        releaseReviewerWhenCurrentStagesCompleted(taskId, operatorEmployeeNo, sourceType);
+        recordSubmissionAndReleaseReviewer(taskId, operatorEmployeeNo, sourceType);
         return toView(record);
     }
 
@@ -343,20 +344,22 @@ public class OpinionApplicationService {
         };
     }
 
-    private List<ReviewOpinionRecord> opinionsRaisedByReviewer(long taskId, OpinionSourceType sourceType,
+    private List<ReviewOpinionRecord> opinionsRaisedByReviewer(ReviewTaskRecord task, OpinionSourceType sourceType,
                                                                  String reviewerEmployeeNo) {
-        List<ReviewOpinionRecord> opinions = opinionMapper.findByTaskId(taskId);
+        List<ReviewOpinionRecord> opinions = opinionMapper.findByTaskId(task.getId());
         return (opinions == null ? List.<ReviewOpinionRecord>of() : opinions).stream()
                 .filter(item -> reviewerEmployeeNo.equals(item.getRaisedByEmployeeNo())
-                        && matchesSubmissionSource(sourceType, item.getSourceType()))
+                        && submissionSource(task, sourceType) == submissionSource(task, item.getSourceType()))
                 .toList();
     }
 
-    /** 互检单以 MUTUAL_CHECK_ITEM 提交时，固定检查项与额外意见属于同一阶段，必须同时闭环。 */
-    private boolean matchesSubmissionSource(OpinionSourceType submittedSource, OpinionSourceType opinionSource) {
-        return submittedSource == OpinionSourceType.MUTUAL_CHECK_ITEM
-                ? opinionSource == OpinionSourceType.MUTUAL_CHECK_ITEM || opinionSource == OpinionSourceType.MUTUAL_EXTRA
-                : submittedSource == opinionSource;
+    /** 互检来源合并为一次完成；兼容原理图互检阶段使用 SCHEMATIC_REVIEW 的旧请求。 */
+    private OpinionSourceType submissionSource(ReviewTaskRecord task, OpinionSourceType source) {
+        if (TaskStatus.MUTUAL_CHECK_REVIEWING.name().equals(task.getStatus())
+                && ReviewType.SCHEMATIC.name().equals(task.getReviewType()) && source == OpinionSourceType.SCHEMATIC_REVIEW) {
+            return OpinionSourceType.MUTUAL_CHECK_ITEM;
+        }
+        return ReviewSubmissionRecord.submissionSource(source);
     }
 
     private boolean reviewerRoleMatchesCurrentSummary(ReviewTaskRecord task, List<OpinionSourceType> sourceTypes, String reviewRole) {
@@ -384,8 +387,7 @@ public class OpinionApplicationService {
 
     /** 未提交人员由任务创建时保存的“角色—专家”映射推导；旧任务兼容历史组长作为唯一专家。 */
     private List<OutstandingReviewerView> unsubmittedReviewers(ReviewTaskRecord task, List<OpinionSourceType> sourceTypes) {
-        List<ReviewOpinionRecord> opinions = opinionMapper.findByTaskId(task.getId());
-        java.util.Set<String> pendingRound = com.bms.review.domain.ReviewRound.pendingPcbReviewers(task, flowMapper.findByTaskId(task.getId()));
+        List<ReviewSubmissionRecord> submissions = opinionMapper.findSubmissionsByTaskId(task.getId());
         List<AssignedReviewer> assignments = new java.util.ArrayList<>();
         for (TaskReviewerAssignment assignment : TaskReviewerAssignmentCodec.decode(task.getReviewerAssignments())) {
             assignment.reviewerEmployeeNos().forEach(employeeNo -> assignments.add(new AssignedReviewer(assignment.reviewRole().name(), employeeNo)));
@@ -399,8 +401,9 @@ public class OpinionApplicationService {
         return assignments.stream()
                 .filter(assigned -> reviewerRoleMatchesCurrentSummary(task, sourceTypes, assigned.role()))
                 .distinct()
-                .filter(assigned -> pendingRound.contains(assigned.reviewerEmployeeNo()) || opinions.stream().filter(opinion -> !opinion.isDraft()).noneMatch(opinion -> assigned.reviewerEmployeeNo().equals(opinion.getRaisedByEmployeeNo())
-                        && matchesSourceForRole(opinion.getSourceType(), assigned.role())))
+                .filter(assigned -> submissions.stream().noneMatch(submission -> assigned.reviewerEmployeeNo().equals(submission.reviewerEmployeeNo())
+                        && matchesSourceForRole(submission.sourceType(), assigned.role())
+                        && (sourceTypes == null || sourceTypes.isEmpty() || sourceTypes.contains(submission.sourceType()))))
                 .map(assigned -> new OutstandingReviewerView(assigned.reviewerEmployeeNo(),
                         profileName(assigned.reviewerEmployeeNo(), profiles), assigned.role(), "PENDING"))
                 .toList();
@@ -474,11 +477,11 @@ public class OpinionApplicationService {
     }
 
     /**
-     * 意见闭环后释放该专家的实时待办。一个人同时承担工艺、结构等多个已开启角色时，
-     * 必须对每个角色对应的来源均提交且其意见全部通过，才会从 assigned_reviewer_employee_nos 移除。
+     * 只有点击评审完成才记录提交；一个人兼任多个已开启角色时，每个来源都必须明确完成。
      */
-    private void releaseReviewerWhenCurrentStagesCompleted(long taskId, String reviewerEmployeeNo, OpinionSourceType completedSource) {
+    private void recordSubmissionAndReleaseReviewer(long taskId, String reviewerEmployeeNo, OpinionSourceType completedSource) {
         ReviewTaskRecord task = requireTask(taskId);
+        opinionMapper.insertSubmission(taskId, submissionSource(task, completedSource), reviewerEmployeeNo);
         java.util.LinkedHashSet<String> activeReviewerEmployeeNos = new java.util.LinkedHashSet<>(
                 TaskReviewerAssignmentCodec.decodeReviewerEmployeeNos(task.getAssignedReviewerEmployeeNos()));
         if (!activeReviewerEmployeeNos.contains(reviewerEmployeeNo)) {
@@ -488,14 +491,9 @@ public class OpinionApplicationService {
         if (requiredSources.isEmpty()) {
             return;
         }
-        List<ReviewOpinionRecord> opinions = opinionMapper.findByTaskId(taskId);
-        List<ReviewOpinionRecord> safeOpinions = opinions == null ? List.of() : opinions;
-        boolean completed = requiredSources.stream().allMatch(source -> {
-            List<ReviewOpinionRecord> sourceOpinions = safeOpinions.stream()
-                    .filter(item -> !item.isDraft() && reviewerEmployeeNo.equals(item.getRaisedByEmployeeNo()) && source == item.getSourceType())
-                    .toList();
-            return !sourceOpinions.isEmpty() && sourceOpinions.stream().allMatch(this::isClosedPassedOpinion);
-        });
+        List<ReviewSubmissionRecord> submissions = opinionMapper.findSubmissionsByTaskId(taskId);
+        boolean completed = requiredSources.stream().allMatch(source -> submissions.stream()
+                .anyMatch(submission -> submission.matches(submissionSource(task, source), reviewerEmployeeNo)));
         if (!completed) {
             return;
         }
@@ -522,7 +520,7 @@ public class OpinionApplicationService {
         }
         if (reviewType == ReviewType.PCB && status == TaskStatus.PCB_EXPERT_REVIEWING
                 && (!hasReviewerAssignmentSnapshot
-                || hasAssignedRole(task, reviewerEmployeeNo, ReviewRole.PCB_EXPERT, ReviewRole.EMC_EXPERT))) {
+                || hasAssignedRole(task, reviewerEmployeeNo, ReviewRole.PCB_EXPERT, ReviewRole.EMC_EXPERT, ReviewRole.HARDWARE_EXPERT))) {
             return List.of(OpinionSourceType.PCB_REVIEW);
         }
         if (reviewType == ReviewType.PCB && status == TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING) {
@@ -545,7 +543,7 @@ public class OpinionApplicationService {
         }
         if (reviewType == ReviewType.SCHEMATIC && status == TaskStatus.SCHEMATIC_REVIEWING
                 && (!hasReviewerAssignmentSnapshot
-                || hasAssignedRole(task, reviewerEmployeeNo, ReviewRole.HARDWARE_EXPERT))) {
+                || hasAssignedRole(task, reviewerEmployeeNo, ReviewRole.HARDWARE_EXPERT, ReviewRole.EMC_EXPERT, ReviewRole.PCB_EXPERT))) {
             return List.of(OpinionSourceType.SCHEMATIC_REVIEW);
         }
         return List.of();

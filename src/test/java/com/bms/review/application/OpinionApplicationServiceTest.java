@@ -11,6 +11,7 @@ import com.bms.review.infrastructure.OpinionReplyRecord;
 import com.bms.review.infrastructure.OpinionConfirmationRecord;
 import com.bms.review.infrastructure.ReviewOpinionMapper;
 import com.bms.review.infrastructure.ReviewOpinionRecord;
+import com.bms.review.infrastructure.ReviewSubmissionRecord;
 import com.bms.review.infrastructure.TaskCheckItemMapper;
 import com.bms.task.domain.ReviewType;
 import com.bms.task.domain.TaskStatus;
@@ -45,13 +46,67 @@ class OpinionApplicationServiceTest {
     private final UserCenterUserProfileClient userProfileClient = mock(UserCenterUserProfileClient.class);
     private final OpinionApplicationService service = new OpinionApplicationService(opinionMapper, taskMapper, taskCheckItemMapper,
             taskProcessorAuthorizationService, flowMapper, userProfileClient);
+    private final List<ReviewSubmissionRecord> submissions = new ArrayList<>();
 
     @BeforeEach
     void mockUserProfiles() {
+        when(opinionMapper.findSubmissionsByTaskId(1001L)).thenAnswer(invocation -> List.copyOf(submissions));
+        when(opinionMapper.insertSubmission(org.mockito.ArgumentMatchers.eq(1001L), any(), any())).thenAnswer(invocation -> {
+            submissions.add(new ReviewSubmissionRecord(invocation.getArgument(1), invocation.getArgument(2)));
+            return 1;
+        });
         when(userProfileClient.getByEmployeeNo(any())).thenAnswer(invocation -> {
             String employeeNo = invocation.getArgument(0);
             return new UserCenterUserProfileClient.UserProfile(employeeNo, employeeNo, null, null, null);
         });
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"PCB_EXPERT", "EMC_EXPERT", "HARDWARE_EXPERT"})
+    void shouldReleaseEveryInitialExpertRoleOnlyAfterExplicitCompletion(String role) {
+        var task = task("BMS009");
+        task.setStatus(TaskStatus.PCB_EXPERT_REVIEWING.name());
+        task.setReviewerAssignments(role + ":BMS020");
+        task.setAssignedReviewerEmployeeNos("BMS020");
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(taskMapper.updateAssignedReviewerEmployeeNos(any())).thenReturn(1);
+        var passed = opinion(31L, 1001L, "BMS020", OpinionStatus.CONFIRMED_PASS);
+        passed.setSourceType(OpinionSourceType.PCB_REVIEW);
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(passed));
+
+        assertThat(service.summary(1001L, List.of(OpinionSourceType.PCB_REVIEW)).unsubmittedReviewers()).hasSize(1);
+        service.submitNoOpinion(1001L, OpinionSourceType.PCB_REVIEW, "BMS020", "张工");
+
+        assertThat(task.getAssignedReviewerEmployeeNos()).isEmpty();
+        assertThat(service.summary(1001L, List.of(OpinionSourceType.PCB_REVIEW)).unsubmittedReviewers()).isEmpty();
+    }
+
+    @Test
+    void shouldRequireSeparateCompletionForProcessAndStructureEvenWhenAllOpinionsPassed() {
+        var task = task("BMS009");
+        task.setStatus(TaskStatus.PCB_PROCESS_STRUCTURE_REVIEWING.name());
+        task.setReviewerAssignments("PROCESS_EXPERT:BMS020;STRUCTURE_EXPERT:BMS020");
+        task.setAssignedReviewerEmployeeNos("BMS020");
+        var started = new com.bms.workflow.infrastructure.TaskFlowRecord();
+        started.setAction("START_PCB_PROCESS_STRUCTURE_REVIEW");
+        var process = opinion(31L, 1001L, "BMS020", OpinionStatus.CONFIRMED_PASS);
+        process.setSourceType(OpinionSourceType.PCB_PROCESS_REVIEW);
+        var structure = opinion(32L, 1001L, "BMS020", OpinionStatus.CONFIRMED_PASS);
+        structure.setSourceType(OpinionSourceType.PCB_STRUCTURE_REVIEW);
+        when(taskMapper.findById(1001L)).thenReturn(task);
+        when(flowMapper.findByTaskId(1001L)).thenReturn(List.of(started));
+        when(opinionMapper.findByTaskId(1001L)).thenReturn(List.of(process, structure));
+        when(taskMapper.updateAssignedReviewerEmployeeNos(any())).thenReturn(1);
+
+        service.submitNoOpinion(1001L, OpinionSourceType.PCB_PROCESS_REVIEW, "BMS020", "张工");
+        assertThat(task.getAssignedReviewerEmployeeNos()).isEqualTo("BMS020");
+        assertThat(service.summary(1001L, List.of()).unsubmittedReviewers())
+                .extracting(OpinionApplicationService.OutstandingReviewerView::reviewRole).containsExactly("STRUCTURE_EXPERT");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.submitNoOpinion(1001L,
+                OpinionSourceType.PCB_PROCESS_REVIEW, "BMS020", "张工")).hasMessage("当前评审阶段已确认提交");
+
+        service.submitNoOpinion(1001L, OpinionSourceType.PCB_STRUCTURE_REVIEW, "BMS020", "张工");
+        assertThat(task.getAssignedReviewerEmployeeNos()).isEmpty();
     }
 
     @org.junit.jupiter.params.ParameterizedTest

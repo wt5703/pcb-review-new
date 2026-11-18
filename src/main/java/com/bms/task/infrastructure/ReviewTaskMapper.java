@@ -147,6 +147,9 @@ public interface ReviewTaskMapper {
     @Delete("DELETE FROM review_opinion WHERE task_id=#{taskId}")
     int deleteTaskOpinions(long taskId);
 
+    @Delete("DELETE FROM review_submission WHERE task_id=#{taskId}")
+    int deleteTaskReviewSubmissions(long taskId);
+
     @Delete("DELETE FROM task_check_item WHERE task_id=#{taskId}")
     int deleteTaskCheckItems(long taskId);
 

@@ -291,6 +291,120 @@ class WorkflowControllerIntegrationTest {
                 .andExpect(jsonPath("$.data.toStatus").value("FINISHED"));
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"PCB", "SCHEMATIC"})
+    void allExpertsMustExplicitlyFinishEvenWhenEveryOpinionPassed(String reviewType) throws Exception {
+        long taskId = 8390L;
+        boolean pcb = reviewType.equals("PCB");
+        String source = pcb ? "PCB_REVIEW" : "SCHEMATIC_REVIEW";
+        var task = task(taskId);
+        task.setReviewType(reviewType);
+        task.setStatus(pcb ? "PCB_EXPERT_REVIEWING" : "SCHEMATIC_REVIEWING");
+        task.setReviewRoles("PCB_EXPERT,EMC_EXPERT,HARDWARE_EXPERT,PROCESS_EXPERT,STRUCTURE_EXPERT");
+        task.setReviewerAssignments("PCB_EXPERT:BMS001;EMC_EXPERT:BMS002;HARDWARE_EXPERT:BMS003;PROCESS_EXPERT:BMS004;STRUCTURE_EXPERT:BMS005");
+        task.setAssignedReviewerEmployeeNos("BMS001,BMS002,BMS003");
+        taskMapper.insert(task);
+        for (int i = 1; i <= 3; i++) {
+            jdbcTemplate.update("INSERT INTO review_opinion (id,task_id,source_type,severity,raised_by_employee_no,raised_by_name,opinion_status) VALUES (?,?,?,'GENERAL',?,?,'CONFIRMED_PASS')",
+                    8390L + i, taskId, source, "BMS00" + i, "专家" + i);
+        }
+        if (!pcb) {
+            var finalFile = file(taskId, 8399L, source);
+            finalFile.setUploadedStage(task.getStatus());
+            fileMapper.insert(finalFile);
+        }
+        String[] actions = pcb ? new String[]{"START_PCB_PROCESS_REVIEW", "START_PCB_STRUCTURE_REVIEW"}
+                : new String[]{"PENDING_FINISH"};
+
+        for (int i = 1; i <= 3; i++) {
+            mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
+                            .header("userId", "BMS010").param("actions", actions))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.msg").value(org.hamcrest.Matchers.containsString("尚未确认提交")));
+            completeReview(taskId, source, "BMS00" + i);
+        }
+        mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)
+                        .header("userId", "BMS010").param("sourceTypes", source))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.unsubmittedReviewers.length()").value(0));
+        mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
+                        .header("userId", "BMS010").param("actions", actions))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.toStatus").value(pcb ? "PCB_PROCESS_STRUCTURE_REVIEWING" : "PENDING_FINISH"));
+
+        if (pcb) {
+            // 进入工艺结构阶段可以没有文件，离开此阶段的文件校验仍然存在。
+            completeReview(taskId, "PCB_PROCESS_REVIEW", "BMS004");
+            completeReview(taskId, "PCB_STRUCTURE_REVIEW", "BMS005");
+            mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
+                            .header("userId", "BMS010").param("actions", "START_PCB_MATUAL_ASSIGNMENT"))
+                    .andExpect(status().isConflict()).andExpect(jsonPath("$.msg").value("请先上传工艺图文件"));
+            mockMvc.perform(workflowRequest(taskId, "return", "BMS001",
+                            "{\"targetStatus\":\"PCB_EXPERT_REVIEWING\",\"reason\":\"重新评审\"}"))
+                    .andExpect(status().isOk());
+            org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM review_submission WHERE task_id=?", Integer.class, taskId)).isZero();
+            org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM review_opinion WHERE task_id=? AND source_type='PCB_REVIEW'", Integer.class, taskId)).isEqualTo(3);
+            mockMvc.perform(get("/tasks/{taskId}/opinions/summary", taskId)
+                            .header("userId", "BMS010").param("sourceTypes", source))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.data.unsubmittedReviewers.length()").value(3));
+            mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
+                            .header("userId", "BMS010").param("actions", actions))
+                    .andExpect(status().isConflict());
+            for (int i = 1; i <= 3; i++) completeReview(taskId, source, "BMS00" + i);
+            mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
+                            .header("userId", "BMS010").param("actions", actions))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Test
+    void shouldMigrateOnlyClosedReviewsAlreadyRemovedFromActiveAssignments() {
+        long taskId = 8390L;
+        var task = task(taskId);
+        task.setAssignedReviewerEmployeeNos("BMS001");
+        taskMapper.insert(task);
+        for (int i = 1; i <= 5; i++) {
+            jdbcTemplate.update("INSERT INTO review_opinion (id,task_id,source_type,severity,raised_by_employee_no,raised_by_name,opinion_status,is_draft) VALUES (?,?,?,'GENERAL',?,'专家','CONFIRMED_PASS',?)",
+                    8390L + i, taskId, i == 4 ? "MUTUAL_EXTRA" : "PCB_REVIEW", "BMS00" + i, i == 5);
+        }
+        jdbcTemplate.update("INSERT INTO review_opinion (id,task_id,source_type,severity,raised_by_employee_no,raised_by_name,opinion_status) VALUES (8396,?,'PCB_REVIEW','GENERAL','BMS003','专家','PENDING_REPLY')", taskId);
+        jdbcTemplate.update("INSERT INTO review_opinion (id,task_id,source_type,severity,raised_by_employee_no,raised_by_name,opinion_status) VALUES (8397,?,'MUTUAL_CHECK_ITEM','GENERAL','BMS004','专家','CONFIRMED_PASS')", taskId);
+        jdbcTemplate.execute("DROP TABLE review_submission");
+        var migration = new org.springframework.jdbc.datasource.init.ResourceDatabasePopulator(
+                new org.springframework.core.io.FileSystemResource("docs/database/review-submission-upgrade.sql"));
+        migration.setSqlScriptEncoding("UTF-8");
+        migration.execute(jdbcTemplate.getDataSource());
+
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForList(
+                "SELECT CONCAT(source_type, ':', reviewer_employee_no) FROM review_submission ORDER BY reviewer_employee_no", String.class))
+                .containsExactly("PCB_REVIEW:BMS002", "MUTUAL_CHECK_ITEM:BMS004");
+    }
+
+    @Test
+    void legacySchematicMutualCompletionMustAllowExpertAssignmentAfterLatestFileUpload() throws Exception {
+        long taskId = 8390L;
+        var task = task(taskId);
+        task.setReviewType("SCHEMATIC");
+        task.setStatus("MUTUAL_CHECK_REVIEWING");
+        task.setAssignedReviewerEmployeeNos("BMS003");
+        task.setMutualCheckReviewerEmployeeNos("BMS003");
+        taskMapper.insert(task);
+        fileMapper.insert(file(taskId, 8399L, "SCHEMATIC_REVIEW"));
+        completeReview(taskId, "SCHEMATIC_REVIEW", "BMS003");
+
+        mockMvc.perform(multipart("/tasks/{taskId}/workflow/transitions", taskId)
+                        .header("userId", "BMS010").param("actions", "START_SCHEMATIC_EXPERT_ASSIGNMENT"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.toStatus").value("SCHEMATIC_EXPERT_PENDING_ASSIGNMENT"));
+    }
+
+    private void completeReview(long taskId, String source, String employeeNo) throws Exception {
+        mockMvc.perform(post("/tasks/{taskId}/opinions/no-opinion", taskId)
+                        .header("userId", employeeNo).header("userName", "专家")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"sourceType\":\"" + source + "\"}"))
+                .andExpect(status().isOk());
+    }
+
     private org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder workflowRequest(
             long taskId, String action, String employeeNo, String json) {
         return post("/tasks/{taskId}/workflow/{action}", taskId, action)
