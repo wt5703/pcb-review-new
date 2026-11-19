@@ -60,11 +60,11 @@ public class ReviewMailNotificationApplicationService {
         if (task.reviewType() == ReviewType.PCB) {
             List<TaskReviewerAssignment> receivers = filter(assignments,
                     assignment -> isPcbInitialReviewRole(assignment.reviewRole()));
-            enqueue(reviewRoles(task.reviewRoles(), task.reviewerAssignments()), task.id(), ReviewMailType.PCB_TASK_CREATED, task.projectName() + " PCB布局布线评审", receivers,
+            enqueue(reviewRoles(task.reviewRoles(), task.reviewerAssignments()), task.id(), ReviewMailType.PCB_TASK_CREATED, task.taskName(), receivers,
                     initialAttachments(task.initialFileIds(), FileCategory.PCB_REVIEW), Map.of("projectName", task.projectName()));
             return;
         }
-        enqueue(reviewRoles(task.reviewRoles(), task.reviewerAssignments()), task.id(), ReviewMailType.SCHEMATIC_TASK_CREATED, task.projectName() + "原理图评审", assignments,
+        enqueue(reviewRoles(task.reviewRoles(), task.reviewerAssignments()), task.id(), ReviewMailType.SCHEMATIC_TASK_CREATED, task.taskName(), assignments,
                 initialAttachments(task.initialFileIds(), FileCategory.SCHEMATIC_REVIEW), Map.of("projectName", task.projectName()));
     }
 
@@ -87,12 +87,12 @@ public class ReviewMailNotificationApplicationService {
         if (reviewType == ReviewType.PCB) {
             List<TaskReviewerAssignment> receivers = filter(assignments,
                     assignment -> isPcbInitialReviewRole(assignment.reviewRole()));
-            enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.PCB_TASK_CREATED, task.getProjectName() + " PCB布局布线评审", receivers,
+            enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.PCB_TASK_CREATED, task.getTaskName(), receivers,
                     initialAttachments(parseInitialFileIds(task.getInitialFileIds()), FileCategory.PCB_REVIEW),
                     variables);
             return;
         }
-        enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.SCHEMATIC_TASK_CREATED, task.getProjectName() + "原理图评审", assignments,
+        enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.SCHEMATIC_TASK_CREATED, task.getTaskName(), assignments,
                 initialAttachments(parseInitialFileIds(task.getInitialFileIds()), FileCategory.SCHEMATIC_REVIEW),
                 variables);
     }
@@ -110,7 +110,7 @@ public class ReviewMailNotificationApplicationService {
         List<TaskReviewerAssignment> receivers = filter(assignments(task), assignment -> (hasProcess && assignment.reviewRole() == ReviewRole.PROCESS_EXPERT)
                 || (hasStructure && assignment.reviewRole() == ReviewRole.STRUCTURE_EXPERT));
         String reviewName = hasProcess && hasStructure ? "工艺评审与结构评审" : hasProcess ? "工艺评审" : "结构评审";
-        enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.PCB_OPTIONAL_REVIEW, task.getProjectName() + reviewName, receivers,
+        enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.PCB_OPTIONAL_REVIEW, task.getTaskName(), receivers,
                 latestAttachments(task.getId(), categories), Map.of("projectName", task.getProjectName(), "reviewName", reviewName));
     }
 
@@ -122,7 +122,7 @@ public class ReviewMailNotificationApplicationService {
         if (attachments.isEmpty()) {
             attachments = initialAttachments(parseInitialFileIds(task.getInitialFileIds()), FileCategory.SCHEMATIC_REVIEW);
         }
-        enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.SCHEMATIC_TASK_CREATED, task.getProjectName() + "原理图评审", receivers,
+        enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.SCHEMATIC_TASK_CREATED, task.getTaskName(), receivers,
                 attachments,
                 Map.of("projectName", task.getProjectName()));
     }
@@ -134,15 +134,16 @@ public class ReviewMailNotificationApplicationService {
             List<TaskReviewerAssignment> hardwareReceivers = filter(assignments(task),
                     assignment -> assignment.reviewRole() == ReviewRole.PCB_EXPERT
                             || assignment.reviewRole() == ReviewRole.HARDWARE_EXPERT);
-            enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.PCB_TASK_FINISHED, task.getProjectName() + "PCB终版图", hardwareReceivers,
+            enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.PCB_TASK_FINISHED, task.getTaskName(), hardwareReceivers,
                     latestAttachments(task.getId(), List.of(FileCategory.PCB_REVIEW)), Map.of("projectName", task.getProjectName()));
             return;
         }
-        enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.SCHEMATIC_TASK_FINISHED, task.getProjectName() + "原理图终版", assignments(task),
+        enqueue(reviewRoles(parseRoles(task.getReviewRoles()), assignments(task)), task.getId(), ReviewMailType.SCHEMATIC_TASK_FINISHED, task.getTaskName(), assignments(task),
                 latestAttachments(task.getId(), List.of(FileCategory.SCHEMATIC_REVIEW)), Map.of("projectName", task.getProjectName()));
     }
 
-    private void enqueue(java.util.Set<ReviewRole> taskRoles, long taskId, ReviewMailType type, String subject, List<TaskReviewerAssignment> assignments,
+    /** 所有评审邮件的标题统一使用所属任务名称。 */
+    private void enqueue(java.util.Set<ReviewRole> taskRoles, long taskId, ReviewMailType type, String taskName, List<TaskReviewerAssignment> assignments,
                          List<MailMessage.MailAttachment> attachments, Map<String, String> variables) {
         List<MailMessage.MailRecipient> recipients = recipients(assignments);
         if (recipients.isEmpty()) {
@@ -154,13 +155,13 @@ public class ReviewMailNotificationApplicationService {
         templateVariables.put("recipientNames", recipientNames(recipients));
         templateVariables.put("greeting", recipients.size() == 1 ? "您好" : "你们好");
         String content = mailTemplateService.render(type, templateVariables);
-        MailMessage message = new MailMessage(type.name(), subject, content, recipients, carbonCopies(type, taskRoles, recipients), attachments);
+        MailMessage message = new MailMessage(type.name(), taskName, content, recipients, carbonCopies(type, taskRoles, recipients), attachments);
         try {
             outboxEventMapper.insert(new OutboxEventRecord(REVIEW_MAIL_EVENT, "REVIEW_TASK", taskId,
                     objectMapper.writeValueAsString(message), "PENDING"));
         } catch (JsonProcessingException | RuntimeException exception) {
             // Outbox 写入失败同样不能破坏已完成的核心业务；运维日志保留排查线索。
-            log.error("写入邮件 Outbox 失败：taskId={}, mailType={}, subject={}", taskId, type, subject, exception);
+            log.error("写入邮件 Outbox 失败：taskId={}, mailType={}, subject={}", taskId, type, taskName, exception);
         }
     }
 

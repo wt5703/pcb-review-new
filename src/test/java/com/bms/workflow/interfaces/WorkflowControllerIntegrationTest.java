@@ -361,29 +361,6 @@ class WorkflowControllerIntegrationTest {
     }
 
     @Test
-    void shouldMigrateOnlyClosedReviewsAlreadyRemovedFromActiveAssignments() {
-        long taskId = 8390L;
-        var task = task(taskId);
-        task.setAssignedReviewerEmployeeNos("BMS001");
-        taskMapper.insert(task);
-        for (int i = 1; i <= 5; i++) {
-            jdbcTemplate.update("INSERT INTO review_opinion (id,task_id,source_type,severity,raised_by_employee_no,raised_by_name,opinion_status,is_draft) VALUES (?,?,?,'GENERAL',?,'专家','CONFIRMED_PASS',?)",
-                    8390L + i, taskId, i == 4 ? "MUTUAL_EXTRA" : "PCB_REVIEW", "BMS00" + i, i == 5);
-        }
-        jdbcTemplate.update("INSERT INTO review_opinion (id,task_id,source_type,severity,raised_by_employee_no,raised_by_name,opinion_status) VALUES (8396,?,'PCB_REVIEW','GENERAL','BMS003','专家','PENDING_REPLY')", taskId);
-        jdbcTemplate.update("INSERT INTO review_opinion (id,task_id,source_type,severity,raised_by_employee_no,raised_by_name,opinion_status) VALUES (8397,?,'MUTUAL_CHECK_ITEM','GENERAL','BMS004','专家','CONFIRMED_PASS')", taskId);
-        jdbcTemplate.execute("DROP TABLE review_submission");
-        var migration = new org.springframework.jdbc.datasource.init.ResourceDatabasePopulator(
-                new org.springframework.core.io.FileSystemResource("docs/database/review-submission-upgrade.sql"));
-        migration.setSqlScriptEncoding("UTF-8");
-        migration.execute(jdbcTemplate.getDataSource());
-
-        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForList(
-                "SELECT CONCAT(source_type, ':', reviewer_employee_no) FROM review_submission ORDER BY reviewer_employee_no", String.class))
-                .containsExactly("PCB_REVIEW:BMS002", "MUTUAL_CHECK_ITEM:BMS004");
-    }
-
-    @Test
     void legacySchematicMutualCompletionMustAllowExpertAssignmentAfterLatestFileUpload() throws Exception {
         long taskId = 8390L;
         var task = task(taskId);

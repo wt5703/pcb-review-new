@@ -62,7 +62,7 @@ class ReviewMailNotificationApplicationServiceTest {
 
         MailMessage message = payload();
         assertThat(message.notificationType()).isEqualTo("PCB_TASK_CREATED");
-        assertThat(message.subject()).isEqualTo("BMS PCB布局布线评审");
+        assertThat(message.subject()).isEqualTo("任务");
         assertThat(message.content()).contains("王鹏飞、刘满红你们好", "附件是BMSPCB文件，请进行硬件评审与EMC评审。",
                 "http://10.195.135.149:31792/myTodo");
         assertThat(message.recipients()).extracting(MailMessage.MailRecipient::email)
@@ -140,7 +140,7 @@ class ReviewMailNotificationApplicationServiceTest {
                 com.bms.file.domain.FileCategory.PCB_STRUCTURE_REVIEW));
 
         MailMessage message = payload();
-        assertThat(message.subject()).isEqualTo("BMS工艺评审与结构评审");
+        assertThat(message.subject()).isEqualTo(task.getTaskName());
         assertThat(message.content()).contains("附件是BMS工艺评审与结构评审文件，请进行工艺评审与结构评审",
                 "http://10.195.135.149:31792/myTodo");
         assertThat(message.carbonCopies()).isEmpty();
@@ -157,7 +157,7 @@ class ReviewMailNotificationApplicationServiceTest {
         service.enqueuePcbStageReview(task, List.of(com.bms.file.domain.FileCategory.PCB_STRUCTURE_REVIEW));
 
         MailMessage message = payload();
-        assertThat(message.subject()).isEqualTo("BMS结构评审");
+        assertThat(message.subject()).isEqualTo(task.getTaskName());
         assertThat(message.recipients()).extracting(MailMessage.MailRecipient::email).containsExactly("chen@bms.example.com");
         assertThat(message.carbonCopies()).isEmpty();
         assertThat(message.attachments()).extracting(MailMessage.MailAttachment::fileName).containsExactly("结构.zip");
@@ -174,7 +174,7 @@ class ReviewMailNotificationApplicationServiceTest {
 
         MailMessage message = payload();
         assertThat(message.notificationType()).isEqualTo("SCHEMATIC_TASK_FINISHED");
-        assertThat(message.subject()).isEqualTo("VCU原理图终版");
+        assertThat(message.subject()).isEqualTo("评审任务-30");
         assertThat(message.content()).contains("附件为VCU原理图终版文件。", "http://10.195.135.149:31792/task/detail?id=30")
                 .doesNotContain("myTodo", "我的待办");
         assertThat(message.recipients()).hasSize(2);
@@ -237,8 +237,8 @@ class ReviewMailNotificationApplicationServiceTest {
     }
 
     @org.junit.jupiter.params.ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = {"domain", "created", "resubmitted", "optional", "pcbFinished", "schematicCreated", "schematicStarted", "schematicFinished"})
-    void shouldCopyStructureLeaderForEveryTaskMailUsingFullTaskRoles(String entry) throws Exception {
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"domain", "created", "resubmitted", "optional", "pcbFinished", "schematicDomain", "schematicCreated", "schematicResubmitted", "schematicStarted", "schematicFinished"})
+    void shouldUseTaskNameAndCopyStructureLeaderForEveryTaskMail(String entry) throws Exception {
         var leader = user(201L, "L1", "结构领导", "structure@example.com");
         leader.setRoles("OTHER, STRUCTURE-LEADER ");
         var duplicate = user(202L, "L2", "重复", " STRUCTURE@example.com ");
@@ -252,16 +252,18 @@ class ReviewMailNotificationApplicationServiceTest {
         // 结构角色只存在于任务配置，当前邮件收件人分配中没有结构专家。
         task.setReviewRoles("PCB_EXPERT,STRUCTURE_EXPERT");
         switch (entry) {
-            case "domain" -> service.enqueueTaskCreated(ReviewTask.draft(1L, ReviewType.PCB, "任务", "BMS", "D1", "设计者", "P1", "BMU", LocalDate.now(),
+            case "domain", "schematicDomain" -> service.enqueueTaskCreated(ReviewTask.draft(task.getId(), ReviewType.valueOf(task.getReviewType()), task.getTaskName(), "BMS", "D1", "设计者", "P1", "BMU", LocalDate.now(),
                     "P1", "专家", List.of(ReviewRole.PCB_EXPERT, ReviewRole.STRUCTURE_EXPERT),
                     List.of(new TaskReviewerAssignment(ReviewRole.PCB_EXPERT, List.of("P1"))), null));
             case "created", "schematicCreated" -> service.enqueueTaskCreated(task);
-            case "resubmitted" -> service.enqueueTaskResubmitted(task);
+            case "resubmitted", "schematicResubmitted" -> service.enqueueTaskResubmitted(task);
             case "optional" -> service.enqueuePcbStageReview(task, List.of(com.bms.file.domain.FileCategory.PCB_PROCESS_REVIEW));
             case "schematicStarted" -> service.enqueueSchematicReviewStarted(task);
             default -> service.enqueueTaskFinished(task);
         }
-        assertThat(payload().carbonCopies()).extracting(MailMessage.MailRecipient::email).containsExactlyElementsOf(
+        var message = payload();
+        assertThat(message.subject()).isEqualTo(task.getTaskName());
+        assertThat(message.carbonCopies()).extracting(MailMessage.MailRecipient::email).containsExactlyElementsOf(
                 entry.equals("optional") ? List.of("structure@example.com") : List.of("hardware@example.com", "structure@example.com"));
     }
 
@@ -309,6 +311,7 @@ class ReviewMailNotificationApplicationServiceTest {
     private ReviewTaskRecord task(long id, String reviewType, String projectName, String reviewerAssignments) {
         ReviewTaskRecord task = new ReviewTaskRecord();
         task.setId(id); task.setReviewType(reviewType); task.setProjectName(projectName); task.setReviewerAssignments(reviewerAssignments);
+        task.setTaskName("评审任务-" + id);
         task.setReviewRoles(reviewerAssignments.substring(0, reviewerAssignments.indexOf(':'))); task.setExpertLeaderEmployeeNo("BMS009");
         return task;
     }

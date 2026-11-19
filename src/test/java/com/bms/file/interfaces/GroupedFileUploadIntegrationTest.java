@@ -116,7 +116,8 @@ class GroupedFileUploadIntegrationTest {
         assertThat(events).hasSize(1);
         var mail = json.readValue(events.get(0).getPayload(), com.bms.notification.domain.MailMessage.class);
         assertThat(mail.notificationType()).isEqualTo("PCB_OPTIONAL_REVIEW");
-        assertThat(mail.subject()).contains(category == com.bms.file.domain.FileCategory.PCB_PROCESS_REVIEW ? "工艺评审" : "结构评审");
+        assertThat(mail.subject()).isEqualTo(task.getTaskName());
+        assertThat(mail.content()).contains(category == com.bms.file.domain.FileCategory.PCB_PROCESS_REVIEW ? "工艺评审" : "结构评审");
         assertThat(mail.attachments()).extracting(com.bms.notification.domain.MailMessage.MailAttachment::fileName)
                 .containsExactlyInAnyOrder("a.zip", "b.pdf");
         assertThat(mail.attachments()).extracting(com.bms.notification.domain.MailMessage.MailAttachment::fileCategory).containsOnly(category.name());
@@ -159,7 +160,8 @@ class GroupedFileUploadIntegrationTest {
         var events = outbox.findByAggregate("REVIEW_TASK", 9901L);
         assertThat(events).hasSize(1);
         var mail = json.readValue(events.get(0).getPayload(), com.bms.notification.domain.MailMessage.class);
-        assertThat(mail.subject()).contains("工艺评审与结构评审");
+        assertThat(mail.subject()).isEqualTo(task.getTaskName());
+        assertThat(mail.content()).contains("工艺评审与结构评审");
         assertThat(mail.recipients()).hasSize(2);
         assertThat(mail.attachments()).extracting(com.bms.notification.domain.MailMessage.MailAttachment::fileName)
                 .containsExactlyInAnyOrder("process.zip", "process.pdf", "structure.zip");
